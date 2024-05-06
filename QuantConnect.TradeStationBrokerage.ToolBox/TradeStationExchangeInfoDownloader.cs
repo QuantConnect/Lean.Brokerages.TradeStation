@@ -13,25 +13,27 @@
  * limitations under the License.
 */
 
-using System;
-using QuantConnect.Data;
+using QuantConnect.ToolBox;
 using System.Collections.Generic;
 
-namespace QuantConnect.Brokerages.Template.ToolBox
+namespace QuantConnect.Brokerages.TradeStation.ToolBox;
+
+/// <summary>
+/// Template Brokerage implementation of <see cref="IExchangeInfoDownloader"/>
+/// </summary>
+public class TradeStationExchangeInfoDownloader : IExchangeInfoDownloader
 {
     /// <summary>
-    /// Template Brokerage Data Downloader implementation
+    /// Market
     /// </summary>
-    public class TemplateBrokerageDownloader : IDataDownloader
+    public string Market => throw new System.NotImplementedException();
+
+    /// <summary>
+    /// Get exchange info coma-separated data
+    /// </summary>
+    /// <returns>Enumerable of exchange info for this market</returns>
+    public IEnumerable<string> Get()
     {
-        /// <summary>
-        /// Get historical data enumerable for a single symbol, type and resolution given this start and end time (in UTC).
-        /// </summary>
-        /// <param name="dataDownloaderGetParameters">model class for passing in parameters for historical data</param>
-        /// <returns>Enumerable of base data for this symbol</returns>
-        public IEnumerable<BaseData> Get(DataDownloaderGetParameters dataDownloaderGetParameters)
-        {
-            throw new NotImplementedException();
-        }
+        throw new System.NotImplementedException();
     }
 }

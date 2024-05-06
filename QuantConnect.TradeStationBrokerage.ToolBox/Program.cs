@@ -17,37 +17,36 @@ using QuantConnect.ToolBox;
 using QuantConnect.Configuration;
 using static QuantConnect.Configuration.ApplicationParser;
 
-namespace QuantConnect.Brokerages.Template.ToolBox
+namespace QuantConnect.Brokerages.TradeStation.ToolBox;
+
+static class Program
 {
-    static class Program
+    static void Main(string[] args)
     {
-        static void Main(string[] args)
+        var optionsObject = ToolboxArgumentParser.ParseArguments(args);
+        if (optionsObject.Count == 0)
         {
-            var optionsObject = ToolboxArgumentParser.ParseArguments(args);
-            if (optionsObject.Count == 0)
-            {
-                PrintMessageAndExit();
-            }
+            PrintMessageAndExit();
+        }
 
-            if (!optionsObject.TryGetValue("app", out var targetApp))
-            {
-                PrintMessageAndExit(1, "ERROR: --app value is required");
-            }
+        if (!optionsObject.TryGetValue("app", out var targetApp))
+        {
+            PrintMessageAndExit(1, "ERROR: --app value is required");
+        }
 
-            var targetAppName = targetApp.ToString();
-            if (targetAppName.Contains("download") || targetAppName.Contains("dl"))
-            {
-                var downloader = new TemplateBrokerageDownloader();
-            }
-            else if (targetAppName.Contains("updater") || targetAppName.EndsWith("spu"))
-            {
-                new ExchangeInfoUpdater(new TemplateExchangeInfoDownloader())
-                    .Run();
-            }
-            else
-            {
-                PrintMessageAndExit(1, "ERROR: Unrecognized --app value");
-            }
+        var targetAppName = targetApp.ToString();
+        if (targetAppName.Contains("download") || targetAppName.Contains("dl"))
+        {
+            var downloader = new TemplateBrokerageDownloader();
+        }
+        else if (targetAppName.Contains("updater") || targetAppName.EndsWith("spu"))
+        {
+            new ExchangeInfoUpdater(new TradeStationExchangeInfoDownloader())
+                .Run();
+        }
+        else
+        {
+            PrintMessageAndExit(1, "ERROR: Unrecognized --app value");
         }
     }
 }

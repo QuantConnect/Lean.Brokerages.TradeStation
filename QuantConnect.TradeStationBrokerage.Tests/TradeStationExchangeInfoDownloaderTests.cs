@@ -13,16 +13,16 @@
  * limitations under the License.
 */
 
-using NUnit.Framework;
-using QuantConnect.ToolBox;
-using QuantConnect.Util;
 using System;
 using System.Linq;
+using NUnit.Framework;
+using QuantConnect.Util;
+using QuantConnect.ToolBox;
 
-namespace QuantConnect.Brokerages.Template.Tests
+namespace QuantConnect.Brokerages.TradeStation.Tests
 {
     [TestFixture, Ignore("This test requires a configured TemplateExchangeInfoDownloader")]
-    public class TemplateExchangeInfoDownloaderTests
+    public class TradeStationExchangeInfoDownloaderTests
     {
         [Test]
         public void GetsExchangeInfo()

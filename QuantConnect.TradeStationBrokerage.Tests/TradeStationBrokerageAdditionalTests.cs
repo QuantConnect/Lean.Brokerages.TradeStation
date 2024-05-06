@@ -17,10 +17,10 @@ using NUnit.Framework;
 using QuantConnect.Util;
 using QuantConnect.Interfaces;
 
-namespace QuantConnect.Brokerages.Template.Tests
+namespace QuantConnect.Brokerages.TradeStation.Tests
 {
     [TestFixture]
-    public class TemplateBrokerageAdditionalTests
+    public class TradeStationBrokerageAdditionalTests
     {
         [Test]
         public void ParameterlessConstructorComposerUsage()

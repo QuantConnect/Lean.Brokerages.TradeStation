@@ -15,10 +15,10 @@
 
 using NUnit.Framework;
 
-namespace QuantConnect.Brokerages.Template.Tests
+namespace QuantConnect.Brokerages.TradeStation.Tests
 {
     [TestFixture, Ignore("Not implemented")]
-    public class TemplateBrokerageSymbolMapperTests
+    public class TradeStationBrokerageSymbolMapperTests
     {
         [Test]
         public void ReturnsCorrectLeanSymbol()
