@@ -3,11 +3,11 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.9.34728.123
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.TemplateBrokerage", "QuantConnect.TemplateBrokerage\QuantConnect.TemplateBrokerage.csproj", "{7C447DDD-D30D-46C3-A341-2D768CCEEC10}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.TradeStationBrokerage", "QuantConnect.TradeStationBrokerage\QuantConnect.TradeStationBrokerage.csproj", "{7C447DDD-D30D-46C3-A341-2D768CCEEC10}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.TemplateBrokerage.Tests", "QuantConnect.TemplateBrokerage.Tests\QuantConnect.TemplateBrokerage.Tests.csproj", "{8793CDDF-3348-473F-98AF-68C6EBFA5014}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.TradeStationBrokerage.Tests", "QuantConnect.TradeStationBrokerage.Tests\QuantConnect.TradeStationBrokerage.Tests.csproj", "{8793CDDF-3348-473F-98AF-68C6EBFA5014}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.TemplateBrokerage.ToolBox", "QuantConnect.TemplateBrokerage.ToolBox\QuantConnect.TemplateBrokerage.ToolBox.csproj", "{1AB073F2-6881-48C3-AC07-A042D0B51E6B}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.TradeStationBrokerage.ToolBox", "QuantConnect.TradeStationBrokerage.ToolBox\QuantConnect.TradeStationBrokerage.ToolBox.csproj", "{1AB073F2-6881-48C3-AC07-A042D0B51E6B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
