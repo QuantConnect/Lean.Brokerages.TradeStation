@@ -15,6 +15,10 @@
 
 using System;
 using RestSharp;
+using System.Net;
+using Newtonsoft.Json;
+using System.Diagnostics;
+using QuantConnect.Brokerages.TradeStation.Models;
 
 namespace QuantConnect.Brokerages.TradeStation.Api;
 
@@ -57,21 +61,33 @@ public class TradeStationApiClient
     /// </summary>
     private readonly RestClient _restClient;
 
+    private readonly RestClient _restClientAuthentication;
+
+    private TradeStationAccessToken _tradeStationAccessToken;
+
     /// <summary>
     /// Initializes a new instance of the TradeStationApiClient class with the specified API Key, API Key Secret, and REST API URL.
     /// </summary>
     /// <param name="apiKey">The API Key used by the client application to authenticate requests.</param>
     /// <param name="apiKeySecret">The secret associated with the client application’s API Key for authentication.</param>
-    /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL during OAuth authentication.</param>
     /// <param name="restApiUrl">The URL of the REST API.</param>
+    /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL during OAuth authentication.</param>
     /// <param name="redirectUri">The URI to which the user will be redirected after authentication.</param>
-    public TradeStationApiClient(string apiKey, string apiKeySecret, string authorizationCodeFromUrl, string restApiUrl, string redirectUri = "http://localhost")
+    public TradeStationApiClient(string apiKey, string apiKeySecret, string restApiUrl,
+        string authorizationCodeFromUrl = "", string signInUri = "https://signin.tradestation.com", string redirectUri = "http://localhost")
     {
         _apiKey = apiKey;
         _apiKeySecret = apiKeySecret;
         _authorizationCodeFromUrl = authorizationCodeFromUrl;
-        _restClient = new RestClient(restApiUrl);
         _redirectUri = redirectUri;
+        _restClient = new RestClient(restApiUrl);
+        _restClient.Proxy = GetProxy();
+        _restClientAuthentication = new RestClient(signInUri);
+        _restClientAuthentication.Proxy = GetProxy();
+        if (!string.IsNullOrEmpty(authorizationCodeFromUrl))
+        {
+            _tradeStationAccessToken = GetAuthenticateToken();
+        }
     }
 
     /// <summary>
@@ -91,6 +107,84 @@ public class TradeStationApiClient
             $"&audience=https://api.tradestation.com" +
             $"&redirect_uri={_redirectUri}" +
             $"&scope=openid offline_access MarketData ReadAccount Trade OptionSpreads Matrix");
-        return uri.ToString();
+        return uri.Uri.AbsoluteUri;
+    }
+
+    /// <summary>
+    /// Refreshes the authentication token using the refresh token from TradeStation API.
+    /// </summary>
+    /// <returns>The refreshed authentication token containing access, refresh, and ID tokens along with expiration time.</returns>
+    private TradeStationAccessToken RefreshAccessToken()
+    {
+        var request = GenerateSignInRequest();
+
+        request.AddParameter("application/x-www-form-urlencoded",
+            $"grant_type=refresh_token" +
+            $"&client_id={_apiKey}" +
+            $"&client_secret={_apiKeySecret}" +
+            $"&refresh_token={_tradeStationAccessToken.RefreshToken}", ParameterType.RequestBody);
+
+        var response = ExecuteRequest(_restClientAuthentication, request);
+
+        return JsonConvert.DeserializeObject<TradeStationAccessToken>(response.Content);
+    }
+
+    /// <summary>
+    /// Retrieves the authentication token from TradeStation API.
+    /// </summary>
+    /// <returns>The authentication token containing access, refresh, and ID tokens along with expiration time.</returns>
+    private TradeStationAccessToken GetAuthenticateToken()
+    {
+        var request = GenerateSignInRequest();
+
+        request.AddParameter("application/x-www-form-urlencoded",
+            $"grant_type=authorization_code" +
+            $"&client_id={_apiKey}" +
+            $"&client_secret={_apiKeySecret}" +
+            $"&code={_authorizationCodeFromUrl}" +
+            $"&redirect_uri={_redirectUri}", ParameterType.RequestBody);
+
+        var response = ExecuteRequest(_restClientAuthentication, request);
+
+        return JsonConvert.DeserializeObject<TradeStationAccessToken>(response.Content);
+    }
+
+    /// <summary>
+    /// Generates a REST request for signing in.
+    /// </summary>
+    /// <returns>A <see cref="RestRequest"/> configured for signing in.</returns>
+    private RestRequest GenerateSignInRequest()
+    {
+        var request = new RestRequest("/oauth/token", Method.POST);
+
+        request.AddHeader("content-type", "application/x-www-form-urlencoded");
+        return request;
+    }
+
+    /// <summary>
+    /// Executes the rest request
+    /// </summary>
+    /// <param name="request">The rest request to execute</param>
+    /// <returns>The rest response</returns>
+    [StackTraceHidden]
+    private IRestResponse ExecuteRequest(RestClient restClient, IRestRequest request)
+    {
+        var response = restClient.Execute(request);
+
+        if (response.StatusCode != HttpStatusCode.OK)
+        {
+            throw new Exception($"{nameof(TradeStationApiClient)}.{nameof(ExecuteRequest)} request failed: " +
+                                $"[{(int)response.StatusCode}] {response.StatusDescription}, " +
+                                $"Content: {response.Content}, ErrorMessage: {response.ErrorMessage}");
+        }
+
+        return response;
+    }
+
+    private IWebProxy GetProxy()
+    {
+        var proxy = new WebProxy("http://185.199.213.13:56480");
+        proxy.Credentials = new NetworkCredential("UIPSO9MD", "0FFHAKE5");
+        return proxy;
     }
 }
