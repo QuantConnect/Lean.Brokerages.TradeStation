@@ -33,6 +33,18 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var brokerage = Composer.Instance.GetExportedValueByTypeName<IDataQueueHandler>("TradeStationBrokerage");
             Assert.IsNotNull(brokerage);
         }
+
+        [Test]
+        public void GetTradeStationAccounts()
+        {
+            var tradeStationApiClient = CreateTradeStationApiClient(true);
+
+            var result = tradeStationApiClient.GetAccounts();
+
+            Assert.IsNotNull(result);
+            Assert.Greater(result.Count(), 0);
+        }
+
         [Test]
         public void GetSignInUrl()
         {

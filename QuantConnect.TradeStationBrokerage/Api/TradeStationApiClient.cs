@@ -18,6 +18,7 @@ using RestSharp;
 using System.Net;
 using Newtonsoft.Json;
 using System.Diagnostics;
+using System.Collections.Generic;
 using QuantConnect.Brokerages.TradeStation.Models;
 
 namespace QuantConnect.Brokerages.TradeStation.Api;
@@ -88,6 +89,21 @@ public class TradeStationApiClient
         {
             _tradeStationAccessToken = GetAuthenticateToken();
         }
+    }
+
+    /// <summary>
+    /// Fetches the list of Brokerage Accounts available for the current user.
+    /// </summary>
+    /// <returns>
+    /// An IEnumerable collection of Account objects representing the Brokerage Accounts available for the current user.
+    /// </returns>
+    public IEnumerable<Account> GetAccounts()
+    {
+        var request = new RestRequest("/brokerage/accounts", Method.GET);
+
+        var response = ExecuteRequest(_restClient, request, true);
+
+        return JsonConvert.DeserializeObject<TradeStationAccount>(response.Content).Accounts;
     }
 
     /// <summary>
@@ -167,8 +183,15 @@ public class TradeStationApiClient
     /// <param name="request">The rest request to execute</param>
     /// <returns>The rest response</returns>
     [StackTraceHidden]
-    private IRestResponse ExecuteRequest(RestClient restClient, IRestRequest request)
+    private IRestResponse ExecuteRequest(RestClient restClient, IRestRequest request, bool authenticate = false)
     {
+        if (authenticate)
+        {
+            // TODO: Implement validation for the LastTimeUpdate AccessToken and initiate a refresh if necessary before making the request.
+            // This ensures that the AccessToken remains valid and up-to-date for successful authorization.
+            request.AddOrUpdateHeader("Authorization", $"{_tradeStationAccessToken.TokenType} {_tradeStationAccessToken.AccessToken}");
+        }
+
         var response = restClient.Execute(request);
 
         if (response.StatusCode != HttpStatusCode.OK)
