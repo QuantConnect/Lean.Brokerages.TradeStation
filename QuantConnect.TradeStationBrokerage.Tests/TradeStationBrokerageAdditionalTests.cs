@@ -13,20 +13,49 @@
  * limitations under the License.
 */
 
+using System;
+using System.Linq;
 using NUnit.Framework;
 using QuantConnect.Util;
 using QuantConnect.Interfaces;
+using QuantConnect.Configuration;
+using QuantConnect.Brokerages.TradeStation.Api;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests
 {
     [TestFixture]
     public class TradeStationBrokerageAdditionalTests
     {
+        private TradeStationApiClient _tradeStationApiClient;
+
+        [OneTimeSetUp]
+        public void OneTimeSetUp()
+        {
+            var apiKey = Config.Get("trade-station-api-key");
+            var apiSecret = Config.Get("trade-station-api-secret");
+            var apiUrl = Config.Get("trade-station-api-url");
+
+            if (new string []{ apiKey, apiSecret, apiUrl }.Any(string.IsNullOrEmpty))
+            {
+                throw new ArgumentException("API key, secret, and URL cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
+            }
+
+            _tradeStationApiClient = new TradeStationApiClient(apiKey, apiSecret, "ncr6VMJfs_zY9vFv", apiUrl);
+        }
+
         [Test]
         public void ParameterlessConstructorComposerUsage()
         {
-            var brokerage = Composer.Instance.GetExportedValueByTypeName<IDataQueueHandler>("TemplateBrokerage");
+            var brokerage = Composer.Instance.GetExportedValueByTypeName<IDataQueueHandler>("TradeStationBrokerage");
             Assert.IsNotNull(brokerage);
+        }
+
+        [Test]
+        public void GetSignInUrl()
+        {
+            var signInUrl = _tradeStationApiClient.GetSignInUrl();
+            Assert.IsNotNull(signInUrl);
+            Assert.IsNotEmpty(signInUrl);
         }
     }
 }
