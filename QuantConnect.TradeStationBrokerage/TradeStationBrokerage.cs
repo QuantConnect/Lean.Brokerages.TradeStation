@@ -18,15 +18,22 @@ using QuantConnect.Data;
 using QuantConnect.Util;
 using QuantConnect.Orders;
 using QuantConnect.Packets;
+using System.Globalization;
+using QuantConnect.Logging;
 using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using System.Collections.Generic;
+using QuantConnect.Brokerages.TradeStation.Api;
+using QuantConnect.Brokerages.TradeStation.Models.Enums;
 
 namespace QuantConnect.Brokerages.TradeStation;
 
 [BrokerageFactory(typeof(TradeStationBrokerageFactory))]
 public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUniverseProvider
 {
+    /// <inheritdoc cref="TradeStationApiClient" />
+    private readonly TradeStationApiClient _tradeStationApiClient;
+
     private readonly IDataAggregator _aggregator;
     private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
 
@@ -36,20 +43,36 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     public override bool IsConnected { get; }
 
     /// <summary>
-    /// Parameterless constructor for brokerage
+    /// Constructor for the TradeStation brokerage.
     /// </summary>
-    /// <remarks>This parameterless constructor is required for brokerages implementing <see cref="IDataQueueHandler"/></remarks>
-    public TradeStationBrokerage()
-        : this(Composer.Instance.GetPart<IDataAggregator>())
+    /// <remarks>
+    /// This constructor initializes a new instance of the TradeStationBrokerage class with the provided parameters.
+    /// </remarks>
+    /// <param name="apiKey">The API key for authentication.</param>
+    /// <param name="apiKeySecret">The API key secret for authentication.</param>
+    /// <param name="restApiUrl">The URL of the REST API.</param>
+    /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL.</param>
+    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string authorizationCodeFromUrl)
+        : this(apiKey, apiKeySecret, restApiUrl, authorizationCodeFromUrl, Composer.Instance.GetPart<IDataAggregator>())
     {
     }
 
     /// <summary>
-    /// Creates a new instance
+    /// Constructor for the TradeStation brokerage.
     /// </summary>
-    /// <param name="aggregator">consolidate ticks</param>
-    public TradeStationBrokerage(IDataAggregator aggregator) : base("TemplateBrokerage")
+    /// <remarks>
+    /// This constructor initializes a new instance of the TradeStationBrokerage class with the provided parameters.
+    /// </remarks>
+    /// <param name="apiKey">The API key for authentication.</param>
+    /// <param name="apiKeySecret">The API key secret for authentication.</param>
+    /// <param name="restApiUrl">The URL of the REST API.</param>
+    /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL.</param>
+    /// <param name="aggregator">An instance of the data aggregator used for consolidate ticks.</param>
+    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string authorizationCodeFromUrl, IDataAggregator aggregator) 
+        : base("TemplateBrokerage")
     {
+        _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl, authorizationCodeFromUrl);
+
         _aggregator = aggregator;
         _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
         _subscriptionManager.SubscribeImpl += (s, t) => Subscribe(s);
@@ -134,7 +157,25 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     /// <returns>The current cash balance for each currency available for trading</returns>
     public override List<CashAmount> GetCashBalance()
     {
-        throw new NotImplementedException();
+        var balances = _tradeStationApiClient.GetAllAccountBalances();
+
+        foreach (var balanceError in balances.Errors)
+        {
+            Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(GetCashBalance)}: Error encountered in Account ID: {balanceError.AccountID}. Type: {balanceError.ErrorType}. Message: {balanceError.Message}");
+        }
+
+        var cashBalance = new List<CashAmount>();
+        foreach (var balance in balances.Balances)
+        {
+            if (balance.AccountType != TradeStationAccountType.Margin)
+            {
+                continue;
+            }
+
+            cashBalance.Add(new CashAmount(decimal.Parse(balance.CashBalance, CultureInfo.InvariantCulture), Currencies.USD));
+        }
+
+        return cashBalance;
     }
 
     /// <summary>
