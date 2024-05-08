@@ -69,6 +69,16 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         }
 
         [Test]
+        public void GetTradeStationPositions()
+        {
+            var tradeStationApiClient = CreateTradeStationApiClient(true);
+            var accountBalances = tradeStationApiClient.GetAllAccountPositions();
+
+            Assert.IsNotNull(accountBalances);
+            Assert.Greater(accountBalances.Positions.Count(), 0);
+        }
+
+        [Test]
         public void GetSignInUrl()
         {
             var tradeStationApiClient = CreateTradeStationApiClient(false);
@@ -76,7 +86,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var signInUrl = tradeStationApiClient.GetSignInUrl();
             Assert.IsNotNull(signInUrl);
             Assert.IsNotEmpty(signInUrl);
-            Log.Trace($"{nameof(TradeStationBrokerageAdditionalTests)}.{nameof(GetSignInUrl)}: SignInUrl: {signInUrl}");
+            Log.Trace($"{ nameof(TradeStationBrokerageAdditionalTests)}.{nameof(GetSignInUrl)}: SignInUrl: {signInUrl}");
         }
 
         private TradeStationApiClient CreateTradeStationApiClient(bool withAuthorizationCodeFromUr = true)

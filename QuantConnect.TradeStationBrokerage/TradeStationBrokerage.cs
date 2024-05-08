@@ -148,7 +148,37 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     /// <returns>The current holdings from the account</returns>
     public override List<Holding> GetAccountHoldings()
     {
-        throw new NotImplementedException();
+        var positions = _tradeStationApiClient.GetAllAccountPositions();
+
+        foreach (var positionError in positions.Errors)
+        {
+            Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(GetAccountHoldings)}: Error encountered in Account ID: {positionError.AccountID}. Type: {positionError.Error}. Message: {positionError.Message}");
+        }
+
+        var holdings = new List<Holding>();
+        foreach (var position in positions.Positions)
+        {
+            if (position.AssetType != TradeStationAssetType.Future)
+            {
+                continue;
+            }
+
+            holdings.Add(new Holding()
+            {
+                AveragePrice = position.AveragePrice,
+                ConversionRate = position.ConversionRate,
+                CurrencySymbol = Currencies.USD,
+                MarketValue = position.MarketValue,
+                MarketPrice = position.Last,
+                Quantity = position.Quantity,
+                // TODO: Implement SymbolMapper.GetLean()
+                Symbol = position.Symbol,
+                UnrealizedPnL = position.UnrealizedProfitLoss,
+                UnrealizedPnLPercent = position.UnrealizedProfitLossPercent
+            });
+        }
+
+        return holdings;
     }
 
     /// <summary>
@@ -161,7 +191,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
 
         foreach (var balanceError in balances.Errors)
         {
-            Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(GetCashBalance)}: Error encountered in Account ID: {balanceError.AccountID}. Type: {balanceError.ErrorType}. Message: {balanceError.Message}");
+            Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(GetCashBalance)}: Error encountered in Account ID: {balanceError.AccountID}. Type: {balanceError.Error}. Message: {balanceError.Message}");
         }
 
         var cashBalance = new List<CashAmount>();

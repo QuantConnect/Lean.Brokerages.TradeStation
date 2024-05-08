@@ -107,6 +107,33 @@ public class TradeStationApiClient
     }
 
     /// <summary>
+    /// Retrieves position for all available brokerage accounts for the current user.
+    /// </summary>
+    /// <returns>A TradeStationPosition object representing the combined brokerage position for all available accounts.</returns>
+    public TradeStationPosition GetAllAccountPositions()
+    {
+        var accounts = GetAccounts().ToList(x => x.AccountID);
+        return GetPositions(accounts);
+    }
+
+    /// <summary>
+    /// Fetches positions for the given Accounts. Request valid for Cash, Margin, Futures, and DVP account types.
+    /// </summary>
+    /// <param name="accounts">
+    /// List of valid Account IDs for the authenticated user in comma separated format; for example "61999124,68910124".
+    /// 1 to 25 Account IDs can be specified, comma separated. Recommended batch size is 10.
+    /// </param>
+    /// <returns></returns>
+    private TradeStationPosition GetPositions(List<string> accounts)
+    {
+        var request = new RestRequest($"/brokerage/accounts/{string.Join(',', accounts)}/positions", Method.GET);
+
+        var response = ExecuteRequest(_restClient, request, true);
+
+        return JsonConvert.DeserializeObject<TradeStationPosition>(response.Content);
+    }
+
+    /// <summary>
     /// Fetches the list of Brokerage Accounts available for the current user.
     /// </summary>
     /// <returns>
