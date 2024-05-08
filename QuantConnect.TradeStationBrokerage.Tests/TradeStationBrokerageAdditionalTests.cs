@@ -15,12 +15,14 @@
 
 using System;
 using System.Linq;
+using Newtonsoft.Json;
 using NUnit.Framework;
 using QuantConnect.Util;
 using QuantConnect.Logging;
 using QuantConnect.Interfaces;
 using QuantConnect.Configuration;
 using QuantConnect.Brokerages.TradeStation.Api;
+using QuantConnect.Brokerages.TradeStation.Models;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests
 {
@@ -32,6 +34,27 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             var brokerage = Composer.Instance.GetExportedValueByTypeName<IDataQueueHandler>("TradeStationBrokerage");
             Assert.IsNotNull(brokerage);
+        }
+
+        [Test]
+        public void DeserializeBalancesErrorResponse()
+        {
+            string jsonResponse = @"{
+                ""Balances"": [ ],
+                ""Errors"": [ 
+                    { ""AccountID"": ""123456782C"",
+                      ""Error"": ""Forbidden"",
+                      ""Message"": ""Request not supported for account type.""
+                    }
+             ]}";
+
+            var res = JsonConvert.DeserializeObject<TradeStationBalance>(jsonResponse);
+
+            Assert.IsNotNull(res);
+            Assert.Greater(res.Errors.Count(), 0);
+            Assert.That(res.Errors.First().AccountID, Is.EqualTo("123456782C"));
+            Assert.That(res.Errors.First().Error, Is.EqualTo("Forbidden"));
+            Assert.That(res.Errors.First().Message, Is.EqualTo("Request not supported for account type."));
         }
 
         [Test]

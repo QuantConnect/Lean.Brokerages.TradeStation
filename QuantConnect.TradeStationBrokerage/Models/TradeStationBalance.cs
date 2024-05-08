@@ -33,7 +33,7 @@ public readonly struct TradeStationBalance
     /// <summary>
     /// Gets the errors occurred during the retrieval.
     /// </summary>
-    public IEnumerable<Error> Errors { get; }
+    public IEnumerable<TradeStationError> Errors { get; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TradeStationBalance"/> struct.
@@ -41,7 +41,7 @@ public readonly struct TradeStationBalance
     /// <param name="balances">The balances information.</param>
     /// <param name="errors">The errors occurred during the retrieval.</param>
     [JsonConstructor]
-    public TradeStationBalance(IEnumerable<Balance> balances, IEnumerable<Error> errors)
+    public TradeStationBalance(IEnumerable<Balance> balances, IEnumerable<TradeStationError> errors)
     {
         Balances = balances;
         Errors = errors;
@@ -304,40 +304,5 @@ public readonly struct BalanceDetail
         TradeEquity = tradeEquity;
         SecurityOnDeposit = securityOnDeposit;
         TodayRealTimeTradeEquity = todayRealTimeTradeEquity;
-    }
-}
-
-/// <summary>
-/// Represents an error that occurred during the retrieval of trading account information.
-/// </summary>
-public readonly struct Error
-{
-    /// <summary>
-    /// The AccountID of the error, may contain multiple Account IDs in comma separated format.
-    /// </summary>
-    public string AccountID { get; }
-
-    /// <summary>
-    /// The Error.
-    /// </summary>
-    public string ErrorType { get; }
-
-    /// <summary>
-    /// The error message.
-    /// </summary>
-    public string Message { get; }
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="Error"/> struct.
-    /// </summary>
-    /// <param name="accountID">The ID of the account associated with the error.</param>
-    /// <param name="errorType">The type of the error.</param>
-    /// <param name="message">The error message.</param>
-    [JsonConstructor]
-    public Error(string accountID, string errorType, string message)
-    {
-        AccountID = accountID;
-        ErrorType = errorType;
-        Message = message;
     }
 }
