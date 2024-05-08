@@ -18,6 +18,7 @@ using RestSharp;
 using System.Net;
 using Newtonsoft.Json;
 using System.Diagnostics;
+using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
 using QuantConnect.Brokerages.TradeStation.Models;
 
@@ -129,20 +130,35 @@ public class TradeStationApiClient
     /// <summary>
     /// Refreshes the authentication token using the refresh token from TradeStation API.
     /// </summary>
+    /// <param name="refreshToken">The refresh token obtained from TradeStation API.</param>
     /// <returns>The refreshed authentication token containing access, refresh, and ID tokens along with expiration time.</returns>
-    private TradeStationAccessToken RefreshAccessToken()
+    private TradeStationAccessToken RefreshAccessToken(string refreshToken)
     {
+        if (string.IsNullOrEmpty(refreshToken))
+    {
+            throw new ArgumentException($"{nameof(TradeStationApiClient)}.{nameof(RefreshAccessToken)}:" +
+                $"The refresh token provided is null or empty. Please ensure a valid refresh token is provided.");
+        }
+
         var request = GenerateSignInRequest();
 
         request.AddParameter("application/x-www-form-urlencoded",
             $"grant_type=refresh_token" +
             $"&client_id={_apiKey}" +
             $"&client_secret={_apiKeySecret}" +
-            $"&refresh_token={_tradeStationAccessToken.RefreshToken}", ParameterType.RequestBody);
+            $"&refresh_token={refreshToken}", ParameterType.RequestBody);
 
         var response = ExecuteRequest(_restClientAuthentication, request);
 
-        return JsonConvert.DeserializeObject<TradeStationAccessToken>(response.Content);
+        var jsonResponse = JObject.Parse(response.Content);
+
+        return new TradeStationAccessToken(
+            jsonResponse["access_token"].Value<string>(),
+            refreshToken,
+            jsonResponse["id_token"].Value<string>(),
+            jsonResponse["scope"].Value<string>(),
+            jsonResponse["expires_in"].Value<int>(),
+            jsonResponse["token_type"].Value<string>());
     }
 
     /// <summary>
