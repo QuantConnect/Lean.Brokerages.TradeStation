@@ -60,7 +60,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         [Test]
         public void GetTradeStationAccountsBalance()
         {
-            var tradeStationApiClient = CreateTradeStationApiClient(true);
+            var tradeStationApiClient = CreateTradeStationApiClient();
 
             var accountBalances = tradeStationApiClient.GetAllAccountBalances();
 
@@ -71,7 +71,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         [Test]
         public void GetTradeStationPositions()
         {
-            var tradeStationApiClient = CreateTradeStationApiClient(true);
+            var tradeStationApiClient = CreateTradeStationApiClient();
             var accountBalances = tradeStationApiClient.GetAllAccountPositions();
 
             Assert.IsNotNull(accountBalances);
@@ -81,38 +81,31 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         [Test]
         public void GetSignInUrl()
         {
-            var tradeStationApiClient = CreateTradeStationApiClient(false);
-
-            var signInUrl = tradeStationApiClient.GetSignInUrl();
-            Assert.IsNotNull(signInUrl);
-            Assert.IsNotEmpty(signInUrl);
-            Log.Trace($"{ nameof(TradeStationBrokerageAdditionalTests)}.{nameof(GetSignInUrl)}: SignInUrl: {signInUrl}");
-        }
-
-        private TradeStationApiClient CreateTradeStationApiClient(bool withAuthorizationCodeFromUr = true)
-        {
             var apiKey = Config.Get("trade-station-api-key");
             var apiSecret = Config.Get("trade-station-api-secret");
             var apiUrl = Config.Get("trade-station-api-url");
 
-            if (new string[] { apiKey, apiSecret, apiUrl }.Any(string.IsNullOrEmpty))
+            var tradeStationApiClient = new TradeStationApiClient(apiKey, apiSecret, apiUrl);
+
+            var signInUrl = tradeStationApiClient.GetSignInUrl();
+            Assert.IsNotNull(signInUrl);
+            Assert.IsNotEmpty(signInUrl);
+            Log.Trace($"{nameof(TradeStationBrokerageAdditionalTests)}.{nameof(GetSignInUrl)}: SignInUrl: {signInUrl}");
+        }
+
+        private TradeStationApiClient CreateTradeStationApiClient()
+        {
+            var apiKey = Config.Get("trade-station-api-key");
+            var apiSecret = Config.Get("trade-station-api-secret");
+            var apiUrl = Config.Get("trade-station-api-url");
+            var authorizationCodeFromUrl = Config.Get("trade-station-code-from-url");
+
+            if (new string[] { apiKey, apiSecret, apiUrl, authorizationCodeFromUrl }.Any(string.IsNullOrEmpty))
             {
                 throw new ArgumentException("API key, secret, and URL cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
             }
 
-            if (withAuthorizationCodeFromUr)
-            {
-                var authorizationCodeFromUrl = Config.Get("trade-station-code-from-url");
-
-                if (string.IsNullOrEmpty(authorizationCodeFromUrl))
-                {
-                    throw new ArgumentException("The authorization code from url cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
-                }
-
-                return new TradeStationApiClient(apiKey, apiSecret, apiUrl, authorizationCodeFromUrl);
-            }
-
-            return new TradeStationApiClient(apiKey, apiSecret, apiUrl);
+            return new TradeStationApiClient(apiKey, apiSecret, apiUrl, authorizationCodeFromUrl);
         }
     }
 }
