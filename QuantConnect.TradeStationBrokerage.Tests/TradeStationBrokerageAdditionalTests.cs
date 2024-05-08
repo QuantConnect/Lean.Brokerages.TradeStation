@@ -35,14 +35,14 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         }
 
         [Test]
-        public void GetTradeStationAccounts()
+        public void GetTradeStationAccountsBalance()
         {
             var tradeStationApiClient = CreateTradeStationApiClient(true);
 
-            var result = tradeStationApiClient.GetAccounts();
+            var accountBalances = tradeStationApiClient.GetAllAccountBalances();
 
-            Assert.IsNotNull(result);
-            Assert.Greater(result.Count(), 0);
+            Assert.Greater(accountBalances.Balances.Count(), 0);
+            Assert.That(accountBalances.Errors.Count(), Is.EqualTo(0));
         }
 
         [Test]

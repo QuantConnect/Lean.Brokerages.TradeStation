@@ -16,7 +16,9 @@
 using System;
 using RestSharp;
 using System.Net;
+using System.Linq;
 using Newtonsoft.Json;
+using QuantConnect.Util;
 using System.Diagnostics;
 using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
@@ -93,18 +95,49 @@ public class TradeStationApiClient
     }
 
     /// <summary>
+    /// Retrieves balances for all available brokerage accounts for the current user.
+    /// </summary>
+    /// <returns>
+    /// A TradeStationBalance object representing the combined brokerage account balances for all available accounts.
+    /// </returns>
+    public TradeStationBalance GetAllAccountBalances()
+    {
+        var accounts = GetAccounts().ToList(x => x.AccountID);
+        return GetBalances(accounts);
+    }
+
+    /// <summary>
     /// Fetches the list of Brokerage Accounts available for the current user.
     /// </summary>
     /// <returns>
     /// An IEnumerable collection of Account objects representing the Brokerage Accounts available for the current user.
     /// </returns>
-    public IEnumerable<Account> GetAccounts()
+    private IEnumerable<Account> GetAccounts()
     {
         var request = new RestRequest("/brokerage/accounts", Method.GET);
 
         var response = ExecuteRequest(_restClient, request, true);
 
         return JsonConvert.DeserializeObject<TradeStationAccount>(response.Content).Accounts;
+    }
+
+    /// <summary>
+    /// Fetches the brokerage account Balances for one or more given accounts. Request valid for Cash, Margin, Futures, and DVP account types.
+    /// </summary>
+    /// <param name="accounts">
+    /// List of valid Account IDs for the authenticated user in comma separated format; for example "61999124,68910124".
+    /// 1 to 25 Account IDs can be specified, comma separated. Recommended batch size is 10.
+    /// </param>
+    /// <returns>
+    /// A TradeStationBalance object representing the brokerage account balances for the specified accounts.
+    /// </returns>
+    private TradeStationBalance GetBalances(List<string> accounts)
+    {
+        var request = new RestRequest($"/brokerage/accounts/{string.Join(',', accounts)}/balances", Method.GET);
+
+        var response = ExecuteRequest(_restClient, request, true);
+
+        return JsonConvert.DeserializeObject<TradeStationBalance>(response.Content);
     }
 
     /// <summary>
