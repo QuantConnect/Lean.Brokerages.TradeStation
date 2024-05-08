@@ -22,6 +22,7 @@ using QuantConnect.Util;
 using System.Diagnostics;
 using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
+using QuantConnect.Configuration;
 using QuantConnect.Brokerages.TradeStation.Models;
 
 namespace QuantConnect.Brokerages.TradeStation.Api;
@@ -76,18 +77,23 @@ public class TradeStationApiClient
     /// <param name="apiKeySecret">The secret associated with the client application’s API Key for authentication.</param>
     /// <param name="restApiUrl">The URL of the REST API.</param>
     /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL during OAuth authentication.</param>
+    /// <param name="signInUri">The URI of the sign-in page for TradeStation authentication. Default is "https://signin.tradestation.com".</param>
     /// <param name="redirectUri">The URI to which the user will be redirected after authentication.</param>
+    /// <param name="useProxy">Boolean value indicating whether to use a proxy for API requests. Default is false.</param>
     public TradeStationApiClient(string apiKey, string apiKeySecret, string restApiUrl,
-        string authorizationCodeFromUrl = "", string signInUri = "https://signin.tradestation.com", string redirectUri = "http://localhost")
+        string authorizationCodeFromUrl = "", string signInUri = "https://signin.tradestation.com", string redirectUri = "http://localhost",
+        bool useProxy = false)
     {
         _apiKey = apiKey;
         _apiKeySecret = apiKeySecret;
         _authorizationCodeFromUrl = authorizationCodeFromUrl;
         _redirectUri = redirectUri;
         _restClient = new RestClient(restApiUrl);
-        _restClient.Proxy = GetProxy();
         _restClientAuthentication = new RestClient(signInUri);
-        _restClientAuthentication.Proxy = GetProxy();
+        if (useProxy)
+        {
+            UseProxy(_restClient, _restClientAuthentication);
+        }
         if (!string.IsNullOrEmpty(authorizationCodeFromUrl))
         {
             _tradeStationAccessToken = GetAuthenticateToken();
@@ -280,10 +286,26 @@ public class TradeStationApiClient
         return response;
     }
 
-    private IWebProxy GetProxy()
+    /// <summary>
+    /// Configures the specified RestClient instances to use a proxy with the provided proxy address, username, and password.
+    /// </summary>
+    /// <param name="restClients">The RestClient instances to configure with the proxy settings.</param>
+    /// <exception cref="ArgumentException">Thrown when proxy address, username, or password is empty or null. Indicates that these values must be correctly set in the configuration file.</exception>
+    private void UseProxy(params RestClient[] restClients)
     {
-        var proxy = new WebProxy("http://185.199.213.13:56480");
-        proxy.Credentials = new NetworkCredential("UIPSO9MD", "0FFHAKE5");
-        return proxy;
+        var proxyAddress = Config.Get("trade-station-proxy-address-port");
+        var proxyUsername = Config.Get("trade-station-proxy-username");
+        var proxyPassword = Config.Get("trade-station-proxy-password");
+
+        if (new string[] { proxyAddress, proxyUsername, proxyPassword }.Any(string.IsNullOrEmpty))
+        {
+            throw new ArgumentException("Proxy Address, Proxy Username, and Proxy Password cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
+        }
+
+        var webProxy = new WebProxy(proxyAddress) { Credentials = new NetworkCredential(proxyUsername, proxyPassword) };
+        foreach (var client in restClients)
+    {
+            client.Proxy = webProxy;
+        }
     }
 }
