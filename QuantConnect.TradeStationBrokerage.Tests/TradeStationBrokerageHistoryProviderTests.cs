@@ -60,7 +60,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             TestDelegate test = () =>
             {
-                var brokerage = new TradeStationBrokerage(null);
+                var brokerage = new TradeStationBrokerage("", "", "", "", null);
 
                 var historyProvider = new BrokerageHistoryProvider();
                 historyProvider.SetBrokerage(brokerage);
