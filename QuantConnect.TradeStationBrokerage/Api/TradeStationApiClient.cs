@@ -21,6 +21,7 @@ using Newtonsoft.Json;
 using QuantConnect.Util;
 using System.Diagnostics;
 using Newtonsoft.Json.Linq;
+using QuantConnect.Logging;
 using System.Collections.Generic;
 using QuantConnect.Configuration;
 using QuantConnect.Brokerages.TradeStation.Models;
@@ -137,6 +138,28 @@ public class TradeStationApiClient
     {
         var accounts = GetAccounts().ToList(x => x.AccountID);
         return GetOrders(accounts);
+    }
+
+    /// <summary>
+    /// Cancels an active order. Request valid for all account types.
+    /// </summary>
+    /// <param name="orderID">
+    /// Order ID to cancel. Equity, option or future orderIDs should not include dashes (E.g. 1-2345-6789).
+    /// Valid format orderId=123456789
+    /// </param>
+    public bool CancelOrder(string orderID)
+    {
+        try
+        {
+            var request = new RestRequest($"/v3/orderexecution/orders/{orderID}", Method.DELETE);
+            var response = ExecuteRequest(_restClient, request, true);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex);
+            return false;
+        }
     }
 
     /// <summary>

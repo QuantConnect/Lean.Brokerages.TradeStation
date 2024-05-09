@@ -278,7 +278,8 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     /// <returns>True if the request was made for the order to be canceled, false otherwise</returns>
     public override bool CancelOrder(Order order)
     {
-        throw new NotImplementedException();
+        var orderID = order.BrokerId.Single();
+        return _tradeStationApiClient.CancelOrder(orderID);
     }
 
     /// <summary>
