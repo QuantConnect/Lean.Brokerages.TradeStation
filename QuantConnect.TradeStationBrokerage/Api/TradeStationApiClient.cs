@@ -151,7 +151,7 @@ public class TradeStationApiClient
     /// </returns>
     private TradeStationOrder GetOrders(List<string> accounts)
     {
-        var request = new RestRequest($"/brokerage/accounts/{string.Join(',', accounts)}/orders", Method.GET);
+        var request = new RestRequest($"/v3/brokerage/accounts/{string.Join(',', accounts)}/orders", Method.GET);
 
         var response = ExecuteRequest(_restClient, request, true);
 
@@ -168,7 +168,7 @@ public class TradeStationApiClient
     /// <returns></returns>
     private TradeStationPosition GetPositions(List<string> accounts)
     {
-        var request = new RestRequest($"/brokerage/accounts/{string.Join(',', accounts)}/positions", Method.GET);
+        var request = new RestRequest($"/v3/brokerage/accounts/{string.Join(',', accounts)}/positions", Method.GET);
 
         var response = ExecuteRequest(_restClient, request, true);
 
@@ -183,7 +183,7 @@ public class TradeStationApiClient
     /// </returns>
     private IEnumerable<Account> GetAccounts()
     {
-        var request = new RestRequest("/brokerage/accounts", Method.GET);
+        var request = new RestRequest("/v3/brokerage/accounts", Method.GET);
 
         var response = ExecuteRequest(_restClient, request, true);
 
@@ -202,7 +202,7 @@ public class TradeStationApiClient
     /// </returns>
     private TradeStationBalance GetBalances(List<string> accounts)
     {
-        var request = new RestRequest($"/brokerage/accounts/{string.Join(',', accounts)}/balances", Method.GET);
+        var request = new RestRequest($"/v3/brokerage/accounts/{string.Join(',', accounts)}/balances", Method.GET);
 
         var response = ExecuteRequest(_restClient, request, true);
 
