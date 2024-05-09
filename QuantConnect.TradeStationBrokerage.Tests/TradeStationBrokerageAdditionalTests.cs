@@ -23,6 +23,7 @@ using QuantConnect.Interfaces;
 using QuantConnect.Configuration;
 using QuantConnect.Brokerages.TradeStation.Api;
 using QuantConnect.Brokerages.TradeStation.Models;
+using QuantConnect.Brokerages.TradeStation.Models.Enums;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests
 {
@@ -79,6 +80,22 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         }
 
         [Test]
+        public void GetOrders()
+        {
+            var tradeStationApiClient = CreateTradeStationApiClient();
+
+            var orders = tradeStationApiClient.GetAllAccountOrders();
+
+            Assert.IsNotNull(orders);
+
+            var order = orders.Orders.First();
+
+            Assert.IsInstanceOf<TradeStationOrderStatusType>(order.Status);
+            Assert.IsInstanceOf<TradeStationOrderType>(order.OrderType);
+            Assert.That(order.OpenedDateTime, Is.Not.EqualTo(default(DateTime)));
+        }
+
+        [Test]
         public void GetSignInUrl()
         {
             var apiKey = Config.Get("trade-station-api-key");
@@ -105,7 +122,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 throw new ArgumentException("API key, secret, and URL cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
             }
 
-            return new TradeStationApiClient(apiKey, apiSecret, apiUrl, authorizationCodeFromUrl);
+            return new TradeStationApiClient(apiKey, apiSecret, apiUrl, authorizationCodeFromUrl, useProxy: true);
         }
     }
 }
