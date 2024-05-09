@@ -24,7 +24,8 @@ public enum TradeStationOrderStatusType
 {
     #region Open
     /// <summary>
-    /// Received
+    /// Received - The TradeStation Order Execution Network has routed the order to the appropriate market participant 
+    /// (such as an ECN, Market Maker, or NYSE Specialist) and confirmation has been received.
     /// </summary>
     [EnumMember(Value = "ACK")]
     Ack,
@@ -48,7 +49,7 @@ public enum TradeStationOrderStatusType
     Brf,
 
     /// <summary>
-    /// Broken
+    /// Broken - Executed trade was manually broken by TradeStation.
     /// </summary>
     [EnumMember(Value = "BRO")]
     Bro,
@@ -90,7 +91,8 @@ public enum TradeStationOrderStatusType
     Doa,
 
     /// <summary>
-    /// Queued
+    /// Queued - An order that is held on the TradeStation Order Execution Network and 
+    /// that will be placed automatically at the correct time (often the open of the next trading session).
     /// </summary>
     [EnumMember(Value = "DON")]
     Don,
@@ -195,19 +197,19 @@ public enum TradeStationOrderStatusType
     #region Canceled
 
     /// <summary>
-    /// Canceled
+    /// Canceled - Queued GTC order that has been manually cancelled by TradeStation.
     /// </summary>
     [EnumMember(Value = "CAN")]
     Can,
 
     /// <summary>
-    /// Expired
+    /// Expired - The order is no longer active because the order was not filled within the specified time duration.
     /// </summary>
     [EnumMember(Value = "EXP")]
     Exp,
 
     /// <summary>
-    /// UROut
+    /// UROut - The order is no longer active.
     /// </summary>
     [EnumMember(Value = "OUT")]
     Out,
@@ -241,7 +243,7 @@ public enum TradeStationOrderStatusType
     #region Rejected
 
     /// <summary>
-    /// Rejected
+    /// Rejected - The TradeStation Order Execution Network was unable to send the order, or the market participant was unable to accept the order.
     /// </summary>
     [EnumMember(Value = "REJ")]
     Rej,
@@ -251,7 +253,7 @@ public enum TradeStationOrderStatusType
     #region Filled
 
     /// <summary>
-    /// Filled
+    /// Filled - The market participant has filled the order in its entirety.
     /// </summary>
     [EnumMember(Value = "FLL")]
     Fll,
