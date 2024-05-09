@@ -133,7 +133,7 @@ public readonly struct Order
     /// <summary>
     /// The limit price for Limit and Stop Limit orders.
     /// </summary>
-    public string LimitPrice { get; }
+    public decimal LimitPrice { get; }
 
     /// <summary>
     /// The order ID of this order.
@@ -192,7 +192,7 @@ public readonly struct Order
     /// <summary>
     /// The stop price for StopLimit and StopMarket orders.
     /// </summary>
-    public string StopPrice { get; }
+    public decimal StopPrice { get; }
 
     /// <summary>
     /// TrailingStop offset; amount or percent.
@@ -207,9 +207,9 @@ public readonly struct Order
     [JsonConstructor]
     public Order(string accountID, string advancedOptions, DateTime closedDateTime, string commissionFee, IEnumerable<ConditionalOrder> conditionalOrders,
         string conversionRate, string currency, string duration, string filledPrice, DateTime goodTillDate, string groupName, IEnumerable<Leg> legs,
-        IEnumerable<MarketActivationRule> marketActivationRules, IEnumerable<TimeActivationRule> timeActivationRules, string limitPrice, string orderID,
+        IEnumerable<MarketActivationRule> marketActivationRules, IEnumerable<TimeActivationRule> timeActivationRules, decimal limitPrice, string orderID,
         DateTime openedDateTime, TradeStationOrderType orderType, string priceUsedForBuyingPower, string rejectReason, string routing, string showOnlyQuantity,
-        string spread, TradeStationOrderStatusType status, string statusDescription, string stopPrice, TrailingStop trailingStop, string unbundledRouteFee)
+        string spread, TradeStationOrderStatusType status, string statusDescription, decimal stopPrice, TrailingStop trailingStop, string unbundledRouteFee)
     {
         AccountID = accountID;
         AdvancedOptions = advancedOptions;
@@ -252,17 +252,17 @@ public readonly struct Leg
     /// <summary>
     /// Number of shares or contracts being purchased or sold.
     /// </summary>
-    public string QuantityOrdered { get; }
+    public decimal QuantityOrdered { get; }
 
     /// <summary>
     /// Number of shares that have been executed.
     /// </summary>
-    public string ExecQuantity { get; }
+    public decimal ExecQuantity { get; }
 
     /// <summary>
     /// In a partially filled order, this is the number of shares or contracts that were unfilled.
     /// </summary>
-    public string QuantityRemaining { get; }
+    public decimal QuantityRemaining { get; }
 
     /// <summary>
     /// Identifies whether the order is a buy or sell. Valid values are Buy, Sell, SellShort, or BuyToCover.
@@ -281,9 +281,9 @@ public readonly struct Leg
 
     /// <summary>
     /// Indicates the asset type of the order.
-    /// Enum: "UNKNOWN", "STOCK", "STOCKOPTION", "FUTURE", "FUTUREOPTION", "FOREX", "CURRENCYOPTION", "INDEX", "INDEXOPTION"
     /// </summary>
-    public string AssetType { get; }
+    [JsonConverter(typeof(StringEnumConverter))]
+    public TradeStationAssetType AssetType { get; }
 
     /// <summary>
     /// The price at which order execution occurred.
@@ -296,9 +296,10 @@ public readonly struct Leg
     public DateTime ExpirationDate { get; }
 
     /// <summary>
-    /// Present for options. Valid values are "CALL" and "PUT".
+    /// Present for options.
     /// </summary>
-    public string OptionType { get; }
+    [JsonConverter(typeof(StringEnumConverter))]
+    public TradeStationOptionType OptionType { get; }
 
     /// <summary>
     /// Present for options. The price at which the holder of an options contract can buy or sell the underlying asset.
@@ -306,8 +307,8 @@ public readonly struct Leg
     public decimal StrikePrice { get; }
 
     [JsonConstructor]
-    public Leg(string openOrClose, string quantityOrdered, string execQuantity, string quantityRemaining, string buyOrSell, string symbol, string underlying,
-        string assetType, string executionPrice, DateTime expirationDate, string optionType, decimal strikePrice)
+    public Leg(string openOrClose, decimal quantityOrdered, decimal execQuantity, decimal quantityRemaining, string buyOrSell, string symbol, string underlying,
+        TradeStationAssetType assetType, string executionPrice, DateTime expirationDate, TradeStationOptionType optionType, decimal strikePrice)
     {
         OpenOrClose = openOrClose;
         QuantityOrdered = quantityOrdered;

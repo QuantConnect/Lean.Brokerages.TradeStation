@@ -13,42 +13,20 @@
  * limitations under the License.
 */
 
+
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using System.Runtime.Serialization;
 
 namespace QuantConnect.Brokerages.TradeStation.Models.Enums;
 
-/// <summary>
-/// Indicates the asset type of the position.
-/// </summary>
 [JsonConverter(typeof(StringEnumConverter))]
-public enum TradeStationAssetType
+public enum TradeStationOptionType
 {
-    [EnumMember(Value = "UNKNOWN")]
-    Unknown = 0,
+    [EnumMember(Value = "CALL")]
+    Call = 0,
 
-    [EnumMember(Value = "STOCK")]
-    Stock = 1,
+    [EnumMember(Value = "PUT")]
+    Put = 1,
 
-    [EnumMember(Value = "STOCKOPTION")]
-    StockOption = 2,
-
-    [EnumMember(Value = "FUTURE")]
-    Future = 3,
-
-    [EnumMember(Value = "FUTUREOPTION")]
-    FutureOption = 4,
-
-    [EnumMember(Value = "FOREX")]
-    Forex = 5,
-
-    [EnumMember(Value = "CURRENCYOPTION")]
-    CurrencyOption = 6,
-
-    [EnumMember(Value = "INDEX")]
-    Index = 7,
-
-    [EnumMember(Value = "INDEXOPTION")]
-    IndexOption = 8
 }
