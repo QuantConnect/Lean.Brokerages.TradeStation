@@ -14,6 +14,7 @@
 */
 
 using System;
+using System.Linq;
 using QuantConnect.Data;
 using QuantConnect.Util;
 using QuantConnect.Orders;
@@ -33,6 +34,9 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
 {
     /// <inheritdoc cref="TradeStationApiClient" />
     private readonly TradeStationApiClient _tradeStationApiClient;
+
+    /// <inheritdoc cref="TradeStationSymbolMapper" />
+    private ISymbolMapper _symbolMapper;
 
     private readonly IDataAggregator _aggregator;
     private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
@@ -72,6 +76,8 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
         : base("TemplateBrokerage")
     {
         _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl, authorizationCodeFromUrl);
+
+        _symbolMapper = new TradeStationSymbolMapper();
 
         _aggregator = aggregator;
         _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
@@ -139,7 +145,43 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     /// <returns>The open orders returned from IB</returns>
     public override List<Order> GetOpenOrders()
     {
-        throw new NotImplementedException();
+        var orders = _tradeStationApiClient.GetAllAccountOrders();
+
+        var leanOrders = new List<Order>();
+        foreach (var order in orders.Orders.Where(o => o.Status is TradeStationOrderStatusType.Ack or TradeStationOrderStatusType.Don))
+        {
+            var leg = order.Legs.First();
+            // TODO: Where may we take Market ? 
+            var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
+                leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
+
+            var leanOrder = default(Order);
+            switch (order.OrderType)
+            {
+                case TradeStationOrderType.Market:
+                    leanOrder = new MarketOrder(leanSymbol, leg.QuantityOrdered, order.OpenedDateTime);
+                    break;
+                case TradeStationOrderType.Limit:
+                    leanOrder = new LimitOrder(leanSymbol, leg.QuantityOrdered, order.LimitPrice, order.OpenedDateTime);
+                    break;
+                case TradeStationOrderType.StopMarket:
+                    leanOrder = new StopMarketOrder(leanSymbol, leg.QuantityOrdered, order.StopPrice, order.OpenedDateTime);
+                    break;
+                case TradeStationOrderType.StopLimit:
+                    leanOrder = new StopLimitOrder(leanSymbol, leg.QuantityOrdered, order.StopPrice, order.LimitPrice, order.OpenedDateTime);
+                    break;
+            }
+
+            leanOrder.Status = OrderStatus.Submitted;
+            if (leg.ExecQuantity > 0m && leg.ExecQuantity != leg.QuantityOrdered)
+            {
+                leanOrder.Status = OrderStatus.PartiallyFilled;
+    }
+
+            leanOrder.BrokerId.Add(order.OrderID);
+            leanOrders.Add(leanOrder);
+        }
+        return leanOrders;
     }
 
     /// <summary>
