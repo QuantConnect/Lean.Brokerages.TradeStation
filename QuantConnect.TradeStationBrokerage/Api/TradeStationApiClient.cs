@@ -79,6 +79,15 @@ public class TradeStationApiClient
     private TradeStationAccessToken _tradeStationAccessToken;
 
     /// <summary>
+    /// Represents a cache for TradeStation trading accounts.
+    /// </summary>
+    /// <remarks>
+    /// This cache holds instances of <see cref="Account"/> representing trading accounts
+    /// used within the TradeStation platform.
+    /// </remarks>
+    private IEnumerable<Account> _tradingAccounts;
+
+    /// <summary>
     /// Initializes a new instance of the TradeStationApiClient class with the specified API Key, API Key Secret, and REST API URL.
     /// </summary>
     /// <param name="apiKey">The API Key used by the client application to authenticate requests.</param>
@@ -206,11 +215,19 @@ public class TradeStationApiClient
     /// </returns>
     private IEnumerable<Account> GetAccounts()
     {
+        // If trading accounts are already cached, return them
+        if (_tradingAccounts != null && _tradingAccounts.Any())
+        {
+            return _tradingAccounts;
+        }
+
         var request = new RestRequest("/v3/brokerage/accounts", Method.GET);
 
         var response = ExecuteRequest(_restClient, request, true);
 
-        return JsonConvert.DeserializeObject<TradeStationAccount>(response.Content).Accounts;
+        _tradingAccounts = JsonConvert.DeserializeObject<TradeStationAccount>(response.Content).Accounts;
+
+        return _tradingAccounts;
     }
 
     /// <summary>
