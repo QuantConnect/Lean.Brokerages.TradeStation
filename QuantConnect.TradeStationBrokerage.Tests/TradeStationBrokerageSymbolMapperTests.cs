@@ -17,7 +17,7 @@ using NUnit.Framework;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests
 {
-    [TestFixture, Ignore("Not implemented")]
+    [TestFixture]
     public class TradeStationBrokerageSymbolMapperTests
     {
         [Test]
@@ -30,6 +30,15 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         public void ReturnsCorrectBrokerageSymbol()
         {
 
+        }
+
+        [TestCase("ESZ24", "ES")]
+        public void ParseTradeStationPositionSymbol(string ticker, string expectedTicker)
+        {
+            var symbol = SymbolRepresentation.ParseFutureTicker(ticker);
+
+            Assert.IsNotNull(symbol);
+            Assert.That(symbol.Underlying, Is.EqualTo(expectedTicker));
         }
     }
 }

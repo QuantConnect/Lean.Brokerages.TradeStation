@@ -205,6 +205,8 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
                 continue;
             }
 
+            var leanSymbol = _symbolMapper.GetLeanSymbol(SymbolRepresentation.ParseFutureTicker(position.Symbol).Underlying, SecurityType.Future, Market.USA, position.ExpirationDate);
+
             holdings.Add(new Holding()
             {
                 AveragePrice = position.AveragePrice,
@@ -213,8 +215,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
                 MarketValue = position.MarketValue,
                 MarketPrice = position.Last,
                 Quantity = position.Quantity,
-                // TODO: Implement SymbolMapper.GetLean()
-                Symbol = position.Symbol,
+                Symbol = leanSymbol,
                 UnrealizedPnL = position.UnrealizedProfitLoss,
                 UnrealizedPnLPercent = position.UnrealizedProfitLossPercent
             });
