@@ -62,12 +62,19 @@ public class TradeStationApiClient
     private readonly string _redirectUri;
 
     /// <summary>
-    /// Represents an instance of the RestClient class from the RestSharp library.
+    /// Represents an instance of specifically configured the RestClient for TradeStation REST API.
     /// </summary>
     private readonly RestClient _restClient;
 
+    /// <summary>
+    /// Represents an instance of specifically configured the RestClient for authentication purposes.
+    /// </summary>
     private readonly RestClient _restClientAuthentication;
 
+    /// <summary>
+    /// Represents an object storing AccessToken and TradeStationAccessToken information
+    /// for TradeStation authentication.
+    /// </summary>
     private TradeStationAccessToken _tradeStationAccessToken;
 
     /// <summary>
