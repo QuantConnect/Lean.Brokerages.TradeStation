@@ -18,6 +18,9 @@ using Newtonsoft.Json.Converters;
 
 namespace QuantConnect.Brokerages.TradeStation.Models.Enums;
 
+/// <summary>
+/// The order type of the order.
+/// </summary>
 [JsonConverter(typeof(StringEnumConverter))]
 public enum TradeStationOrderType
 {

@@ -14,7 +14,9 @@
 */
 
 using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
 using System.Collections.Generic;
+using QuantConnect.Brokerages.TradeStation.Models.Enums;
 
 namespace QuantConnect.Brokerages.TradeStation.Models;
 
@@ -63,7 +65,9 @@ public readonly struct Account
     /// <summary>
     /// Gets the type of the account.
     /// </summary>
-    public string AccountType { get; }
+    /// </summary>
+    [JsonConverter(typeof(StringEnumConverter))]
+    public TradeStationAccountType AccountType { get; }
 
     /// <summary>
     /// Gets the detailed information of the account, if available.
@@ -80,7 +84,7 @@ public readonly struct Account
     /// <param name="accountType">The type of the account.</param>
     /// <param name="accountDetail">The detailed information of the account, if available.</param>
     [JsonConstructor]
-    public Account(string accountID, string currency, string status, string accountType, AccountDetail? accountDetail)
+    public Account(string accountID, string currency, string status, TradeStationAccountType accountType, AccountDetail? accountDetail)
     {
         AccountID = accountID;
         Currency = currency;

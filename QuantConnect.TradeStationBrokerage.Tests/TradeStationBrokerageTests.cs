@@ -13,23 +13,38 @@
  * limitations under the License.
 */
 
+using System;
+using System.Linq;
 using NUnit.Framework;
 using QuantConnect.Tests;
 using QuantConnect.Interfaces;
 using QuantConnect.Securities;
+using QuantConnect.Configuration;
+using System.Collections.Generic;
 using QuantConnect.Tests.Brokerages;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests
 {
-    [TestFixture, Ignore("Not implemented")]
+    [TestFixture]
     public partial class TradeStationBrokerageTests : BrokerageTests
     {
         protected override Symbol Symbol { get; }
+
         protected override SecurityType SecurityType { get; }
 
         protected override IBrokerage CreateBrokerage(IOrderProvider orderProvider, ISecurityProvider securityProvider)
         {
-            throw new System.NotImplementedException();
+            var apiKey = Config.Get("trade-station-api-key");
+            var apiSecret = Config.Get("trade-station-api-secret");
+            var apiUrl = Config.Get("trade-station-api-url");
+            var authorizationCodeFromUrl = Config.Get("trade-station-code-from-url");
+
+            if (new string[] { apiKey, apiSecret, apiUrl, authorizationCodeFromUrl }.Any(string.IsNullOrEmpty))
+            {
+                throw new ArgumentException("API key, secret, and URL cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
+        }
+
+            return new TradeStationBrokerage(apiKey, apiSecret, apiUrl, authorizationCodeFromUrl);
         }
         protected override bool IsAsync()
         {
@@ -45,16 +60,14 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// <summary>
         /// Provides the data required to test each order type in various cases
         /// </summary>
-        private static TestCaseData[] OrderParameters()
+        private static IEnumerable<TestCaseData> OrderParameters
         {
-            return new[]
+            get
             {
-                new TestCaseData(new MarketOrderTestParameters(Symbols.BTCUSD)).SetName("MarketOrder"),
-                new TestCaseData(new LimitOrderTestParameters(Symbols.BTCUSD, 10000m, 0.01m)).SetName("LimitOrder"),
-                new TestCaseData(new StopMarketOrderTestParameters(Symbols.BTCUSD, 10000m, 0.01m)).SetName("StopMarketOrder"),
-                new TestCaseData(new StopLimitOrderTestParameters(Symbols.BTCUSD, 10000m, 0.01m)).SetName("StopLimitOrder"),
-                new TestCaseData(new LimitIfTouchedOrderTestParameters(Symbols.BTCUSD, 10000m, 0.01m)).SetName("LimitIfTouchedOrder")
-            };
+                yield return new TestCaseData(new LimitOrderTestParameters(Symbols.AAPL, 200m, 170m));
+                yield return new TestCaseData(new StopMarketOrderTestParameters(Symbols.AAPL, 200m, 170m));
+                yield return new TestCaseData(new StopLimitOrderTestParameters(Symbols.AAPL, 200m, 170m));
+            }
         }
 
         [Test, TestCaseSource(nameof(OrderParameters))]

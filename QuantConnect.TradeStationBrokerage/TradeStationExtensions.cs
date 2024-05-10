@@ -14,6 +14,8 @@
 */
 
 using System;
+using QuantConnect.Orders;
+using QuantConnect.Orders.TimeInForces;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
 
 namespace QuantConnect.Brokerages.TradeStation;
@@ -59,4 +61,52 @@ public static class TradeStationExtensions
         _ => throw new NotSupportedException($"{nameof(TradeStationBrokerage)}.{nameof(ConvertAssetTypeToSecurityType)}: " +
             $"The AssetType '{assetType}' is not supported.")
     };
+
+    /// <summary>
+    /// Converts a Lean order type to its equivalent TradeStation order type.
+    /// </summary>
+    /// <param name="orderType">The Lean order type to convert.</param>
+    /// <returns>The equivalent TradeStation order type.</returns>
+    /// <exception cref="NotSupportedException">
+    /// Thrown when the specified order type is not supported by the conversion.
+    /// </exception>
+    public static TradeStationOrderType ConvertLeanOrderTypeToTradeStation(this OrderType orderType) => orderType switch
+    {
+        OrderType.Market => TradeStationOrderType.Market,
+        OrderType.Limit => TradeStationOrderType.Limit,
+        OrderType.StopMarket => TradeStationOrderType.StopMarket,
+        OrderType.StopLimit => TradeStationOrderType.StopLimit,
+        _ => throw new NotSupportedException($"{nameof(TradeStationBrokerage)}.{nameof(ConvertLeanOrderTypeToTradeStation)}:" +
+            $" The order type '{orderType}' is not supported for conversion to TradeStation order type.")
+    };
+
+    /// <summary>
+    /// The util, transform Lean Order TimeInForce to brokerage format for orders
+    /// </summary>
+    /// <param name="leanOrderTimeInForce">Lean Order TimeInForce</param>
+    /// <returns>brokerage:(expirationType and expirationTimestamp)</returns>
+    public static (string Duration, string expiryDateTime) GetBrokerageTimeInForce(this Orders.TimeInForce leanOrderTimeInForce)
+    {
+        var duration = default(string);
+        var expiryDateTime = default(string);
+
+        switch (leanOrderTimeInForce)
+        {
+            case DayTimeInForce:
+                duration = "DAY";
+                break;
+            case GoodTilDateTimeInForce goodTilDateTime:
+                duration = "GTD";
+                expiryDateTime = goodTilDateTime.Expiry.ToIso8601Invariant();
+                break;
+            case GoodTilCanceledTimeInForce:
+                duration = "GTC";
+                break;
+        }
+
+        return (duration, expiryDateTime);
+    }
+
+
+
 }

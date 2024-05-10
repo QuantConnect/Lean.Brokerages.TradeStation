@@ -20,10 +20,12 @@ using System.Linq;
 using Newtonsoft.Json;
 using QuantConnect.Util;
 using System.Diagnostics;
+using QuantConnect.Orders;
 using Newtonsoft.Json.Linq;
 using QuantConnect.Logging;
 using System.Collections.Generic;
 using QuantConnect.Configuration;
+using Lean = QuantConnect.Orders;
 using QuantConnect.Brokerages.TradeStation.Models;
 
 namespace QuantConnect.Brokerages.TradeStation.Api;
@@ -169,6 +171,49 @@ public class TradeStationApiClient
             Log.Error(ex);
             return false;
         }
+    }
+
+    /// <summary>
+    /// Places an order in TradeStation based on the provided Lean order and symbol.
+    /// </summary>
+    /// <param name="order">The Lean order to be placed.</param>
+    /// <param name="symbol">The symbol for which the order is being placed.</param>
+    /// <returns>The response containing the result of the order placement.</returns>
+    public TradeStationPlaceOrderResponse PlaceOrder(Lean.Order order, string symbol)
+    {
+        var accountID = order.Symbol.SecurityType == SecurityType.Future
+            ? GetAccounts().First(a => a.AccountType == Models.Enums.TradeStationAccountType.Futures).AccountID
+            : GetAccounts().First(a => a.AccountType == Models.Enums.TradeStationAccountType.Margin).AccountID;
+
+        var orderType = order.Type.ConvertLeanOrderTypeToTradeStation();
+
+        var (duration, expiryDateTime) = order.TimeInForce.GetBrokerageTimeInForce();
+
+        var tradeAction = order.Direction == Lean.OrderDirection.Buy ? "BUY" : "SELL";
+
+        var tradeStationOrder = new TradeStationPlaceOrderRequest(accountID, orderType, order.AbsoluteQuantity.ToStringInvariant(), symbol,
+                    new Models.TimeInForce(duration, expiryDateTime), tradeAction);
+        switch (order)
+        {
+            case LimitOrder limitOrder:
+                tradeStationOrder.LimitPrice = limitOrder.LimitPrice.ToStringInvariant();
+                break;
+            case StopMarketOrder stopMarket:
+                tradeStationOrder.StopPrice = stopMarket.StopPrice.ToStringInvariant();
+                break;
+            case StopLimitOrder stopLimitOrder:
+                tradeStationOrder.LimitPrice = stopLimitOrder.LimitPrice.ToStringInvariant();
+                tradeStationOrder.StopPrice = stopLimitOrder.StopPrice.ToStringInvariant();
+                break;
+        }
+
+        var request = new RestRequest($"/v3/orderexecution/orders", Method.POST);
+
+        request.AddJsonBody(JsonConvert.SerializeObject(tradeStationOrder, new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore }));
+
+        var response = ExecuteRequest(_restClient, request, true);
+
+        return JsonConvert.DeserializeObject<TradeStationPlaceOrderResponse>(response.Content);
     }
 
     /// <summary>

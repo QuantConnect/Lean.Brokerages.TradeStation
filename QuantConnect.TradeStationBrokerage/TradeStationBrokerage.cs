@@ -23,6 +23,7 @@ using System.Globalization;
 using QuantConnect.Logging;
 using QuantConnect.Interfaces;
 using QuantConnect.Securities;
+using QuantConnect.Orders.Fees;
 using System.Collections.Generic;
 using QuantConnect.Brokerages.TradeStation.Api;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
@@ -152,7 +153,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
         {
             var leg = order.Legs.First();
             // TODO: Where may we take Market ? 
-            var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
+            var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
                 leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
 
             var leanOrder = default(Order);
@@ -258,7 +259,35 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     /// <returns>True if the request for a new order has been placed, false otherwise</returns>
     public override bool PlaceOrder(Order order)
     {
-        throw new NotImplementedException();
+        if (!CanSubscribe(order.Symbol))
+        {
+            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1,
+                $"Symbol is not supported {order.Symbol}"));
+            return false;
+        }
+
+        var symbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
+        var result = _tradeStationApiClient.PlaceOrder(order, symbol);
+
+        foreach (var error in result.Errors ?? Enumerable.Empty<Models.TradeStationError>())
+        {
+            OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
+            { Status = OrderStatus.Invalid, Message = error.Message });
+            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "PlaceOrderInvalid", error.Message));
+            return false;
+        }
+
+        foreach (var brokerageOrder in result.Orders)
+        {
+            order.BrokerId.Add(brokerageOrder.OrderID);
+
+            OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
+            { Status = OrderStatus.Submitted });
+
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
