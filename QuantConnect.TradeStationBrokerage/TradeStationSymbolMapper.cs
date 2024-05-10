@@ -31,10 +31,62 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// </remarks>
     public readonly HashSet<SecurityType> SupportedSecurityType = new (){ SecurityType.Equity, SecurityType.Future, SecurityType.Option, SecurityType.Future };
 
+    /// <summary>
+    /// Lookup dictionary for futures month codes and their corresponding numeric values.
+    /// </summary>
+    private static Dictionary<int, string> _futuresMonthCodeLookup = new Dictionary<int, string>
+    {
+        { 1, "F"}, // January
+        { 2, "G" }, // February
+        { 3, "H" }, // March
+        { 4, "J" }, // April
+        { 5, "K" }, // May
+        { 6, "M" }, // June
+        { 7, "N" }, // July
+        { 8 , "Q" }, // August
+        { 9 , "U" }, // September
+        { 10 , "V" }, // October
+        { 11 , "X" }, // November
+        { 12 , "Z" } // December
+    };
+
     /// <inheritdoc cref="ISymbolMapper.GetBrokerageSymbol(Symbol)"/>
     public string GetBrokerageSymbol(Symbol symbol)
     {
-        throw new NotImplementedException();
+        switch (symbol.SecurityType)
+        {
+            case SecurityType.Equity:
+                return symbol.Value;
+            case SecurityType.Option:
+                return GenerateBrokerageOption(symbol);
+            case SecurityType.Future:
+                return GenerateBrokerageFuture(symbol);
+            default:
+                throw new NotImplementedException($"{nameof(TradeStationSymbolMapper)}.{nameof(GetBrokerageSymbol)}: " +
+                    $"The security type '{symbol.SecurityType}' is not supported.");
+        }
+    }
+
+    /// <summary>
+    /// Generates a brokerage future string based on the provided symbol.
+    /// </summary>
+    /// <param name="symbol">The symbol object containing information about the future.</param>
+    /// <returns>A string representing the brokerage future.</returns>
+    /// <example>{ESZ24}</example>
+    private string GenerateBrokerageFuture(Symbol symbol)
+    {
+        return $"{symbol.ID.Symbol}{_futuresMonthCodeLookup[symbol.ID.Date.Month]}{symbol.ID.Date.ToString("yy")}";
+    }
+
+    /// <summary>
+    /// Generates a brokerage option string based on the Lean symbol.
+    /// </summary>
+    /// <param name="symbol">The symbol object containing information about the option.</param>
+    /// <returns>A string representing the brokerage option.</returns>
+    /// <example>{AAPL 240510C167.5}</example>
+    private string GenerateBrokerageOption(Symbol symbol)
+    {
+        return $"{symbol.Underlying.Value} {symbol.ID.Date.ToString("yyMMdd")}{symbol.ID.OptionRight.ToString()[0]}{symbol.ID.StrikePrice}";
     }
 
     /// <inheritdoc cref="ISymbolMapper.GetLeanSymbol(string, SecurityType, string, DateTime, decimal, OptionRight)"/>
