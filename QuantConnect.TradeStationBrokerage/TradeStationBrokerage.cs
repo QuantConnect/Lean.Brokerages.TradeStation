@@ -36,7 +36,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     private readonly TradeStationApiClient _tradeStationApiClient;
 
     /// <inheritdoc cref="TradeStationSymbolMapper" />
-    private ISymbolMapper _symbolMapper;
+    private TradeStationSymbolMapper _symbolMapper;
 
     private readonly IDataAggregator _aggregator;
     private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
@@ -327,6 +327,17 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
 
     #endregion
 
+    /// <summary>
+    /// Determines whether a symbol can be subscribed to.
+    /// </summary>
+    /// <param name="symbol">The symbol to check for subscription eligibility.</param>
+    /// <returns>
+    ///   <c>true</c> if the symbol can be subscribed to; otherwise, <c>false</c>.
+    /// </returns>
+    /// <remarks>
+    /// This method checks if the provided symbol is eligible for subscription based on certain criteria.
+    /// Symbols containing the substring "universe" or those identified as canonical are not eligible for subscription.
+    /// </remarks>
     private bool CanSubscribe(Symbol symbol)
     {
         if (symbol.Value.IndexOfInvariant("universe", true) != -1 || symbol.IsCanonical())
@@ -334,7 +345,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
             return false;
         }
 
-        throw new NotImplementedException();
+        return _symbolMapper.SupportedSecurityType.Contains(symbol.SecurityType);
     }
 
     /// <summary>

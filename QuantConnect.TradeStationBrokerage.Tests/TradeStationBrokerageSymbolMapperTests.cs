@@ -13,17 +13,37 @@
  * limitations under the License.
 */
 
+using System;
 using NUnit.Framework;
+using QuantConnect.Brokerages.TradeStation.Models;
+using QuantConnect.Brokerages.TradeStation.Models.Enums;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests
 {
     [TestFixture]
     public class TradeStationBrokerageSymbolMapperTests
     {
-        [Test]
-        public void ReturnsCorrectLeanSymbol()
-        {
+        /// <inheritdoc cref="TradeStationSymbolMapper"/>
+        private TradeStationSymbolMapper _symbolMapper;
 
+        [OneTimeSetUp]
+        public void OneTimeSetUp()
+        {
+            _symbolMapper = new TradeStationSymbolMapper();
+        }
+
+        [TestCase("AAPL", "AAPL", TradeStationAssetType.Stock, null, TradeStationOptionType.Call, 0)]
+        [TestCase("ESZ24", "ES", TradeStationAssetType.Future, "2024/12/20", TradeStationOptionType.Call, 0)]
+        [TestCase("TSLA 240510C167.5", "TSLA", TradeStationAssetType.StockOption, "2024/5/10", TradeStationOptionType.Call, 167.5)]
+        public void ReturnsCorrectLeanSymbol(string symbol, string underlying, TradeStationAssetType assetType,
+            DateTime expirationDate, TradeStationOptionType optionType, decimal strikePrice)
+        {
+            var leg = new Leg("", 0m, 0m, 0m, "", symbol, underlying, assetType, "", expirationDate, optionType, strikePrice);
+
+            var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
+                leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
+
+            Assert.IsNotNull(leanSymbol);
         }
 
         [Test]

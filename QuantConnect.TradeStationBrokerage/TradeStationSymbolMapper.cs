@@ -14,6 +14,7 @@
 */
 
 using System;
+using System.Collections.Generic;
 
 namespace QuantConnect.Brokerages.TradeStation;
 
@@ -22,6 +23,14 @@ namespace QuantConnect.Brokerages.TradeStation;
 /// </summary>
 public class TradeStationSymbolMapper : ISymbolMapper
 {
+    /// <summary>
+    /// Represents a set of supported security types.
+    /// </summary>
+    /// <remarks>
+    /// This HashSet contains the supported security types that are allowed within the system.
+    /// </remarks>
+    public readonly HashSet<SecurityType> SupportedSecurityType = new (){ SecurityType.Equity, SecurityType.Future, SecurityType.Option, SecurityType.Future };
+
     /// <inheritdoc cref="ISymbolMapper.GetBrokerageSymbol(Symbol)"/>
     public string GetBrokerageSymbol(Symbol symbol)
     {
