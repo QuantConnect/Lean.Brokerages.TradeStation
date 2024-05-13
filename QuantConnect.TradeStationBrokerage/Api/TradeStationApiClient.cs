@@ -90,6 +90,11 @@ public class TradeStationApiClient
     private IEnumerable<Account> _tradingAccounts;
 
     /// <summary>
+    /// Gets or sets the JSON serializer settings used for serialization.
+    /// </summary>
+    private JsonSerializerSettings jsonSerializerSettings = new() { NullValueHandling = NullValueHandling.Ignore };
+
+    /// <summary>
     /// Initializes a new instance of the TradeStationApiClient class with the specified API Key, API Key Secret, and REST API URL.
     /// </summary>
     /// <param name="apiKey">The API Key used by the client application to authenticate requests.</param>
@@ -209,7 +214,7 @@ public class TradeStationApiClient
 
         var request = new RestRequest($"/v3/orderexecution/orders", Method.POST);
 
-        request.AddJsonBody(JsonConvert.SerializeObject(tradeStationOrder, new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore }));
+        request.AddJsonBody(JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
 
         var response = ExecuteRequest(_restClient, request, true);
 
