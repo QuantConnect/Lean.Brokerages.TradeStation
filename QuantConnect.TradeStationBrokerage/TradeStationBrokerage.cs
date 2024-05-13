@@ -57,8 +57,9 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     /// <param name="apiKeySecret">The API key secret for authentication.</param>
     /// <param name="restApiUrl">The URL of the REST API.</param>
     /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL.</param>
-    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string authorizationCodeFromUrl)
-        : this(apiKey, apiKeySecret, restApiUrl, authorizationCodeFromUrl, Composer.Instance.GetPart<IDataAggregator>())
+    /// <param name="useProxy">Boolean value indicating whether to use a proxy for TradeStation API requests. Default is false.</param>
+    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string authorizationCodeFromUrl, bool useProxy)
+        : this(apiKey, apiKeySecret, restApiUrl, authorizationCodeFromUrl, Composer.Instance.GetPart<IDataAggregator>(), useProxy)
     {
     }
 
@@ -73,10 +74,12 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     /// <param name="restApiUrl">The URL of the REST API.</param>
     /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL.</param>
     /// <param name="aggregator">An instance of the data aggregator used for consolidate ticks.</param>
-    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string authorizationCodeFromUrl, IDataAggregator aggregator) 
+    /// <param name="useProxy">Boolean value indicating whether to use a proxy for TradeStation API requests. Default is false.</param>
+    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string authorizationCodeFromUrl, IDataAggregator aggregator,
+        bool useProxy = false)
         : base("TemplateBrokerage")
     {
-        _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl, authorizationCodeFromUrl);
+        _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl, authorizationCodeFromUrl, useProxy: useProxy);
 
         _symbolMapper = new TradeStationSymbolMapper();
 
