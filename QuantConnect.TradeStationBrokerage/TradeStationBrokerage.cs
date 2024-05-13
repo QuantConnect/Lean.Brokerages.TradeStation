@@ -77,7 +77,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     /// <param name="useProxy">Boolean value indicating whether to use a proxy for TradeStation API requests. Default is false.</param>
     public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string authorizationCodeFromUrl, IDataAggregator aggregator,
         bool useProxy = false)
-        : base("TemplateBrokerage")
+        : base("TradeStation")
     {
         _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl, authorizationCodeFromUrl, useProxy: useProxy);
 
