@@ -297,7 +297,22 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     /// <returns>True if the request was made for the order to be updated, false otherwise</returns>
     public override bool UpdateOrder(Order order)
     {
-        throw new NotImplementedException();
+        try
+        {
+            var result = _tradeStationApiClient.ReplaceOrder(order);
+
+            OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
+            {
+                Status = OrderStatus.UpdateSubmitted
+            });
+
+            return true;
+        }
+        catch (Exception exception)
+        {
+            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, "UpdateOrderInvalid", exception.Message));
+            return false;
+        }
     }
 
     /// <summary>

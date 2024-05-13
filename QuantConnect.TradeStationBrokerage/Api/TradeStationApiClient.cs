@@ -222,6 +222,51 @@ public class TradeStationApiClient
     }
 
     /// <summary>
+    /// Replaces an existing order in TradeStation with the provided Lean order.
+    /// </summary>
+    /// <param name="order">The Lean order to replace the existing order.</param>
+    /// <returns>The response containing the result of the order replacement.</returns>
+    public Models.OrderResponse ReplaceOrder(Lean.Order order)
+    {
+        var orderID = order.BrokerId.Single();
+
+        var tradeStationOrder = new TradeStationReplaceOrderRequest(order.AbsoluteQuantity.ToStringInvariant());
+        switch (order)
+        {
+            case LimitOrder limitOrder:
+                tradeStationOrder.LimitPrice = limitOrder.LimitPrice.ToStringInvariant();
+                break;
+            case StopMarketOrder stopMarket:
+                tradeStationOrder.StopPrice = stopMarket.StopPrice.ToStringInvariant();
+                break;
+            case StopLimitOrder stopLimitOrder:
+                tradeStationOrder.LimitPrice = stopLimitOrder.LimitPrice.ToStringInvariant();
+                tradeStationOrder.StopPrice = stopLimitOrder.StopPrice.ToStringInvariant();
+                break;
+        }
+
+        // Ensure that the order type can only be updated to Market Type. (e.g. Limit -> Market)
+        if (order is MarketOrder)
+        {
+            tradeStationOrder.OrderType = order.Type.ConvertLeanOrderTypeToTradeStation();
+        }
+
+        var request = new RestRequest($"/v3/orderexecution/orders/{orderID}", Method.PUT);
+        request.AddJsonBody(JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
+
+        try
+        {
+            var response = ExecuteRequest(_restClient, request, true);
+            return JsonConvert.DeserializeObject<Models.OrderResponse>(response.Content);
+        }
+        catch
+        {
+            // rethrow an exception
+            throw;
+        }
+    }
+
+    /// <summary>
     /// Retrieves orders for the authenticated user from TradeStation brokerage accounts.
     /// </summary>
     /// <param name="accounts">
