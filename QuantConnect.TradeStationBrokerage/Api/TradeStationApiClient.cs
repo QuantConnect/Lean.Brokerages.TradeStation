@@ -112,12 +112,8 @@ public class TradeStationApiClient
         _apiKeySecret = apiKeySecret;
         _authorizationCodeFromUrl = authorizationCodeFromUrl;
         _redirectUri = redirectUri;
-        _restClient = new RestClient(restApiUrl);
-        _restClientAuthentication = new RestClient(signInUri);
-        if (useProxy)
-        {
-            UseProxy(_restClient, _restClientAuthentication);
-        }
+        _restClient = new RestClient(new RestClientOptions(restApiUrl) { Proxy = useProxy ? GetProxyConfiguration() : null  } );
+        _restClientAuthentication = new RestClient(new RestClientOptions(signInUri) { Proxy = useProxy ? GetProxyConfiguration() : null });
         if (!string.IsNullOrEmpty(authorizationCodeFromUrl))
         {
             _tradeStationAccessToken = GetAuthenticateToken();
@@ -167,7 +163,7 @@ public class TradeStationApiClient
     {
         try
         {
-            var request = new RestRequest($"/v3/orderexecution/orders/{orderID}", Method.DELETE);
+            var request = new RestRequest($"/v3/orderexecution/orders/{orderID}", Method.Delete);
             var response = ExecuteRequest(_restClient, request, true);
             return true;
         }
@@ -212,7 +208,7 @@ public class TradeStationApiClient
                 break;
         }
 
-        var request = new RestRequest($"/v3/orderexecution/orders", Method.POST);
+        var request = new RestRequest($"/v3/orderexecution/orders", Method.Post);
 
         request.AddJsonBody(JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
 
@@ -251,7 +247,7 @@ public class TradeStationApiClient
             tradeStationOrder.OrderType = order.Type.ConvertLeanOrderTypeToTradeStation();
         }
 
-        var request = new RestRequest($"/v3/orderexecution/orders/{orderID}", Method.PUT);
+        var request = new RestRequest($"/v3/orderexecution/orders/{orderID}", Method.Put);
         request.AddJsonBody(JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
 
         try
@@ -278,7 +274,7 @@ public class TradeStationApiClient
     /// </returns>
     private TradeStationOrder GetOrders(List<string> accounts)
     {
-        var request = new RestRequest($"/v3/brokerage/accounts/{string.Join(',', accounts)}/orders", Method.GET);
+        var request = new RestRequest($"/v3/brokerage/accounts/{string.Join(',', accounts)}/orders", Method.Get);
 
         var response = ExecuteRequest(_restClient, request, true);
 
@@ -295,7 +291,7 @@ public class TradeStationApiClient
     /// <returns></returns>
     private TradeStationPosition GetPositions(List<string> accounts)
     {
-        var request = new RestRequest($"/v3/brokerage/accounts/{string.Join(',', accounts)}/positions", Method.GET);
+        var request = new RestRequest($"/v3/brokerage/accounts/{string.Join(',', accounts)}/positions", Method.Get);
 
         var response = ExecuteRequest(_restClient, request, true);
 
@@ -316,7 +312,7 @@ public class TradeStationApiClient
             return _tradingAccounts;
         }
 
-        var request = new RestRequest("/v3/brokerage/accounts", Method.GET);
+        var request = new RestRequest("/v3/brokerage/accounts", Method.Get);
 
         var response = ExecuteRequest(_restClient, request, true);
 
@@ -337,7 +333,7 @@ public class TradeStationApiClient
     /// </returns>
     private TradeStationBalance GetBalances(List<string> accounts)
     {
-        var request = new RestRequest($"/v3/brokerage/accounts/{string.Join(',', accounts)}/balances", Method.GET);
+        var request = new RestRequest($"/v3/brokerage/accounts/{string.Join(',', accounts)}/balances", Method.Get);
 
         var response = ExecuteRequest(_restClient, request, true);
 
@@ -424,7 +420,7 @@ public class TradeStationApiClient
     /// <returns>A <see cref="RestRequest"/> configured for signing in.</returns>
     private RestRequest GenerateSignInRequest()
     {
-        var request = new RestRequest("/oauth/token", Method.POST);
+        var request = new RestRequest("/oauth/token", Method.Post);
 
         request.AddHeader("content-type", "application/x-www-form-urlencoded");
         return request;
@@ -436,7 +432,7 @@ public class TradeStationApiClient
     /// <param name="request">The rest request to execute</param>
     /// <returns>The rest response</returns>
     [StackTraceHidden]
-    private IRestResponse ExecuteRequest(RestClient restClient, IRestRequest request, bool authenticate = false)
+    private RestResponse ExecuteRequest(RestClient restClient, RestRequest request, bool authenticate = false)
     {
         if (authenticate)
         {
@@ -460,9 +456,8 @@ public class TradeStationApiClient
     /// <summary>
     /// Configures the specified RestClient instances to use a proxy with the provided proxy address, username, and password.
     /// </summary>
-    /// <param name="restClients">The RestClient instances to configure with the proxy settings.</param>
     /// <exception cref="ArgumentException">Thrown when proxy address, username, or password is empty or null. Indicates that these values must be correctly set in the configuration file.</exception>
-    private void UseProxy(params RestClient[] restClients)
+    private WebProxy GetProxyConfiguration()
     {
         var proxyAddress = Config.Get("trade-station-proxy-address-port");
         var proxyUsername = Config.Get("trade-station-proxy-username");
@@ -473,10 +468,6 @@ public class TradeStationApiClient
             throw new ArgumentException("Proxy Address, Proxy Username, and Proxy Password cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
         }
 
-        var webProxy = new WebProxy(proxyAddress) { Credentials = new NetworkCredential(proxyUsername, proxyPassword) };
-        foreach (var client in restClients)
-    {
-            client.Proxy = webProxy;
-        }
+        return new WebProxy(proxyAddress) { Credentials = new NetworkCredential(proxyUsername, proxyPassword) };
     }
 }

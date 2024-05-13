@@ -28,5 +28,6 @@
 	<ItemGroup>
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
 		<PackageReference Include="QuantConnect.Brokerages" Version="2.5.*" />
+		<PackageReference Include="RestSharp" Version="110.2.0" />
 	</ItemGroup>
 </Project>
