@@ -39,11 +39,6 @@ static class Program
         {
             var downloader = new TemplateBrokerageDownloader();
         }
-        else if (targetAppName.Contains("updater") || targetAppName.EndsWith("spu"))
-        {
-            new ExchangeInfoUpdater(new TradeStationExchangeInfoDownloader())
-                .Run();
-        }
         else
         {
             PrintMessageAndExit(1, "ERROR: Unrecognized --app value");
