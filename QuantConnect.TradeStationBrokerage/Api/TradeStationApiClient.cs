@@ -50,12 +50,6 @@ public class TradeStationApiClient
     private readonly string _redirectUri;
 
     /// <summary>
-    /// Represents an object storing AccessToken and TradeStationAccessToken information
-    /// for TradeStation authentication.
-    /// </summary>
-    private TradeStationAccessToken _tradeStationAccessToken;
-
-    /// <summary>
     /// Represents a cache for TradeStation trading accounts.
     /// </summary>
     /// <remarks>
@@ -333,7 +327,6 @@ public class TradeStationApiClient
 
             try
             {
-
                 var responseMessage = await _httpClient.SendAsync(requestMessage);
 
                 responseMessage.EnsureSuccessStatusCode();
