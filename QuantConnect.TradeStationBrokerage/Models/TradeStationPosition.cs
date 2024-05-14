@@ -17,7 +17,6 @@ using System;
 using Newtonsoft.Json;
 using System.Collections.Generic;
 using Newtonsoft.Json.Converters;
-using QuantConnect.Brokerages.TradeStation.Converters;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
 
 namespace QuantConnect.Brokerages.TradeStation.Models;
@@ -55,7 +54,6 @@ public readonly struct TradeStationPosition
 /// <summary>
 /// Represents a position in a trading account.
 /// </summary>
-[JsonConverter(typeof(TradeStationPositionConverter))]
 public readonly struct Position
 {
     /// <summary>
