@@ -63,7 +63,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             var tradeStationApiClient = CreateTradeStationApiClient();
 
-            var accountBalances = tradeStationApiClient.GetAllAccountBalances();
+            var accountBalances = tradeStationApiClient.GetAllAccountBalances().SynchronouslyAwaitTaskResult();
 
             Assert.Greater(accountBalances.Balances.Count(), 0);
             Assert.That(accountBalances.Errors.Count(), Is.EqualTo(0));
@@ -73,18 +73,18 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         public void GetTradeStationPositions()
         {
             var tradeStationApiClient = CreateTradeStationApiClient();
-            var accountBalances = tradeStationApiClient.GetAllAccountPositions();
+            var accountBalances = tradeStationApiClient.GetAllAccountPositions().SynchronouslyAwaitTaskResult();
 
             Assert.IsNotNull(accountBalances);
             Assert.Greater(accountBalances.Positions.Count(), 0);
         }
 
         [Test]
-        public void GetOrders()
+        public async Task GetOrders()
         {
             var tradeStationApiClient = CreateTradeStationApiClient();
 
-            var orders = tradeStationApiClient.GetAllAccountOrders();
+            var orders = await tradeStationApiClient.GetAllAccountOrders();
 
             Assert.IsNotNull(orders);
 
@@ -98,6 +98,14 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         }
 
         [Test]
+        public async Task CancelOrder()
+        {
+            var tradeStationApiClient = CreateTradeStationApiClient();
+
+            var result = await tradeStationApiClient.CancelOrder("833286672");
+
+            Assert.IsNotNull(result);
+        }
         public void GetSignInUrl()
         {
             var apiKey = Config.Get("trade-station-api-key");

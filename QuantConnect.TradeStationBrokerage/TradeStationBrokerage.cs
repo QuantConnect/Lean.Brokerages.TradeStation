@@ -149,7 +149,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     /// <returns>The open orders returned from IB</returns>
     public override List<Order> GetOpenOrders()
     {
-        var orders = _tradeStationApiClient.GetAllAccountOrders();
+        var orders = _tradeStationApiClient.GetAllAccountOrders().SynchronouslyAwaitTaskResult();
 
         var leanOrders = new List<Order>();
         foreach (var order in orders.Orders.Where(o => o.Status is TradeStationOrderStatusType.Ack or TradeStationOrderStatusType.Don))
@@ -194,7 +194,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     /// <returns>The current holdings from the account</returns>
     public override List<Holding> GetAccountHoldings()
     {
-        var positions = _tradeStationApiClient.GetAllAccountPositions();
+        var positions = _tradeStationApiClient.GetAllAccountPositions().SynchronouslyAwaitTaskResult();
 
         foreach (var positionError in positions.Errors)
         {
@@ -234,7 +234,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     /// <returns>The current cash balance for each currency available for trading</returns>
     public override List<CashAmount> GetCashBalance()
     {
-        var balances = _tradeStationApiClient.GetAllAccountBalances();
+        var balances = _tradeStationApiClient.GetAllAccountBalances().SynchronouslyAwaitTaskResult();
 
         foreach (var balanceError in balances.Errors)
         {
@@ -270,7 +270,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
         }
 
         var symbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
-        var result = _tradeStationApiClient.PlaceOrder(order, symbol);
+        var result = _tradeStationApiClient.PlaceOrder(order, symbol).SynchronouslyAwaitTaskResult();
 
         foreach (var error in result.Errors ?? Enumerable.Empty<Models.TradeStationError>())
         {
@@ -302,7 +302,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     {
         try
         {
-            var result = _tradeStationApiClient.ReplaceOrder(order);
+            var result = _tradeStationApiClient.ReplaceOrder(order).SynchronouslyAwaitTaskResult();
 
             OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
             {
@@ -326,7 +326,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     public override bool CancelOrder(Order order)
     {
         var orderID = order.BrokerId.Single();
-        return _tradeStationApiClient.CancelOrder(orderID);
+        return _tradeStationApiClient.CancelOrder(orderID).SynchronouslyAwaitTaskResult();
     }
 
     /// <summary>

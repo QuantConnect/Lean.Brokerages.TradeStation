@@ -14,17 +14,18 @@
 */
 
 using System;
-using RestSharp;
+using System.IO;
 using System.Net;
 using System.Linq;
+using System.Text;
+using System.Net.Http;
 using Newtonsoft.Json;
 using QuantConnect.Util;
-using System.Diagnostics;
 using QuantConnect.Orders;
-using Newtonsoft.Json.Linq;
 using QuantConnect.Logging;
-using System.Collections.Generic;
+using System.Threading.Tasks;
 using QuantConnect.Configuration;
+using System.Collections.Generic;
 using Lean = QuantConnect.Orders;
 using QuantConnect.Brokerages.TradeStation.Models;
 
@@ -44,35 +45,9 @@ public class TradeStationApiClient
     private readonly string _apiKey;
 
     /// <summary>
-    /// Represents the secret associated with the client application’s API Key for authentication.
-    /// </summary>
-    /// <remarks>
-    /// In the documentation, this API Key is referred to as <c>client_secret</c>.
-    /// </remarks>
-    private readonly string _apiKeySecret;
-
-    /// <summary>
-    /// Represents the authorization code obtained from the URL during OAuth authentication.
-    /// </summary>
-    /// <remarks>
-    /// In the documentation, this API Key is referred to as <c>code</c>. <see cref="GetSignInUrl"/>
-    /// </remarks>
-    private readonly string _authorizationCodeFromUrl;
-
-    /// <summary>
     /// Represents the URI to which the user will be redirected after authentication.
     /// </summary>
     private readonly string _redirectUri;
-
-    /// <summary>
-    /// Represents an instance of specifically configured the RestClient for TradeStation REST API.
-    /// </summary>
-    private readonly RestClient _restClient;
-
-    /// <summary>
-    /// Represents an instance of specifically configured the RestClient for authentication purposes.
-    /// </summary>
-    private readonly RestClient _restClientAuthentication;
 
     /// <summary>
     /// Represents an object storing AccessToken and TradeStationAccessToken information
@@ -95,6 +70,16 @@ public class TradeStationApiClient
     private JsonSerializerSettings jsonSerializerSettings = new() { NullValueHandling = NullValueHandling.Ignore };
 
     /// <summary>
+    /// HttpClient is used for making HTTP requests and handling HTTP responses from web resources identified by a Uri.
+    /// </summary>
+    private readonly HttpClient _httpClient;
+
+    /// <summary>
+    /// The base URL used for constructing API endpoints.
+    /// </summary>
+    private readonly string _baseUrl;
+
+    /// <summary>
     /// Initializes a new instance of the TradeStationApiClient class with the specified API Key, API Key Secret, and REST API URL.
     /// </summary>
     /// <param name="apiKey">The API Key used by the client application to authenticate requests.</param>
@@ -109,19 +94,17 @@ public class TradeStationApiClient
         bool useProxy = false)
     {
         _apiKey = apiKey;
-        _apiKeySecret = apiKeySecret;
-        _authorizationCodeFromUrl = authorizationCodeFromUrl;
         _redirectUri = redirectUri;
-        _restClient = new RestClient(restApiUrl);
-        _restClientAuthentication = new RestClient(signInUri);
+        _baseUrl = restApiUrl;
+
+        var httpClientHandler = new HttpClientHandler();
         if (useProxy)
         {
-            UseProxy(_restClient, _restClientAuthentication);
+            httpClientHandler.Proxy = GetProxyConfiguration();
         }
-        if (!string.IsNullOrEmpty(authorizationCodeFromUrl))
-        {
-            _tradeStationAccessToken = GetAuthenticateToken();
-        }
+        var tokenRefreshHandler = new TokenRefreshHandler(httpClientHandler, apiKey, apiKeySecret, authorizationCodeFromUrl, signInUri, redirectUri,
+            Config.GetValue<string>("trade-station-refresh-token"));
+        _httpClient = new(tokenRefreshHandler);
     }
 
     /// <summary>
@@ -130,30 +113,30 @@ public class TradeStationApiClient
     /// <returns>
     /// A TradeStationBalance object representing the combined brokerage account balances for all available accounts.
     /// </returns>
-    public TradeStationBalance GetAllAccountBalances()
+    public async Task<TradeStationBalance> GetAllAccountBalances()
     {
-        var accounts = GetAccounts().ToList(x => x.AccountID);
-        return GetBalances(accounts);
+        var accounts = (await GetAccounts()).ToList(x => x.AccountID);
+        return await GetBalances(accounts);
     }
 
     /// <summary>
     /// Retrieves position for all available brokerage accounts for the current user.
     /// </summary>
     /// <returns>A TradeStationPosition object representing the combined brokerage position for all available accounts.</returns>
-    public TradeStationPosition GetAllAccountPositions()
+    public async Task<TradeStationPosition> GetAllAccountPositions()
     {
-        var accounts = GetAccounts().ToList(x => x.AccountID);
-        return GetPositions(accounts);
+        var accounts = (await GetAccounts()).ToList(x => x.AccountID);
+        return await GetPositions(accounts);
     }
 
     /// <summary>
     /// Retrieves orders for all available brokerage accounts for the current user.
     /// </summary>
     /// <returns>A TradeStationOrder object representing the combined brokerage orders for all available accounts.</returns>
-    public TradeStationOrder GetAllAccountOrders()
+    public async Task<TradeStationOrder> GetAllAccountOrders()
     {
-        var accounts = GetAccounts().ToList(x => x.AccountID);
-        return GetOrders(accounts);
+        var accounts = (await GetAccounts()).ToList(x => x.AccountID);
+        return await GetOrders(accounts);
     }
 
     /// <summary>
@@ -163,12 +146,11 @@ public class TradeStationApiClient
     /// Order ID to cancel. Equity, option or future orderIDs should not include dashes (E.g. 1-2345-6789).
     /// Valid format orderId=123456789
     /// </param>
-    public bool CancelOrder(string orderID)
+    public async Task<bool> CancelOrder(string orderID)
     {
         try
         {
-            var request = new RestRequest($"/v3/orderexecution/orders/{orderID}", Method.DELETE);
-            var response = ExecuteRequest(_restClient, request, true);
+            await RequestAsync<TradeStationAccount>(_baseUrl, $"/v3/orderexecution/orders/{orderID}", HttpMethod.Delete);
             return true;
         }
         catch (Exception ex)
@@ -184,11 +166,11 @@ public class TradeStationApiClient
     /// <param name="order">The Lean order to be placed.</param>
     /// <param name="symbol">The symbol for which the order is being placed.</param>
     /// <returns>The response containing the result of the order placement.</returns>
-    public TradeStationPlaceOrderResponse PlaceOrder(Lean.Order order, string symbol)
+    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(Lean.Order order, string symbol)
     {
         var accountID = order.Symbol.SecurityType == SecurityType.Future
-            ? GetAccounts().First(a => a.AccountType == Models.Enums.TradeStationAccountType.Futures).AccountID
-            : GetAccounts().First(a => a.AccountType == Models.Enums.TradeStationAccountType.Margin).AccountID;
+            ? (await GetAccounts()).First(a => a.AccountType == Models.Enums.TradeStationAccountType.Futures).AccountID
+            : (await GetAccounts()).First(a => a.AccountType == Models.Enums.TradeStationAccountType.Margin).AccountID;
 
         var orderType = order.Type.ConvertLeanOrderTypeToTradeStation();
 
@@ -212,13 +194,8 @@ public class TradeStationApiClient
                 break;
         }
 
-        var request = new RestRequest($"/v3/orderexecution/orders", Method.POST);
-
-        request.AddJsonBody(JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
-
-        var response = ExecuteRequest(_restClient, request, true);
-
-        return JsonConvert.DeserializeObject<TradeStationPlaceOrderResponse>(response.Content);
+        return await RequestAsync<TradeStationPlaceOrderResponse>(_baseUrl, $"/v3/orderexecution/orders", HttpMethod.Post,
+            JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
     }
 
     /// <summary>
@@ -226,7 +203,7 @@ public class TradeStationApiClient
     /// </summary>
     /// <param name="order">The Lean order to replace the existing order.</param>
     /// <returns>The response containing the result of the order replacement.</returns>
-    public Models.OrderResponse ReplaceOrder(Lean.Order order)
+    public async Task<Models.OrderResponse> ReplaceOrder(Lean.Order order)
     {
         var orderID = order.BrokerId.Single();
 
@@ -251,13 +228,10 @@ public class TradeStationApiClient
             tradeStationOrder.OrderType = order.Type.ConvertLeanOrderTypeToTradeStation();
         }
 
-        var request = new RestRequest($"/v3/orderexecution/orders/{orderID}", Method.PUT);
-        request.AddJsonBody(JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
-
         try
         {
-            var response = ExecuteRequest(_restClient, request, true);
-            return JsonConvert.DeserializeObject<Models.OrderResponse>(response.Content);
+            return await RequestAsync<Models.OrderResponse>(_baseUrl, $"/v3/orderexecution/orders/{orderID}", HttpMethod.Put,
+                JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
         }
         catch
         {
@@ -276,13 +250,9 @@ public class TradeStationApiClient
     /// <returns>
     /// An instance of the <see cref="TradeStationOrder"/> class representing the orders retrieved from the specified accounts.
     /// </returns>
-    private TradeStationOrder GetOrders(List<string> accounts)
+    private async Task<TradeStationOrder> GetOrders(List<string> accounts)
     {
-        var request = new RestRequest($"/v3/brokerage/accounts/{string.Join(',', accounts)}/orders", Method.GET);
-
-        var response = ExecuteRequest(_restClient, request, true);
-
-        return JsonConvert.DeserializeObject<TradeStationOrder>(response.Content);
+        return await RequestAsync<TradeStationOrder>(_baseUrl, $"/v3/brokerage/accounts/{string.Join(',', accounts)}/orders", HttpMethod.Get);
     }
 
     /// <summary>
@@ -293,13 +263,9 @@ public class TradeStationApiClient
     /// 1 to 25 Account IDs can be specified, comma separated. Recommended batch size is 10.
     /// </param>
     /// <returns></returns>
-    private TradeStationPosition GetPositions(List<string> accounts)
+    private async Task<TradeStationPosition> GetPositions(List<string> accounts)
     {
-        var request = new RestRequest($"/v3/brokerage/accounts/{string.Join(',', accounts)}/positions", Method.GET);
-
-        var response = ExecuteRequest(_restClient, request, true);
-
-        return JsonConvert.DeserializeObject<TradeStationPosition>(response.Content);
+        return await RequestAsync<TradeStationPosition>(_baseUrl, $"/v3/brokerage/accounts/{string.Join(',', accounts)}/positions", HttpMethod.Get);
     }
 
     /// <summary>
@@ -308,7 +274,7 @@ public class TradeStationApiClient
     /// <returns>
     /// An IEnumerable collection of Account objects representing the Brokerage Accounts available for the current user.
     /// </returns>
-    private IEnumerable<Account> GetAccounts()
+    private async Task<IEnumerable<Account>> GetAccounts()
     {
         // If trading accounts are already cached, return them
         if (_tradingAccounts != null && _tradingAccounts.Any())
@@ -316,11 +282,7 @@ public class TradeStationApiClient
             return _tradingAccounts;
         }
 
-        var request = new RestRequest("/v3/brokerage/accounts", Method.GET);
-
-        var response = ExecuteRequest(_restClient, request, true);
-
-        _tradingAccounts = JsonConvert.DeserializeObject<TradeStationAccount>(response.Content).Accounts;
+        _tradingAccounts = (await RequestAsync<TradeStationAccount>(_baseUrl, "/v3/brokerage/accounts", HttpMethod.Get)).Accounts;
 
         return _tradingAccounts;
     }
@@ -335,13 +297,9 @@ public class TradeStationApiClient
     /// <returns>
     /// A TradeStationBalance object representing the brokerage account balances for the specified accounts.
     /// </returns>
-    private TradeStationBalance GetBalances(List<string> accounts)
+    private async Task<TradeStationBalance> GetBalances(List<string> accounts)
     {
-        var request = new RestRequest($"/v3/brokerage/accounts/{string.Join(',', accounts)}/balances", Method.GET);
-
-        var response = ExecuteRequest(_restClient, request, true);
-
-        return JsonConvert.DeserializeObject<TradeStationBalance>(response.Content);
+        return await RequestAsync<TradeStationBalance>(_baseUrl, $"/v3/brokerage/accounts/{string.Join(',', accounts)}/balances", HttpMethod.Get);
     }
 
     /// <summary>
@@ -364,104 +322,38 @@ public class TradeStationApiClient
         return uri.Uri.AbsoluteUri;
     }
 
-    /// <summary>
-    /// Refreshes the authentication token using the refresh token from TradeStation API.
-    /// </summary>
-    /// <param name="refreshToken">The refresh token obtained from TradeStation API.</param>
-    /// <returns>The refreshed authentication token containing access, refresh, and ID tokens along with expiration time.</returns>
-    private TradeStationAccessToken RefreshAccessToken(string refreshToken)
+    private async Task<T> RequestAsync<T>(string baseUrl, string resource, HttpMethod httpMethod, string jsonBody = null)
     {
-        if (string.IsNullOrEmpty(refreshToken))
-    {
-            throw new ArgumentException($"{nameof(TradeStationApiClient)}.{nameof(RefreshAccessToken)}:" +
-                $"The refresh token provided is null or empty. Please ensure a valid refresh token is provided.");
-        }
-
-        var request = GenerateSignInRequest();
-
-        request.AddParameter("application/x-www-form-urlencoded",
-            $"grant_type=refresh_token" +
-            $"&client_id={_apiKey}" +
-            $"&client_secret={_apiKeySecret}" +
-            $"&refresh_token={refreshToken}", ParameterType.RequestBody);
-
-        var response = ExecuteRequest(_restClientAuthentication, request);
-
-        var jsonResponse = JObject.Parse(response.Content);
-
-        return new TradeStationAccessToken(
-            jsonResponse["access_token"].Value<string>(),
-            refreshToken,
-            jsonResponse["id_token"].Value<string>(),
-            jsonResponse["scope"].Value<string>(),
-            jsonResponse["expires_in"].Value<int>(),
-            jsonResponse["token_type"].Value<string>());
-    }
-
-    /// <summary>
-    /// Retrieves the authentication token from TradeStation API.
-    /// </summary>
-    /// <returns>The authentication token containing access, refresh, and ID tokens along with expiration time.</returns>
-    private TradeStationAccessToken GetAuthenticateToken()
-    {
-        var request = GenerateSignInRequest();
-
-        request.AddParameter("application/x-www-form-urlencoded",
-            $"grant_type=authorization_code" +
-            $"&client_id={_apiKey}" +
-            $"&client_secret={_apiKeySecret}" +
-            $"&code={_authorizationCodeFromUrl}" +
-            $"&redirect_uri={_redirectUri}", ParameterType.RequestBody);
-
-        var response = ExecuteRequest(_restClientAuthentication, request);
-
-        return JsonConvert.DeserializeObject<TradeStationAccessToken>(response.Content);
-    }
-
-    /// <summary>
-    /// Generates a REST request for signing in.
-    /// </summary>
-    /// <returns>A <see cref="RestRequest"/> configured for signing in.</returns>
-    private RestRequest GenerateSignInRequest()
-    {
-        var request = new RestRequest("/oauth/token", Method.POST);
-
-        request.AddHeader("content-type", "application/x-www-form-urlencoded");
-        return request;
-    }
-
-    /// <summary>
-    /// Executes the rest request
-    /// </summary>
-    /// <param name="request">The rest request to execute</param>
-    /// <returns>The rest response</returns>
-    [StackTraceHidden]
-    private IRestResponse ExecuteRequest(RestClient restClient, IRestRequest request, bool authenticate = false)
-    {
-        if (authenticate)
+        using (var requestMessage = new HttpRequestMessage(httpMethod, $"{baseUrl}{resource}"))
         {
-            // TODO: Implement validation for the LastTimeUpdate AccessToken and initiate a refresh if necessary before making the request.
-            // This ensures that the AccessToken remains valid and up-to-date for successful authorization.
-            request.AddOrUpdateHeader("Authorization", $"{_tradeStationAccessToken.TokenType} {_tradeStationAccessToken.AccessToken}");
+            if (jsonBody != null)
+            {
+                requestMessage.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+            }
+
+            try
+            {
+
+                var responseMessage = await _httpClient.SendAsync(requestMessage);
+
+                responseMessage.EnsureSuccessStatusCode();
+
+                var response = await responseMessage.Content.ReadAsStringAsync();
+
+                return JsonConvert.DeserializeObject<T>(response);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception(ex.Message);
+            }
         }
-
-        var response = restClient.Execute(request);
-
-        if (response.StatusCode != HttpStatusCode.OK)
-        {
-            throw new Exception($"{nameof(TradeStationApiClient)}.{nameof(ExecuteRequest)} request failed: " +
-                                $"[{(int)response.StatusCode}] {response.StatusDescription}, " +
-                                $"Content: {response.Content}, ErrorMessage: {response.ErrorMessage}");
-        }
-
-        return response;
     }
 
     /// <summary>
     /// Configures the specified RestClient instances to use a proxy with the provided proxy address, username, and password.
     /// </summary>
     /// <exception cref="ArgumentException">Thrown when proxy address, username, or password is empty or null. Indicates that these values must be correctly set in the configuration file.</exception>
-    private void UseProxy(params RestClient[] restClients)
+    private WebProxy GetProxyConfiguration()
     {
         var proxyAddress = Config.Get("trade-station-proxy-address-port");
         var proxyUsername = Config.Get("trade-station-proxy-username");
@@ -472,10 +364,6 @@ public class TradeStationApiClient
             throw new ArgumentException("Proxy Address, Proxy Username, and Proxy Password cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
         }
 
-        var webProxy = new WebProxy(proxyAddress) { Credentials = new NetworkCredential(proxyUsername, proxyPassword) };
-        foreach (var client in restClients)
-        {
-            client.Proxy = webProxy;
-        }
+        return new WebProxy(proxyAddress) { Credentials = new NetworkCredential(proxyUsername, proxyPassword) };
     }
 }

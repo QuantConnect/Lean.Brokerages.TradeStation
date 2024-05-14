@@ -63,12 +63,6 @@ public class TradeStationAccessToken
     public string TokenType { get; }
 
     /// <summary>
-    /// Gets the next time when the refresh token needs to be used to obtain a new access token.
-    /// This is calculated by adding the expiration time of the current access token to the current UTC time.
-    /// </summary>
-    public DateTime NextTimeRefreshToken { get; }
-
-    /// <summary>
     /// Initializes a new instance of the <see cref="TradeStationAccessToken"/> class.
     /// </summary>
     /// <param name="accessToken">The access token.</param>
@@ -85,6 +79,5 @@ public class TradeStationAccessToken
         Scope = scope;
         ExpiresIn = expiresIn;
         TokenType = tokenType;
-        NextTimeRefreshToken = DateTime.UtcNow.AddSeconds(expiresIn);
     }
 }
