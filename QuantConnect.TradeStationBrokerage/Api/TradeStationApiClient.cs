@@ -235,6 +235,41 @@ public class TradeStationApiClient
     }
 
     /// <summary>
+    /// Asynchronously streams orders for the accounts retrieved from the brokerage service.
+    /// </summary>
+    /// <returns>
+    /// An asynchronous enumerable of strings representing order information.
+    /// </returns>
+    /// <remarks>
+    /// This method retrieves accounts from the brokerage service, then opens a stream to continuously receive order updates for these accounts.
+    /// </remarks>
+    public async IAsyncEnumerable<string> StreamOrders()
+    {
+        var accounts = (await GetAccounts()).ToList(x => x.AccountID);
+
+        using (var request = new HttpRequestMessage(HttpMethod.Get, $"{_baseUrl}/v3/brokerage/stream/accounts/{string.Join(',', accounts)}/orders"))
+        {
+            using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false))
+            {
+                response.EnsureSuccessStatusCode();
+
+                using (var stream = await response.Content.ReadAsStreamAsync())
+                {
+                    using (StreamReader reader = new StreamReader(stream))
+                    {
+                        while (!reader.EndOfStream)
+                        {
+                            var jsonLine = await reader.ReadLineAsync();
+                            if (jsonLine == null) break;
+                            yield return jsonLine;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// Retrieves orders for the authenticated user from TradeStation brokerage accounts.
     /// </summary>
     /// <param name="accounts">

@@ -78,7 +78,7 @@ public readonly struct Order
     /// <summary>
     /// The actual brokerage commission cost and routing fees (if applicable) for a trade based on the number of shares or contracts.
     /// </summary>
-    public string CommissionFee { get; }
+    public decimal CommissionFee { get; }
 
     /// <summary>
     /// Describes the relationship between linked orders in a group and this order.
@@ -205,7 +205,7 @@ public readonly struct Order
     public string UnbundledRouteFee { get; }
 
     [JsonConstructor]
-    public Order(string accountID, string advancedOptions, DateTime closedDateTime, string commissionFee, IEnumerable<ConditionalOrder> conditionalOrders,
+    public Order(string accountID, string advancedOptions, DateTime closedDateTime, decimal commissionFee, IEnumerable<ConditionalOrder> conditionalOrders,
         string conversionRate, string currency, string duration, string filledPrice, DateTime goodTillDate, string groupName, IEnumerable<Leg> legs,
         IEnumerable<MarketActivationRule> marketActivationRules, IEnumerable<TimeActivationRule> timeActivationRules, decimal limitPrice, string orderID,
         DateTime openedDateTime, TradeStationOrderType orderType, string priceUsedForBuyingPower, string rejectReason, string routing, string showOnlyQuantity,
@@ -288,7 +288,7 @@ public readonly struct Leg
     /// <summary>
     /// The price at which order execution occurred.
     /// </summary>
-    public string ExecutionPrice { get; }
+    public decimal ExecutionPrice { get; }
 
     /// <summary>
     /// The expiration date of the future or option symbol.
@@ -308,7 +308,7 @@ public readonly struct Leg
 
     [JsonConstructor]
     public Leg(string openOrClose, decimal quantityOrdered, decimal execQuantity, decimal quantityRemaining, string buyOrSell, string symbol, string underlying,
-        TradeStationAssetType assetType, string executionPrice, DateTime expirationDate, TradeStationOptionType optionType, decimal strikePrice)
+        TradeStationAssetType assetType, decimal executionPrice, DateTime expirationDate, TradeStationOptionType optionType, decimal strikePrice)
     {
         OpenOrClose = openOrClose;
         QuantityOrdered = quantityOrdered;

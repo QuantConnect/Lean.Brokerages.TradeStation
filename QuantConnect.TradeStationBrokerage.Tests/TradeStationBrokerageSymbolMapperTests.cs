@@ -39,7 +39,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         public void ReturnsCorrectLeanSymbol(string symbol, string underlying, TradeStationAssetType assetType,
             DateTime expirationDate, TradeStationOptionType optionType, decimal strikePrice)
         {
-            var leg = new Leg("", 0m, 0m, 0m, "", symbol, underlying, assetType, "", expirationDate, optionType, strikePrice);
+            var leg = new Leg("", 0m, 0m, 0m, "", symbol, underlying, assetType, 0m, expirationDate, optionType, strikePrice);
 
             var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
                 leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());

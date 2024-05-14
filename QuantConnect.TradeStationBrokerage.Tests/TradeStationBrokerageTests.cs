@@ -13,15 +13,18 @@
  * limitations under the License.
 */
 
+using Moq;
 using System;
 using System.Linq;
 using NUnit.Framework;
 using QuantConnect.Tests;
+using QuantConnect.Orders;
 using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using QuantConnect.Configuration;
 using System.Collections.Generic;
 using QuantConnect.Tests.Brokerages;
+using QuantConnect.Lean.Engine.DataFeeds;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests
 {
@@ -34,6 +37,8 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
         protected override IBrokerage CreateBrokerage(IOrderProvider orderProvider, ISecurityProvider securityProvider)
         {
+            var algorithm = new Mock<IAlgorithm>();
+
             var apiKey = Config.Get("trade-station-api-key");
             var apiSecret = Config.Get("trade-station-api-secret");
             var apiUrl = Config.Get("trade-station-api-url");
@@ -44,16 +49,16 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 throw new ArgumentException("API key, secret, and URL cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
         }
 
-            return new TradeStationBrokerage(apiKey, apiSecret, apiUrl, authorizationCodeFromUrl);
+            return new TradeStationBrokerage(apiKey, apiSecret, apiUrl, authorizationCodeFromUrl, new AggregationManager(), orderProvider, useProxy: true);
         }
         protected override bool IsAsync()
         {
-            throw new System.NotImplementedException();
+            return false;
         }
 
         protected override decimal GetAskPrice(Symbol symbol)
         {
-            throw new System.NotImplementedException();
+            throw new NotImplementedException();
         }
 
 

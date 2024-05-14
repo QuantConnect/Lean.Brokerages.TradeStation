@@ -15,12 +15,15 @@
 
 using System;
 using System.Linq;
+using System.Threading;
 using QuantConnect.Data;
 using QuantConnect.Util;
 using QuantConnect.Orders;
+using Newtonsoft.Json.Linq;
 using QuantConnect.Packets;
 using System.Globalization;
 using QuantConnect.Logging;
+using System.Threading.Tasks;
 using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using QuantConnect.Orders.Fees;
@@ -42,6 +45,19 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     private readonly IDataAggregator _aggregator;
     private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
 
+    /// <inheritdoc cref="CancellationTokenSource"/>
+    private readonly CancellationTokenSource _cancellationTokenSource = new();
+
+    /// <summary>
+    /// Represents an AutoResetEvent synchronization primitive used to signal when the brokerage connection is established.
+    /// </summary>
+    private readonly AutoResetEvent _autoResetEvent = new(false);
+
+    /// <summary>
+    /// Order provider
+    /// </summary>
+    protected IOrderProvider OrderProvider { get; private set; }
+
     /// <summary>
     /// Returns true if we're currently connected to the broker
     /// </summary>
@@ -58,8 +74,10 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     /// <param name="restApiUrl">The URL of the REST API.</param>
     /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL.</param>
     /// <param name="useProxy">Boolean value indicating whether to use a proxy for TradeStation API requests. Default is false.</param>
-    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string authorizationCodeFromUrl, bool useProxy)
-        : this(apiKey, apiKeySecret, restApiUrl, authorizationCodeFromUrl, Composer.Instance.GetPart<IDataAggregator>(), useProxy)
+    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string authorizationCodeFromUrl, IAlgorithm algorithm,
+        bool useProxy = false)
+        : this(apiKey, apiKeySecret, restApiUrl, authorizationCodeFromUrl, Composer.Instance.GetPart<IDataAggregator>(),
+              algorithm?.Portfolio?.Transactions, useProxy)
     {
     }
 
@@ -76,10 +94,11 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     /// <param name="aggregator">An instance of the data aggregator used for consolidate ticks.</param>
     /// <param name="useProxy">Boolean value indicating whether to use a proxy for TradeStation API requests. Default is false.</param>
     public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string authorizationCodeFromUrl, IDataAggregator aggregator,
-        bool useProxy = false)
+        IOrderProvider orderProvider, bool useProxy = false)
         : base("TradeStation")
     {
         _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl, authorizationCodeFromUrl, useProxy: useProxy);
+        OrderProvider = orderProvider;
 
         _symbolMapper = new TradeStationSymbolMapper();
 
@@ -88,14 +107,79 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
         _subscriptionManager.SubscribeImpl += (s, t) => Subscribe(s);
         _subscriptionManager.UnsubscribeImpl += (s, t) => Unsubscribe(s);
 
-        // Useful for some brokerages:
+        IsConnected = SubscribeOnOrderUpdate();
+    }
 
-        // Brokerage helper class to lock websocket message stream while executing an action, for example placing an order
-        // avoid race condition with placing an order and getting filled events before finished placing
-        // _messageHandler = new BrokerageConcurrentMessageHandler<>();
+    public bool SubscribeOnOrderUpdate()
+    {
+        Task.Factory.StartNew(async () =>
+        {
+            await foreach (var json in _tradeStationApiClient.StreamOrders())
+            {
+                var jObj = JObject.Parse(json);
+                if (IsConnected && jObj["AccountID"] != null)
+                {
+                    var brokerageOrder = jObj.ToObject<Models.Order>();
+                    var leanOrder = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID).FirstOrDefault();
+                    if (leanOrder == null)
+                    {
+                        continue;
+                    }
 
-        // Rate gate limiter useful for API/WS calls
-        // _connectionRateLimiter = new RateGate();
+                    var leg = brokerageOrder.Legs.First();
+                    // TODO: Where may we take Market ?
+                    var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
+                        leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
+
+                    switch (brokerageOrder.Status)
+                    {
+                        case TradeStationOrderStatusType.Fll:
+                        case TradeStationOrderStatusType.Brf:
+                            leanOrder.Status = OrderStatus.Filled;
+                            break;
+                        case TradeStationOrderStatusType.Fpr:
+                            leanOrder.Status = OrderStatus.PartiallyFilled;
+                            break;
+                        case TradeStationOrderStatusType.Rej:
+                        case TradeStationOrderStatusType.Tsc:
+                        case TradeStationOrderStatusType.Rjr:
+                        case TradeStationOrderStatusType.Bro:
+                            leanOrder.Status = OrderStatus.Invalid;
+                            break;
+                        default:
+                            continue;
+                    };
+
+                    var orderEvent = new OrderEvent(
+                        leanOrder.Id,
+                        leanSymbol,
+                        brokerageOrder.OpenedDateTime,
+                        leanOrder.Status,
+                        leg.BuyOrSell == "Buy" ? OrderDirection.Buy : OrderDirection.Sell,
+                        leg.ExecutionPrice,
+                        leg.ExecQuantity,
+                        new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD)));
+
+                    OnOrderEvent(orderEvent);
+
+                }
+                else if (jObj["StreamStatus"] != null)
+                {
+                    var status = jObj.ToObject<Models.TradeStationStreamStatus>();
+                    switch (status.StreamStatus)
+                    {
+                        case "EndSnapshot":
+                            _autoResetEvent.Set();
+                            break;
+                        default:
+                            Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}.TradeStationStreamStatus: {json}");
+                            break;
+                    }
+                }
+            }
+        }, _cancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+
+        return _autoResetEvent.WaitOne(TimeSpan.FromSeconds(10), _cancellationTokenSource.Token);
     }
 
     #region IDataQueueHandler
@@ -155,7 +239,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
         foreach (var order in orders.Orders.Where(o => o.Status is TradeStationOrderStatusType.Ack or TradeStationOrderStatusType.Don))
         {
             var leg = order.Legs.First();
-            // TODO: Where may we take Market ? 
+            // TODO: Where may we take Market ?
             var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
                 leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
 
@@ -180,7 +264,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
             if (leg.ExecQuantity > 0m && leg.ExecQuantity != leg.QuantityOrdered)
             {
                 leanOrder.Status = OrderStatus.PartiallyFilled;
-    }
+            }
 
             leanOrder.BrokerId.Add(order.OrderID);
             leanOrders.Add(leanOrder);
@@ -326,7 +410,13 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     public override bool CancelOrder(Order order)
     {
         var orderID = order.BrokerId.Single();
-        return _tradeStationApiClient.CancelOrder(orderID).SynchronouslyAwaitTaskResult();
+        if (_tradeStationApiClient.CancelOrder(orderID).SynchronouslyAwaitTaskResult())
+        {
+            OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, "CancelOrder")
+            { Status = OrderStatus.Canceled });
+            return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -334,7 +424,8 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     /// </summary>
     public override void Connect()
     {
-        throw new NotImplementedException();
+        // This method is currently not utilized, as the connection establishment process
+        // is handled elsewhere in the application's architecture.
     }
 
     /// <summary>
@@ -342,7 +433,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     /// </summary>
     public override void Disconnect()
     {
-        throw new NotImplementedException();
+        _cancellationTokenSource.Cancel();
     }
 
     #endregion
