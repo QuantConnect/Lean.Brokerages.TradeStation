@@ -341,7 +341,7 @@ public class TradeStationBrokerage : Brokerage
     /// <returns>True if selection can take place</returns>
     public bool CanPerformSelection()
     {
-        throw new NotImplementedException();
+        return IsConnected;
     }
 
     #endregion
@@ -375,6 +375,10 @@ public class TradeStationBrokerage : Brokerage
     {
         Task.Factory.StartNew(async () =>
         {
+            while (!_cancellationTokenSource.IsCancellationRequested)
+            {
+                try
+                {
             await foreach (var json in _tradeStationApiClient.StreamOrders())
             {
                 var jObj = JObject.Parse(json);
@@ -384,6 +388,7 @@ public class TradeStationBrokerage : Brokerage
                     var leanOrder = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID).FirstOrDefault();
                     if (leanOrder == null)
                     {
+                                Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}. order id not found: {brokerageOrder.OrderID}");
                         continue;
                     }
 
@@ -437,6 +442,17 @@ public class TradeStationBrokerage : Brokerage
                             break;
                     }
                 }
+                        else
+                        {
+                            Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}.Response: {json}");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}.Exception: {ex}");
+                }
+                _cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(5));
             }
         }, _cancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
