@@ -45,6 +45,11 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     private readonly IDataAggregator _aggregator;
     private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
 
+    /// <summary>
+    /// Indicates whether the application is subscribed to stream order updates.
+    /// </summary>
+    private bool _isSubscribeOnStreamOrderUpdate;
+
     /// <inheritdoc cref="CancellationTokenSource"/>
     private readonly CancellationTokenSource _cancellationTokenSource = new();
 
@@ -61,7 +66,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     /// <summary>
     /// Returns true if we're currently connected to the broker
     /// </summary>
-    public override bool IsConnected { get; }
+    public override bool IsConnected { get => _isSubscribeOnStreamOrderUpdate; }
 
     /// <summary>
     /// Constructor for the TradeStation brokerage.
@@ -106,8 +111,6 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
         _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
         _subscriptionManager.SubscribeImpl += (s, t) => Subscribe(s);
         _subscriptionManager.UnsubscribeImpl += (s, t) => Unsubscribe(s);
-
-        IsConnected = SubscribeOnOrderUpdate();
     }
 
     public bool SubscribeOnOrderUpdate()
@@ -424,8 +427,11 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     /// </summary>
     public override void Connect()
     {
-        // This method is currently not utilized, as the connection establishment process
-        // is handled elsewhere in the application's architecture.
+        if (IsConnected)
+        {
+            return;
+        }
+        _isSubscribeOnStreamOrderUpdate = SubscribeOnOrderUpdate();
     }
 
     /// <summary>
