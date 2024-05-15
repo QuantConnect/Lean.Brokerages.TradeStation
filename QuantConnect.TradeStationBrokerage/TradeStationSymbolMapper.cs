@@ -31,25 +31,6 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// </remarks>
     public readonly HashSet<SecurityType> SupportedSecurityType = new (){ SecurityType.Equity, SecurityType.Option, SecurityType.Future };
 
-    /// <summary>
-    /// Lookup dictionary for futures month codes and their corresponding numeric values.
-    /// </summary>
-    private static Dictionary<int, string> _futuresMonthCodeLookup = new Dictionary<int, string>
-    {
-        { 1, "F"}, // January
-        { 2, "G" }, // February
-        { 3, "H" }, // March
-        { 4, "J" }, // April
-        { 5, "K" }, // May
-        { 6, "M" }, // June
-        { 7, "N" }, // July
-        { 8 , "Q" }, // August
-        { 9 , "U" }, // September
-        { 10 , "V" }, // October
-        { 11 , "X" }, // November
-        { 12 , "Z" } // December
-    };
-
     /// <inheritdoc cref="ISymbolMapper.GetBrokerageSymbol(Symbol)"/>
     public string GetBrokerageSymbol(Symbol symbol)
     {
@@ -75,7 +56,7 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// <example>{ESZ24}</example>
     private string GenerateBrokerageFuture(Symbol symbol)
     {
-        return $"{symbol.ID.Symbol}{_futuresMonthCodeLookup[symbol.ID.Date.Month]}{symbol.ID.Date.ToString("yy")}";
+        return $"{symbol.ID.Symbol}{SymbolRepresentation.FuturesMonthLookup[symbol.ID.Date.Month]}{symbol.ID.Date.ToString("yy")}";
     }
 
     /// <summary>
