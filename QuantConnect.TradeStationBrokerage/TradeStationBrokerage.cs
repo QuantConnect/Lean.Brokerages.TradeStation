@@ -16,11 +16,9 @@
 using System;
 using System.Linq;
 using System.Threading;
-using QuantConnect.Data;
 using QuantConnect.Util;
 using QuantConnect.Orders;
 using Newtonsoft.Json.Linq;
-using QuantConnect.Packets;
 using System.Globalization;
 using QuantConnect.Logging;
 using System.Threading.Tasks;
@@ -34,16 +32,13 @@ using QuantConnect.Brokerages.TradeStation.Models.Enums;
 namespace QuantConnect.Brokerages.TradeStation;
 
 [BrokerageFactory(typeof(TradeStationBrokerageFactory))]
-public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUniverseProvider
+public class TradeStationBrokerage : Brokerage
 {
     /// <inheritdoc cref="TradeStationApiClient" />
     private readonly TradeStationApiClient _tradeStationApiClient;
 
     /// <inheritdoc cref="TradeStationSymbolMapper" />
     private TradeStationSymbolMapper _symbolMapper;
-
-    private readonly IDataAggregator _aggregator;
-    private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
 
     /// <summary>
     /// Indicates whether the application is subscribed to stream order updates.
@@ -81,8 +76,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     /// <param name="useProxy">Boolean value indicating whether to use a proxy for TradeStation API requests. Default is false.</param>
     public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string authorizationCodeFromUrl, IAlgorithm algorithm,
         bool useProxy = false)
-        : this(apiKey, apiKeySecret, restApiUrl, authorizationCodeFromUrl, Composer.Instance.GetPart<IDataAggregator>(),
-              algorithm?.Portfolio?.Transactions, useProxy)
+        : this(apiKey, apiKeySecret, restApiUrl, authorizationCodeFromUrl, algorithm?.Portfolio?.Transactions, useProxy)
     {
     }
 
@@ -98,134 +92,15 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL.</param>
     /// <param name="aggregator">An instance of the data aggregator used for consolidate ticks.</param>
     /// <param name="useProxy">Boolean value indicating whether to use a proxy for TradeStation API requests. Default is false.</param>
-    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string authorizationCodeFromUrl, IDataAggregator aggregator,
+    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string authorizationCodeFromUrl,
         IOrderProvider orderProvider, bool useProxy = false)
         : base("TradeStation")
     {
-        _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl, authorizationCodeFromUrl, useProxy: useProxy);
         OrderProvider = orderProvider;
-
         _symbolMapper = new TradeStationSymbolMapper();
+        _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl, authorizationCodeFromUrl, useProxy: useProxy);
 
-        _aggregator = aggregator;
-        _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
-        _subscriptionManager.SubscribeImpl += (s, t) => Subscribe(s);
-        _subscriptionManager.UnsubscribeImpl += (s, t) => Unsubscribe(s);
     }
-
-    public bool SubscribeOnOrderUpdate()
-    {
-        Task.Factory.StartNew(async () =>
-        {
-            await foreach (var json in _tradeStationApiClient.StreamOrders())
-            {
-                var jObj = JObject.Parse(json);
-                if (IsConnected && jObj["AccountID"] != null)
-                {
-                    var brokerageOrder = jObj.ToObject<Models.Order>();
-                    var leanOrder = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID).FirstOrDefault();
-                    if (leanOrder == null)
-                    {
-                        continue;
-                    }
-
-                    var leg = brokerageOrder.Legs.First();
-                    // TODO: Where may we take Market ?
-                    var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
-                        leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
-
-                    switch (brokerageOrder.Status)
-                    {
-                        case TradeStationOrderStatusType.Fll:
-                        case TradeStationOrderStatusType.Brf:
-                            leanOrder.Status = OrderStatus.Filled;
-                            break;
-                        case TradeStationOrderStatusType.Fpr:
-                            leanOrder.Status = OrderStatus.PartiallyFilled;
-                            break;
-                        case TradeStationOrderStatusType.Rej:
-                        case TradeStationOrderStatusType.Tsc:
-                        case TradeStationOrderStatusType.Rjr:
-                        case TradeStationOrderStatusType.Bro:
-                            leanOrder.Status = OrderStatus.Invalid;
-                            break;
-                        default:
-                            continue;
-                    };
-
-                    var orderEvent = new OrderEvent(
-                        leanOrder.Id,
-                        leanSymbol,
-                        brokerageOrder.OpenedDateTime,
-                        leanOrder.Status,
-                        leg.BuyOrSell == "Buy" ? OrderDirection.Buy : OrderDirection.Sell,
-                        leg.ExecutionPrice,
-                        leg.ExecQuantity,
-                        new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD)));
-
-                    OnOrderEvent(orderEvent);
-
-                }
-                else if (jObj["StreamStatus"] != null)
-                {
-                    var status = jObj.ToObject<Models.TradeStationStreamStatus>();
-                    switch (status.StreamStatus)
-                    {
-                        case "EndSnapshot":
-                            _autoResetEvent.Set();
-                            break;
-                        default:
-                            Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}.TradeStationStreamStatus: {json}");
-                            break;
-                    }
-                }
-            }
-        }, _cancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-
-        return _autoResetEvent.WaitOne(TimeSpan.FromSeconds(10), _cancellationTokenSource.Token);
-    }
-
-    #region IDataQueueHandler
-
-    /// <summary>
-    /// Subscribe to the specified configuration
-    /// </summary>
-    /// <param name="dataConfig">defines the parameters to subscribe to a data feed</param>
-    /// <param name="newDataAvailableHandler">handler to be fired on new data available</param>
-    /// <returns>The new enumerator for this subscription request</returns>
-    public IEnumerator<BaseData> Subscribe(SubscriptionDataConfig dataConfig, EventHandler newDataAvailableHandler)
-    {
-        if (!CanSubscribe(dataConfig.Symbol))
-        {
-            return null;
-        }
-
-        var enumerator = _aggregator.Add(dataConfig, newDataAvailableHandler);
-        _subscriptionManager.Subscribe(dataConfig);
-
-        return enumerator;
-    }
-
-    /// <summary>
-    /// Removes the specified configuration
-    /// </summary>
-    /// <param name="dataConfig">Subscription config to be removed</param>
-    public void Unsubscribe(SubscriptionDataConfig dataConfig)
-    {
-        _subscriptionManager.Unsubscribe(dataConfig);
-        _aggregator.Remove(dataConfig);
-    }
-
-    /// <summary>
-    /// Sets the job we're subscribing for
-    /// </summary>
-    /// <param name="job">Job we're subscribing for</param>
-    public void SetJob(LiveNodePacket job)
-    {
-        throw new NotImplementedException();
-    }
-
-    #endregion
 
     #region Brokerage
 
@@ -493,36 +368,78 @@ public class TradeStationBrokerage : Brokerage, IDataQueueHandler, IDataQueueUni
     }
 
     /// <summary>
-    /// Adds the specified symbols to the subscription
+    /// Subscribes to order updates.
     /// </summary>
-    /// <param name="symbols">The symbols to be added keyed by SecurityType</param>
-    private bool Subscribe(IEnumerable<Symbol> symbols)
+    /// <returns>True if the subscription was successful; otherwise, false.</returns>
+    private bool SubscribeOnOrderUpdate()
     {
-        throw new NotImplementedException();
-    }
-
-    /// <summary>
-    /// Removes the specified symbols to the subscription
-    /// </summary>
-    /// <param name="symbols">The symbols to be removed keyed by SecurityType</param>
-    private bool Unsubscribe(IEnumerable<Symbol> symbols)
-    {
-        throw new NotImplementedException();
-    }
-
-    /// <summary>
-    /// Gets the history for the requested symbols
-    /// <see cref="IBrokerage.GetHistory(Data.HistoryRequest)"/>
-    /// </summary>
-    /// <param name="request">The historical data request</param>
-    /// <returns>An enumerable of bars covering the span specified in the request</returns>
-    public override IEnumerable<BaseData> GetHistory(Data.HistoryRequest request)
-    {
-        if (!CanSubscribe(request.Symbol))
+        Task.Factory.StartNew(async () =>
         {
-            return null; // Should consistently return null instead of an empty enumerable
-        }
+            await foreach (var json in _tradeStationApiClient.StreamOrders())
+            {
+                var jObj = JObject.Parse(json);
+                if (IsConnected && jObj["AccountID"] != null)
+                {
+                    var brokerageOrder = jObj.ToObject<Models.Order>();
+                    var leanOrder = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID).FirstOrDefault();
+                    if (leanOrder == null)
+                    {
+                        continue;
+                    }
 
-        throw new NotImplementedException();
+                    var leg = brokerageOrder.Legs.First();
+                    // TODO: Where may we take Market ?
+                    var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
+                        leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
+
+                    switch (brokerageOrder.Status)
+                    {
+                        case TradeStationOrderStatusType.Fll:
+                        case TradeStationOrderStatusType.Brf:
+                            leanOrder.Status = OrderStatus.Filled;
+                            break;
+                        case TradeStationOrderStatusType.Fpr:
+                            leanOrder.Status = OrderStatus.PartiallyFilled;
+                            break;
+                        case TradeStationOrderStatusType.Rej:
+                        case TradeStationOrderStatusType.Tsc:
+                        case TradeStationOrderStatusType.Rjr:
+                        case TradeStationOrderStatusType.Bro:
+                            leanOrder.Status = OrderStatus.Invalid;
+                            break;
+                        default:
+                            continue;
+                    };
+
+                    var orderEvent = new OrderEvent(
+                        leanOrder.Id,
+                        leanSymbol,
+                        brokerageOrder.OpenedDateTime,
+                        leanOrder.Status,
+                        leg.BuyOrSell == "Buy" ? OrderDirection.Buy : OrderDirection.Sell,
+                        leg.ExecutionPrice,
+                        leg.ExecQuantity,
+                        new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD)));
+
+                    OnOrderEvent(orderEvent);
+
+                }
+                else if (jObj["StreamStatus"] != null)
+                {
+                    var status = jObj.ToObject<Models.TradeStationStreamStatus>();
+                    switch (status.StreamStatus)
+                    {
+                        case "EndSnapshot":
+                            _autoResetEvent.Set();
+                            break;
+                        default:
+                            Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}.TradeStationStreamStatus: {json}");
+                            break;
+                    }
+                }
+            }
+        }, _cancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+
+        return _autoResetEvent.WaitOne(TimeSpan.FromSeconds(10), _cancellationTokenSource.Token);
     }
 }
