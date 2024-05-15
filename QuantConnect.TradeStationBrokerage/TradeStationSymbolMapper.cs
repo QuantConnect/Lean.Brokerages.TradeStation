@@ -29,7 +29,7 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// <remarks>
     /// This HashSet contains the supported security types that are allowed within the system.
     /// </remarks>
-    public readonly HashSet<SecurityType> SupportedSecurityType = new (){ SecurityType.Equity, SecurityType.Future, SecurityType.Option, SecurityType.Future };
+    public readonly HashSet<SecurityType> SupportedSecurityType = new (){ SecurityType.Equity, SecurityType.Option, SecurityType.Future };
 
     /// <summary>
     /// Lookup dictionary for futures month codes and their corresponding numeric values.
