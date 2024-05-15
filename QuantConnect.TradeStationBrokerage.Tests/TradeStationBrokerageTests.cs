@@ -49,7 +49,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 throw new ArgumentException("API key, secret, and URL cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
         }
 
-            return new TradeStationBrokerage(apiKey, apiSecret, apiUrl, authorizationCodeFromUrl, new AggregationManager(), orderProvider, useProxy: true);
+            return new TradeStationBrokerage(apiKey, apiSecret, apiUrl, authorizationCodeFromUrl, orderProvider, useProxy: true);
         }
         protected override bool IsAsync()
         {
