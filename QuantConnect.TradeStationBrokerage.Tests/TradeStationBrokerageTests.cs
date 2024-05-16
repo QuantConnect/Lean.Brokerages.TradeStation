@@ -24,7 +24,6 @@ using QuantConnect.Securities;
 using QuantConnect.Configuration;
 using System.Collections.Generic;
 using QuantConnect.Tests.Brokerages;
-using QuantConnect.Lean.Engine.DataFeeds;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests
 {
@@ -44,13 +43,14 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var apiUrl = Config.Get("trade-station-api-url");
             var authorizationCodeFromUrl = Config.Get("trade-station-code-from-url");
             var accountType = Config.Get("trade-station-account-type");
+            var redirectUrl = Config.Get("trade-station-redirect-url");
 
             if (new string[] { apiKey, apiSecret, apiUrl, authorizationCodeFromUrl }.Any(string.IsNullOrEmpty))
             {
                 throw new ArgumentException("API key, secret, and URL cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
         }
 
-            return new TradeStationBrokerage(apiKey, apiSecret, apiUrl, authorizationCodeFromUrl, accountType, orderProvider, useProxy: true);
+            return new TradeStationBrokerage(apiKey, apiSecret, apiUrl, redirectUrl, authorizationCodeFromUrl, accountType, orderProvider, useProxy: true);
         }
         protected override bool IsAsync()
         {

@@ -17,9 +17,8 @@ using System;
 using System.Linq;
 using Newtonsoft.Json;
 using NUnit.Framework;
-using QuantConnect.Util;
 using QuantConnect.Logging;
-using QuantConnect.Interfaces;
+using System.Threading.Tasks;
 using QuantConnect.Configuration;
 using QuantConnect.Brokerages.TradeStation.Api;
 using QuantConnect.Brokerages.TradeStation.Models;
@@ -106,13 +105,16 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
             Assert.IsNotNull(result);
         }
+
+        [Test]
         public void GetSignInUrl()
         {
             var apiKey = Config.Get("trade-station-api-key");
             var apiSecret = Config.Get("trade-station-api-secret");
             var apiUrl = Config.Get("trade-station-api-url");
+            var redirectUrl = Config.Get("trade-station-redirect-url");
 
-            var tradeStationApiClient = new TradeStationApiClient(apiKey, apiSecret, apiUrl);
+            var tradeStationApiClient = new TradeStationApiClient(apiKey, apiSecret, apiUrl, redirectUrl);
 
             var signInUrl = tradeStationApiClient.GetSignInUrl();
             Assert.IsNotNull(signInUrl);

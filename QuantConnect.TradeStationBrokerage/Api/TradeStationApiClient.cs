@@ -80,13 +80,12 @@ public class TradeStationApiClient
     /// <param name="apiKey">The API Key used by the client application to authenticate requests.</param>
     /// <param name="apiKeySecret">The secret associated with the client application’s API Key for authentication.</param>
     /// <param name="restApiUrl">The URL of the REST API.</param>
+    /// <param name="redirectUri">The URI to which the user will be redirected after authentication.</param>
     /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL during OAuth authentication.</param>
     /// <param name="signInUri">The URI of the sign-in page for TradeStation authentication. Default is "https://signin.tradestation.com".</param>
-    /// <param name="redirectUri">The URI to which the user will be redirected after authentication.</param>
     /// <param name="useProxy">Boolean value indicating whether to use a proxy for API requests. Default is false.</param>
-    public TradeStationApiClient(string apiKey, string apiKeySecret, string restApiUrl,
-        string authorizationCodeFromUrl = "", string signInUri = "https://signin.tradestation.com", string redirectUri = "http://localhost",
-        bool useProxy = false)
+    public TradeStationApiClient(string apiKey, string apiKeySecret, string restApiUrl, string redirectUri, string authorizationCodeFromUrl = "",
+        string signInUri = "https://signin.tradestation.com", bool useProxy = false)
     {
         _apiKey = apiKey;
         _redirectUri = redirectUri;

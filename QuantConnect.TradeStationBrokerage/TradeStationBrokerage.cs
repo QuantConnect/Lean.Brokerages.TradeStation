@@ -87,13 +87,14 @@ public class TradeStationBrokerage : Brokerage
     /// <param name="apiKey">The API key for authentication.</param>
     /// <param name="apiKeySecret">The API key secret for authentication.</param>
     /// <param name="restApiUrl">The URL of the REST API.</param>
+    /// <param name="redirectUrl">The redirect URL to generate great link to get right "authorizationCodeFromUrl"</param>
     /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL.</param>
     /// <param name="accountType">The type of TradeStation account for the current session.</param>
     /// <param name="algorithm">The algorithm instance is required to retrieve account type</param>
     /// <param name="useProxy">Boolean value indicating whether to use a proxy for TradeStation API requests. Default is false.</param>
-    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string authorizationCodeFromUrl, string accountType,
-        IAlgorithm algorithm, bool useProxy = false)
-        : this(apiKey, apiKeySecret, restApiUrl, authorizationCodeFromUrl, accountType, algorithm?.Portfolio?.Transactions, useProxy)
+    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl, string authorizationCodeFromUrl,
+        string accountType, IAlgorithm algorithm, bool useProxy = false)
+        : this(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCodeFromUrl, accountType, algorithm?.Portfolio?.Transactions, useProxy)
     {
     }
 
@@ -106,23 +107,23 @@ public class TradeStationBrokerage : Brokerage
     /// <param name="apiKey">The API key for authentication.</param>
     /// <param name="apiKeySecret">The API key secret for authentication.</param>
     /// <param name="restApiUrl">The URL of the REST API.</param>
+    /// <param name="redirectUrl">The redirect URL to generate great link to get right "authorizationCodeFromUrl"</param>
     /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL.</param>
     /// <param name="accountType">The type of TradeStation account for the current session.</param>
     /// <param name="orderProvider">The order provider.</param>
     /// <param name="useProxy">Optional. Specifies whether to use a proxy for TradeStation API requests. Default is false.</param>
-    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string authorizationCodeFromUrl, string accountType,
-        IOrderProvider orderProvider, bool useProxy = false)
+    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl,
+        string authorizationCodeFromUrl, string accountType, IOrderProvider orderProvider, bool useProxy = false)
         : base("TradeStation")
     {
-        OrderProvider = orderProvider;
-        _symbolMapper = new TradeStationSymbolMapper();
-        _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl, authorizationCodeFromUrl, useProxy: useProxy);
-
         if (!Enum.TryParse(accountType, out _accountType) || !Enum.IsDefined(typeof(TradeStationAccountType), _accountType))
         {
             throw new ArgumentException($"An error occurred while parsing the account type '{accountType}'. Please ensure that the provided account type is valid and supported by the system.");
         }
 
+        OrderProvider = orderProvider;
+        _symbolMapper = new TradeStationSymbolMapper();
+        _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCodeFromUrl, useProxy: useProxy);
         ValidateSubscription();
     }
 
