@@ -275,7 +275,14 @@ public class TradeStationBrokerage : Brokerage
         }
 
         var symbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
-        var result = _tradeStationApiClient.PlaceOrder(order, symbol).SynchronouslyAwaitTaskResult();
+
+        var orderProperty = order.Properties as TradeStationOrderProperties;
+        if (order.Symbol.SecurityType == SecurityType.Option && orderProperty == null || orderProperty.PositionSide == null)
+        {
+            orderProperty = new TradeStationOrderProperties() { PositionSide = GetOrderPosition(order.Direction, order.AbsoluteQuantity) };
+        }
+
+        var result = _tradeStationApiClient.PlaceOrder(order, orderProperty, symbol).SynchronouslyAwaitTaskResult();
 
         foreach (var error in result.Errors ?? Enumerable.Empty<Models.TradeStationError>())
         {
@@ -467,7 +474,8 @@ public class TradeStationBrokerage : Brokerage
                                 leg.BuyOrSell == "Buy" ? OrderDirection.Buy : OrderDirection.Sell,
                                 leg.ExecutionPrice,
                                 leg.ExecQuantity,
-                                new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD)));
+                                new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD)),
+                                message: brokerageOrder.RejectReason);
 
                             OnOrderEvent(orderEvent);
 
