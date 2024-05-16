@@ -220,7 +220,7 @@ public class TradeStationBrokerage : Brokerage
                 CurrencySymbol = Currencies.USD,
                 MarketValue = position.MarketValue,
                 MarketPrice = position.Last,
-                Quantity = position.Quantity,
+                Quantity = position.LongShort == TradeStationPositionDirection.Long ? position.Quantity : decimal.Negate(position.Quantity),
                 Symbol = leanSymbol,
                 UnrealizedPnL = position.UnrealizedProfitLoss,
                 UnrealizedPnLPercent = position.UnrealizedProfitLossPercent

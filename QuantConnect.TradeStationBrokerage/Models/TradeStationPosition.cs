@@ -119,7 +119,8 @@ public readonly struct Position
     /// <summary>
     /// Specifies if the position is Long or Short.
     /// </summary>
-    public string LongShort { get; }
+    [JsonConverter(typeof(StringEnumConverter))]
+    public TradeStationPositionDirection LongShort { get; }
 
     /// <summary>
     /// The number of shares or contracts for a particular position. This value is negative for short positions.
@@ -203,8 +204,8 @@ public readonly struct Position
     /// <param name="markToMarketPrice">The MarkToMarketPrice value is the weighted average of the previous close price for the position quantity</param>
     [JsonConstructor]
     public Position(string accountID, decimal averagePrice, TradeStationAssetType assetType, decimal last, decimal bid, decimal ask, DateTime expirationDate,
-        int conversionRate, int dayTradeRequirement, int initialRequirement, string positionID, string longShort, int quantity, string symbol,
-        DateTime timestamp, decimal totalCost, decimal marketValue, decimal unrealizedProfitLoss, decimal unrealizedProfitLossPercent,
+        int conversionRate, int dayTradeRequirement, int initialRequirement, string positionID, TradeStationPositionDirection longShort, int quantity,
+        string symbol, DateTime timestamp, decimal totalCost, decimal marketValue, decimal unrealizedProfitLoss, decimal unrealizedProfitLossPercent,
         decimal unrealizedProfitLossQty, decimal todaysProfitLoss, decimal markToMarketPrice)
     {
         AccountID = accountID;
