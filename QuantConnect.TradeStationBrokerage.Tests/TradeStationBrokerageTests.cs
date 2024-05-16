@@ -43,13 +43,14 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var apiSecret = Config.Get("trade-station-api-secret");
             var apiUrl = Config.Get("trade-station-api-url");
             var authorizationCodeFromUrl = Config.Get("trade-station-code-from-url");
+            var accountType = Config.Get("trade-station-account-type");
 
             if (new string[] { apiKey, apiSecret, apiUrl, authorizationCodeFromUrl }.Any(string.IsNullOrEmpty))
             {
                 throw new ArgumentException("API key, secret, and URL cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
         }
 
-            return new TradeStationBrokerage(apiKey, apiSecret, apiUrl, authorizationCodeFromUrl, orderProvider, useProxy: true);
+            return new TradeStationBrokerage(apiKey, apiSecret, apiUrl, authorizationCodeFromUrl, accountType, orderProvider, useProxy: true);
         }
         protected override bool IsAsync()
         {

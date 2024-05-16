@@ -62,6 +62,13 @@ public class TradeStationBrokerage : Brokerage
     private readonly AutoResetEvent _autoResetEvent = new(false);
 
     /// <summary>
+    /// Represents the type of account used in TradeStation.
+    /// For <see cref="TradeStationAccountType.Cash"/> accounts, it is used for trading <seealso cref="SecurityType.Equity"/> and <seealso cref="SecurityType.Option"/>.
+    /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.
+    /// </summary>
+    private readonly TradeStationAccountType _accountType;
+
+    /// <summary>
     /// Order provider
     /// </summary>
     protected IOrderProvider OrderProvider { get; private set; }
@@ -81,10 +88,12 @@ public class TradeStationBrokerage : Brokerage
     /// <param name="apiKeySecret">The API key secret for authentication.</param>
     /// <param name="restApiUrl">The URL of the REST API.</param>
     /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL.</param>
+    /// <param name="accountType">The type of TradeStation account for the current session.</param>
+    /// <param name="algorithm">The algorithm instance is required to retrieve account type</param>
     /// <param name="useProxy">Boolean value indicating whether to use a proxy for TradeStation API requests. Default is false.</param>
-    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string authorizationCodeFromUrl, IAlgorithm algorithm,
-        bool useProxy = false)
-        : this(apiKey, apiKeySecret, restApiUrl, authorizationCodeFromUrl, algorithm?.Portfolio?.Transactions, useProxy)
+    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string authorizationCodeFromUrl, string accountType,
+        IAlgorithm algorithm, bool useProxy = false)
+        : this(apiKey, apiKeySecret, restApiUrl, authorizationCodeFromUrl, accountType, algorithm?.Portfolio?.Transactions, useProxy)
     {
     }
 
@@ -98,16 +107,20 @@ public class TradeStationBrokerage : Brokerage
     /// <param name="apiKeySecret">The API key secret for authentication.</param>
     /// <param name="restApiUrl">The URL of the REST API.</param>
     /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL.</param>
-    /// <param name="aggregator">An instance of the data aggregator used for consolidate ticks.</param>
-    /// <param name="useProxy">Boolean value indicating whether to use a proxy for TradeStation API requests. Default is false.</param>
-    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string authorizationCodeFromUrl,
+    /// <param name="accountType">The type of TradeStation account for the current session.</param>
+    /// <param name="orderProvider">The order provider.</param>
+    /// <param name="useProxy">Optional. Specifies whether to use a proxy for TradeStation API requests. Default is false.</param>
+    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string authorizationCodeFromUrl, string accountType,
         IOrderProvider orderProvider, bool useProxy = false)
         : base("TradeStation")
     {
         OrderProvider = orderProvider;
         _symbolMapper = new TradeStationSymbolMapper();
         _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl, authorizationCodeFromUrl, useProxy: useProxy);
-        ValidateSubscription();
+
+        if (!Enum.TryParse(accountType, out _accountType) || !Enum.IsDefined(typeof(TradeStationAccountType), _accountType))
+        {
+            throw new ArgumentException($"An error occurred while parsing the account type '{accountType}'. Please ensure that the provided account type is valid and supported by the system.");
     }
 
     #region Brokerage
@@ -214,12 +227,15 @@ public class TradeStationBrokerage : Brokerage
         var cashBalance = new List<CashAmount>();
         foreach (var balance in balances.Balances)
         {
-            if (balance.AccountType != TradeStationAccountType.Margin)
+            if (balance.AccountType == _accountType )
             {
-                continue;
+                cashBalance.Add(new CashAmount(decimal.Parse(balance.CashBalance, CultureInfo.InvariantCulture), Currencies.USD));
+            }
             }
 
-            cashBalance.Add(new CashAmount(decimal.Parse(balance.CashBalance, CultureInfo.InvariantCulture), Currencies.USD));
+        if (cashBalance.Count == 0)
+        {
+            throw new Exception($"Unable to retrieve cash balance for {_accountType}. No suitable account was found. Please select one of the following account types: {string.Join(',', balances.Balances.Select(x => x.AccountType))}");
         }
 
         return cashBalance;
