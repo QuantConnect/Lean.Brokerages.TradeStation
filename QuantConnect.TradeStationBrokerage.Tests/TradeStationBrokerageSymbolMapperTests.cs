@@ -15,6 +15,7 @@
 
 using System;
 using NUnit.Framework;
+using QuantConnect.Tests;
 using System.Collections.Generic;
 using QuantConnect.Brokerages.TradeStation.Models;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
@@ -51,6 +52,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             get
             {
+                TestGlobals.Initialize();
                 var underlying = Symbol.Create("AAPL", SecurityType.Equity, Market.USA);
                 yield return new TestCaseData(underlying, "AAPL");
                 yield return new TestCaseData(Symbol.CreateOption(underlying, Market.USA, OptionStyle.American, OptionRight.Call, 167.5m, new DateTime(2024, 5, 10)), "AAPL 240510C167.5");
