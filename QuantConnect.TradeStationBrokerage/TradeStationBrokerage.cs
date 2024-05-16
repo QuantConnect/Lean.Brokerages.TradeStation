@@ -121,6 +121,9 @@ public class TradeStationBrokerage : Brokerage
         if (!Enum.TryParse(accountType, out _accountType) || !Enum.IsDefined(typeof(TradeStationAccountType), _accountType))
         {
             throw new ArgumentException($"An error occurred while parsing the account type '{accountType}'. Please ensure that the provided account type is valid and supported by the system.");
+        }
+
+        ValidateSubscription();
     }
 
     #region Brokerage
@@ -187,12 +190,28 @@ public class TradeStationBrokerage : Brokerage
         var holdings = new List<Holding>();
         foreach (var position in positions.Positions)
         {
-            if (position.AssetType != TradeStationAssetType.Future)
+            var leanSymbol = default(Symbol);
+            if (_accountType == TradeStationAccountType.Futures && position.AssetType == TradeStationAssetType.Future)
+            {
+                leanSymbol = _symbolMapper.GetLeanSymbol(SymbolRepresentation.ParseFutureTicker(position.Symbol).Underlying, SecurityType.Future, Market.USA, position.ExpirationDate);
+            }
+            else if (_accountType is TradeStationAccountType.Cash or TradeStationAccountType.Margin or TradeStationAccountType.DVP && position.AssetType != TradeStationAssetType.Future)
+            {
+                switch (position.AssetType)
+                {
+                    case TradeStationAssetType.Stock:
+                        leanSymbol = _symbolMapper.GetLeanSymbol(position.Symbol, SecurityType.Equity, Market.USA);
+                        break;
+                    case TradeStationAssetType.StockOption:
+                        var optionParam = _symbolMapper.ParsePositionOptionSymbol(position.Symbol);
+                        leanSymbol = _symbolMapper.GetLeanSymbol(optionParam.symbol, SecurityType.Option, Market.USA, optionParam.expiryDate, optionParam.strikePrice, optionParam.optionRight == 'C' ? OptionRight.Call : OptionRight.Put);
+                        break;
+                }
+            }
+            else
             {
                 continue;
             }
-
-            var leanSymbol = _symbolMapper.GetLeanSymbol(SymbolRepresentation.ParseFutureTicker(position.Symbol).Underlying, SecurityType.Future, Market.USA, position.ExpirationDate);
 
             holdings.Add(new Holding()
             {
@@ -231,7 +250,7 @@ public class TradeStationBrokerage : Brokerage
             {
                 cashBalance.Add(new CashAmount(decimal.Parse(balance.CashBalance, CultureInfo.InvariantCulture), Currencies.USD));
             }
-            }
+        }
 
         if (cashBalance.Count == 0)
         {

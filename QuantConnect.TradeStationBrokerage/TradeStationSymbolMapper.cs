@@ -15,6 +15,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 
 namespace QuantConnect.Brokerages.TradeStation;
 
@@ -23,6 +24,11 @@ namespace QuantConnect.Brokerages.TradeStation;
 /// </summary>
 public class TradeStationSymbolMapper : ISymbolMapper
 {
+    /// <summary>
+    /// Regular expression pattern for parsing a position option symbol.
+    /// </summary>
+    private readonly string _optionPatternRegex = @"^(?<symbol>[A-Z]+)\s(?<expiryDate>\d{6})(?<optionRight>[CP])(?<strikePrice>\d+(\.\d+)?)$";
+
     /// <summary>
     /// Represents a set of supported security types.
     /// </summary>
@@ -86,5 +92,36 @@ public class TradeStationSymbolMapper : ISymbolMapper
                 throw new NotImplementedException($"{nameof(TradeStationSymbolMapper)}.{nameof(GetLeanSymbol)}: " +
                     $"The security type '{securityType}' with brokerage symbol '{brokerageSymbol}' is not supported.");
         }
+    }
+
+    /// <summary>
+    /// Parses a position option symbol into its components.
+    /// </summary>
+    /// <param name="optionSymbol">The option symbol to parse.</param>
+    /// <returns>
+    /// A tuple containing the parsed components of the option symbol:
+    /// - symbol: The stock symbol.
+    /// - expiryDate: The expiry date of the option.
+    /// - optionRight: The option right (Call or Put).
+    /// - strikePrice: The strike price of the option.
+    /// </returns>
+    /// <exception cref="FormatException">Thrown when the option symbol has an invalid format.</exception>
+    public (string symbol, DateTime expiryDate, char optionRight, decimal strikePrice) ParsePositionOptionSymbol(string optionSymbol)
+    {
+        // Match the pattern against the option symbol
+        Match match = Regex.Match(optionSymbol, _optionPatternRegex);
+
+        if (!match.Success)
+        {
+            throw new FormatException("Invalid option symbol format.");
+        }
+
+        // Extract matched groups
+        string symbol = match.Groups["symbol"].Value;
+        DateTime expiryDate = DateTime.ParseExact(match.Groups["expiryDate"].Value, "yyMMdd", null);
+        char optionRight = match.Groups["optionRight"].Value[0];
+        decimal strikePrice = decimal.Parse(match.Groups["strikePrice"].Value);
+
+        return (symbol, expiryDate, optionRight, strikePrice);
     }
 }

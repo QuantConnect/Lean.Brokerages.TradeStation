@@ -81,5 +81,23 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.IsNotNull(symbol);
             Assert.That(symbol.Underlying, Is.EqualTo(expectedTicker));
         }
+
+        [TestCase("AAPL 240517C185", "AAPL", "2024/05/17", 'C', 185)]
+        [TestCase("AAPL 111111C111.1", "AAPL", "2011/11/11", 'C', 111.1)]
+        [TestCase("AAPL 111111P111.1", "AAPL", "2011/11/11", 'P', 111.1)]
+        [TestCase("AAPL 240517C187.5", "AAPL", "2024/05/17", 'C', 187.5)]
+        [TestCase("T 240517C16", "T", "2024/05/17", 'C', 16)]
+        [TestCase("TT 240517C300", "TT", "2024/05/17", 'C', 300)]
+        [TestCase("TT 250618C300", "TT", "2025/06/18", 'C', 300)]
+        public void ParseTradeStationPositionOptionSymbol(string ticker, string expectedSymbol, DateTime expectedDate, char expectedRight, decimal expectedStrikePrice)
+        {
+            var optionParam = _symbolMapper.ParsePositionOptionSymbol(ticker);
+
+            Assert.IsNotNull(optionParam);
+            Assert.That(optionParam.symbol, Is.EqualTo(expectedSymbol));
+            Assert.That(optionParam.expiryDate, Is.EqualTo(expectedDate));
+            Assert.That(optionParam.optionRight, Is.EqualTo(expectedRight));
+            Assert.That(optionParam.strikePrice, Is.EqualTo(expectedStrikePrice));
+        }
     }
 }
