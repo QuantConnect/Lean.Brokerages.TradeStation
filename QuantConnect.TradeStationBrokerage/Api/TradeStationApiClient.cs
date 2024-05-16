@@ -351,6 +351,21 @@ public class TradeStationApiClient
         return uri.Uri.AbsoluteUri;
     }
 
+    /// <summary>
+    /// Sends an HTTP request asynchronously and deserializes the response content to the specified type.
+    /// </summary>
+    /// <typeparam name="T">The type to deserialize the response content to.</typeparam>
+    /// <param name="baseUrl">The base URL of the request.</param>
+    /// <param name="resource">The resource path of the request relative to the base URL.</param>
+    /// <param name="httpMethod">The HTTP method of the request.</param>
+    /// <param name="jsonBody">Optional. The JSON body of the request.</param>
+    /// <returns>
+    /// A task representing the asynchronous operation. The task result contains the deserialized response content.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="baseUrl"/>, <paramref name="resource"/>, or <paramref name="httpMethod"/> is null.</exception>
+    /// <exception cref="HttpRequestException">Thrown when the HTTP request fails.</exception>
+    /// <exception cref="JsonException">Thrown when the JSON deserialization fails.</exception>
+    /// <exception cref="Exception">Thrown when an unexpected error occurs.</exception>
     private async Task<T> RequestAsync<T>(string baseUrl, string resource, HttpMethod httpMethod, string jsonBody = null)
     {
         using (var requestMessage = new HttpRequestMessage(httpMethod, $"{baseUrl}{resource}"))
