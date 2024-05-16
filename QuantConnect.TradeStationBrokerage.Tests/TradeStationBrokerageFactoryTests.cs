@@ -19,7 +19,7 @@ using QuantConnect.Interfaces;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests
 {
-    [TestFixture, Ignore("This test requires a configured TemplateBrokerageFactory")]
+    [TestFixture]
     public class TradeStationBrokerageFactoryTests
     {
         [Test]

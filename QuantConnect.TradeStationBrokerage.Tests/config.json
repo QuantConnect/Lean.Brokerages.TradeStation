@@ -6,7 +6,7 @@
   "trade-station-redirect-url": "http://localhost",
   "trade-station-code-from-url": "",
   "trade-station-refresh-token": "",
-  "trade-station-api-url": "",
+  "trade-station-api-url": "https://sim-api.tradestation.com",
   "trade-station-account-type": "Margin",
   "trade-station-use-proxy": false,
   "trade-station-proxy-address-port": "http://",

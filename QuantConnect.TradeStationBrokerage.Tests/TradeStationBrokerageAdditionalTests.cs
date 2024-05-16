@@ -122,7 +122,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var apiUrl = Config.Get("trade-station-api-url");
             var authorizationCodeFromUrl = Config.Get("trade-station-code-from-url");
 
-            if (new string[] { apiKey, apiSecret, apiUrl, authorizationCodeFromUrl }.Any(string.IsNullOrEmpty))
+            if (new string[] { apiKey, apiSecret, apiUrl }.Any(string.IsNullOrEmpty))
             {
                 throw new ArgumentException("API key, secret, and URL cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
             }
