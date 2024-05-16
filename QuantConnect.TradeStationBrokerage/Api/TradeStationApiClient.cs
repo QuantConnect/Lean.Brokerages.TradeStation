@@ -170,7 +170,7 @@ public class TradeStationApiClient
 
         var (duration, expiryDateTime) = order.TimeInForce.GetBrokerageTimeInForce();
 
-        var tradeAction = order.Direction == Lean.OrderDirection.Buy ? "BUY" : "SELL";
+        var tradeAction = order.Direction == OrderDirection.Buy ? "BUY" : "SELL";
 
         var tradeStationOrder = new TradeStationPlaceOrderRequest(accountID, orderType, order.AbsoluteQuantity.ToStringInvariant(), symbol,
                     new Models.TimeInForce(duration, expiryDateTime), tradeAction);
@@ -379,7 +379,10 @@ public class TradeStationApiClient
             {
                 var responseMessage = await _httpClient.SendAsync(requestMessage);
 
-                responseMessage.EnsureSuccessStatusCode();
+                if (!responseMessage.IsSuccessStatusCode)
+                {
+                    throw new Exception(JsonConvert.DeserializeObject<TradeStationError>(await responseMessage.Content.ReadAsStringAsync()).Message);
+                }
 
                 var response = await responseMessage.Content.ReadAsStringAsync();
 
