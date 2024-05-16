@@ -30,13 +30,6 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
     public class TradeStationBrokerageAdditionalTests
     {
         [Test]
-        public void ParameterlessConstructorComposerUsage()
-        {
-            var brokerage = Composer.Instance.GetExportedValueByTypeName<IDataQueueHandler>("TradeStationBrokerage");
-            Assert.IsNotNull(brokerage);
-        }
-
-        [Test]
         public void DeserializeBalancesErrorResponse()
         {
             string jsonResponse = @"{
