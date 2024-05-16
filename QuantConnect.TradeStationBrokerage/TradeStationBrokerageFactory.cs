@@ -18,6 +18,7 @@ using QuantConnect.Packets;
 using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using System.Collections.Generic;
+using QuantConnect.Configuration;
 
 namespace QuantConnect.Brokerages.TradeStation;
 
@@ -33,7 +34,18 @@ public class TradeStationBrokerageFactory : BrokerageFactory
     /// The implementation of this property will create the brokerage data dictionary required for
     /// running live jobs. See <see cref="IJobQueueHandler.NextJob"/>
     /// </remarks>
-    public override Dictionary<string, string> BrokerageData { get; }
+    public override Dictionary<string, string> BrokerageData => new()
+    {
+        { "trade-station-api-key", Config.Get("trade-station-api-key") },
+        { "trade-station-api-secret", Config.Get("trade-station-api-secret") },
+        // The URL to connect to brokerage environment:
+        // Simulator(SIM): https://sim-api.tradestation.com/v3
+        // LIVE: https://api.tradestation.com/v3
+        { "trade-station-api-url", Config.Get("trade-station-api-url") },
+        { "trade-station-redirect-url", Config.Get("trade-station-redirect-url") },
+        /// <see cref="Models.Enums.TradeStationAccountType"/>
+        { "trade-station-account-type", Config.Get("trade-station-account-type") }
+    };
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TradeStationBrokerageFactory"/> class
@@ -46,10 +58,7 @@ public class TradeStationBrokerageFactory : BrokerageFactory
     /// Gets a brokerage model that can be used to model this brokerage's unique behaviors
     /// </summary>
     /// <param name="orderProvider">The order provider</param>
-    public override IBrokerageModel GetBrokerageModel(IOrderProvider orderProvider)
-    {
-        throw new NotImplementedException();
-    }
+    public override IBrokerageModel GetBrokerageModel(IOrderProvider orderProvider) => new TradeStationBrokerageModel();
 
     /// <summary>
     /// Creates a new IBrokerage instance
@@ -59,7 +68,22 @@ public class TradeStationBrokerageFactory : BrokerageFactory
     /// <returns>A new brokerage instance</returns>
     public override IBrokerage CreateBrokerage(LiveNodePacket job, IAlgorithm algorithm)
     {
-        throw new NotImplementedException();
+        var errors = new List<string>();
+
+        var apiKey = Read<string>(job.BrokerageData, "trade-station-api-key", errors);
+        var apiSecret = Read<string>(job.BrokerageData, "trade-station-api-secret", errors);
+        var apiUrl = Read<string>(job.BrokerageData, "trade-station-api-url", errors);
+        var redirectUrl = Read<string>(job.BrokerageData, "trade-station-redirect-url", errors);
+        var authorizationCodeFromUrl = Read<string>(job.BrokerageData, "trade-station-code-from-url", errors);
+        var accountType = Read<string>(job.BrokerageData, "trade-station-account-type", errors);
+
+        if (errors.Count != 0)
+        {
+            // if we had errors then we can't create the instance
+            throw new ArgumentException(string.Join(Environment.NewLine, errors));
+        }
+
+        return new TradeStationBrokerage(apiKey, apiSecret, apiUrl, redirectUrl, authorizationCodeFromUrl, accountType, algorithm);
     }
 
     /// <summary>
@@ -67,6 +91,6 @@ public class TradeStationBrokerageFactory : BrokerageFactory
     /// </summary>
     public override void Dispose()
     {
-        throw new NotImplementedException();
+        //Not needed
     }
 }
