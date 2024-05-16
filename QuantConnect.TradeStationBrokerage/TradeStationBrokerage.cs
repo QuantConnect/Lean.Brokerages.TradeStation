@@ -282,7 +282,7 @@ public class TradeStationBrokerage : Brokerage
             orderProperty = new TradeStationOrderProperties() { PositionSide = GetOrderPosition(order.Direction, order.AbsoluteQuantity) };
         }
 
-        var result = _tradeStationApiClient.PlaceOrder(order, orderProperty, symbol).SynchronouslyAwaitTaskResult();
+        var result = _tradeStationApiClient.PlaceOrder(order, orderProperty, symbol, _accountType).SynchronouslyAwaitTaskResult();
 
         foreach (var error in result.Errors ?? Enumerable.Empty<Models.TradeStationError>())
         {

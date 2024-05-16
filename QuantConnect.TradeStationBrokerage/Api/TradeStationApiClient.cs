@@ -28,6 +28,7 @@ using QuantConnect.Configuration;
 using System.Collections.Generic;
 using Lean = QuantConnect.Orders;
 using QuantConnect.Brokerages.TradeStation.Models;
+using QuantConnect.Brokerages.TradeStation.Models.Enums;
 
 namespace QuantConnect.Brokerages.TradeStation.Api;
 
@@ -160,12 +161,12 @@ public class TradeStationApiClient
     /// <param name="order">The Lean order to be placed.</param>
     /// <param name="orderProperty">Additional TradeStation order properties.</param>
     /// <param name="symbol">The symbol for which the order is being placed.</param>
+    /// <param name="accountType">The account type in current session.</param>
     /// <returns>The response containing the result of the order placement.</returns>
-    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(Lean.Order order, TradeStationOrderProperties orderProperty, string symbol)
+    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(Lean.Order order, TradeStationOrderProperties orderProperty, string symbol,
+        TradeStationAccountType accountType)
     {
-        var accountID = order.Symbol.SecurityType == SecurityType.Future
-            ? (await GetAccounts()).First(a => a.AccountType == Models.Enums.TradeStationAccountType.Futures).AccountID
-            : (await GetAccounts()).First(a => a.AccountType == Models.Enums.TradeStationAccountType.Margin).AccountID;
+        var accountID = (await GetAccounts()).Single(acc => acc.AccountType == accountType).AccountID;
 
         var orderType = order.Type.ConvertLeanOrderTypeToTradeStation();
 
