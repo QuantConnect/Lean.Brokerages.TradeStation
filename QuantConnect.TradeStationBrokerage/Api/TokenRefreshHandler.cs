@@ -133,6 +133,11 @@ public class TokenRefreshHandler : DelegatingHandler
 
         for (_retryCount = 0; _retryCount < _maxRetryCount; _retryCount++)
         {
+            if (_tradeStationAccessToken != null)
+            {
+                request.Headers.Authorization = new AuthenticationHeaderValue(_tradeStationAccessToken.TokenType, _tradeStationAccessToken.AccessToken);
+            }
+
             response = await base.SendAsync(request, cancellationToken);
 
             if (response.IsSuccessStatusCode)
@@ -150,7 +155,6 @@ public class TokenRefreshHandler : DelegatingHandler
                 {
                     _tradeStationAccessToken = await RefreshAccessToken(_refreshToken, cancellationToken);
                 }
-                request.Headers.Authorization = new AuthenticationHeaderValue(_tradeStationAccessToken.TokenType, _tradeStationAccessToken.AccessToken);
             }
             else
             {
