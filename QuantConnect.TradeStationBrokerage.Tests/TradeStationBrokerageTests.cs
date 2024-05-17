@@ -30,7 +30,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
     [TestFixture]
     public partial class TradeStationBrokerageTests : BrokerageTests
     {
-        protected override Symbol Symbol { get; }
+        protected override Symbol Symbol { get; } = Symbols.AAPL;
 
         protected override SecurityType SecurityType { get; }
 
@@ -59,7 +59,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
         protected override decimal GetAskPrice(Symbol symbol)
         {
-            throw new NotImplementedException();
+            return (Brokerage as TradeStationBrokerage).GetQuote(symbol).Quotes.Single().Ask;
         }
 
 

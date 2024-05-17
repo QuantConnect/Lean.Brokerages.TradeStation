@@ -127,6 +127,21 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             }
         }
 
+        [TestCase("AAPL")]
+        public async Task GetQuoteSnapshot(string ticker)
+        {
+            var tradeStationApiClient = CreateTradeStationApiClient();
+
+            var quoteSnapshot = await tradeStationApiClient.GetQuoteSnapshot(ticker);
+
+            Assert.IsNotNull(quoteSnapshot);
+            Assert.Greater(quoteSnapshot.Quotes.Count(), 0);
+            Assert.Greater(quoteSnapshot.Quotes.First().Ask, 0);
+            Assert.Greater(quoteSnapshot.Quotes.First().AskSize, 0);
+            Assert.Greater(quoteSnapshot.Quotes.First().Bid, 0);
+            Assert.Greater(quoteSnapshot.Quotes.First().BidSize, 0);
+        }
+
         private TradeStationApiClient CreateTradeStationApiClient()
         {
             var apiKey = Config.Get("trade-station-api-key");

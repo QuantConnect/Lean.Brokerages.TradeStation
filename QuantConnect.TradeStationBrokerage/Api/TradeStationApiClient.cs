@@ -293,6 +293,17 @@ public class TradeStationApiClient
     }
 
     /// <summary>
+    /// Retrieves a snapshot of quotes for a given ticker from TradeStation.
+    /// </summary>
+    /// <param name="ticker">The ticker symbol for which to retrieve the quote snapshot.</param>
+    /// <returns>A task that represents the asynchronous operation. The task result contains the <see cref="TradeStationQuoteSnapshot"/> for the specified ticker.</returns>
+
+    public async Task<TradeStationQuoteSnapshot> GetQuoteSnapshot(string ticker)
+    {
+        return await RequestAsync<TradeStationQuoteSnapshot>(_baseUrl, $"/v3/marketdata/quotes/{ticker}", HttpMethod.Get);
+    }
+
+    /// <summary>
     /// Retrieves option expirations for a given ticker symbol asynchronously.
     /// </summary>
     /// <param name="ticker">The ticker symbol for which option expirations are requested.</param>
