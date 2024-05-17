@@ -33,6 +33,7 @@ using QuantConnect.Securities;
 using QuantConnect.Orders.Fees;
 using System.Collections.Generic;
 using System.Security.Cryptography;
+using System.Collections.Concurrent;
 using System.Net.NetworkInformation;
 using QuantConnect.Brokerages.TradeStation.Api;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
@@ -40,7 +41,7 @@ using QuantConnect.Brokerages.TradeStation.Models.Enums;
 namespace QuantConnect.Brokerages.TradeStation;
 
 [BrokerageFactory(typeof(TradeStationBrokerageFactory))]
-public class TradeStationBrokerage : Brokerage
+public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
 {
     /// <inheritdoc cref="TradeStationApiClient" />
     private readonly TradeStationApiClient _tradeStationApiClient;
@@ -60,6 +61,12 @@ public class TradeStationBrokerage : Brokerage
     /// Represents an AutoResetEvent synchronization primitive used to signal when the brokerage connection is established.
     /// </summary>
     private readonly AutoResetEvent _autoResetEvent = new(false);
+
+    /// <summary>
+    /// Collection of pre-defined option rights.
+    /// Initialized for performance optimization as the API only returns strike price without indicating the right.
+    /// </summary>
+    private readonly IEnumerable<OptionRight> _optionRights = new[] { OptionRight.Call, OptionRight.Put };
 
     /// <summary>
     /// Represents the type of account used in TradeStation.
@@ -381,7 +388,38 @@ public class TradeStationBrokerage : Brokerage
     /// <returns>Enumerable of Symbols, that are associated with the provided Symbol</returns>
     public IEnumerable<Symbol> LookupSymbols(Symbol symbol, bool includeExpired, string securityCurrency = null)
     {
-        throw new NotImplementedException();
+        if (!symbol.SecurityType.IsOption())
+        {
+            Log.Error("The provided symbol is not an option. SecurityType: " + symbol.SecurityType);
+            return Enumerable.Empty<Symbol>();
+        }
+        var blockingOptionCollection = new BlockingCollection<Symbol>();
+
+        Task.Run(async () =>
+        {
+            var underlying = symbol.Underlying.Value;
+            await foreach (var optionParameters in _tradeStationApiClient.GetOptionExpirationsAndStrikes(underlying))
+            {
+                foreach (var optionStrike in optionParameters.strikes)
+                {
+                    foreach (var right in _optionRights)
+                    {
+                        blockingOptionCollection.Add(_symbolMapper.GetLeanSymbol(underlying, SecurityType.Option, Market.USA,
+                            optionParameters.expirationDate, optionStrike, right));
+                    }
+                }
+            }
+        }).ContinueWith(_ => blockingOptionCollection.CompleteAdding());
+
+        var options = blockingOptionCollection.GetConsumingEnumerable();
+
+        // Validate if the collection contains at least one successful response from history.
+        if (!options.Any())
+        {
+            return null;
+        }
+
+        return options;
     }
 
     /// <summary>

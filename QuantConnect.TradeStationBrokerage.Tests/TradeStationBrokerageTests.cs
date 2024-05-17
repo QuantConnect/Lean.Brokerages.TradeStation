@@ -117,5 +117,17 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             base.LongFromShort(parameters);
         }
+
+        [Test]
+        public void LookupSymbols()
+        {
+            var option = Symbol.CreateCanonicalOption(Symbols.AAPL);
+
+            var options = (Brokerage as IDataQueueUniverseProvider).LookupSymbols(option, false).ToList();
+            Assert.IsNotNull(options);
+            Assert.True(options.Any());
+            Assert.Greater(options.Count, 0);
+            Assert.That(options.Distinct().ToList().Count, Is.EqualTo(options.Count));
+        }
     }
 }

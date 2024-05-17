@@ -115,6 +115,18 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Log.Trace($"{nameof(TradeStationBrokerageAdditionalTests)}.{nameof(GetSignInUrl)}: SignInUrl: {signInUrl}");
         }
 
+        [TestCase("AAPL")]
+        public async Task GetOptionExpirations(string ticker)
+        {
+            var tradeStationApiClient = CreateTradeStationApiClient();
+
+            await foreach (var optionContract in tradeStationApiClient.GetOptionExpirationsAndStrikes(ticker))
+            {
+                Assert.That(optionContract.expirationDate, Is.Not.EqualTo(default(DateTime)));
+                Assert.Greater(optionContract.strikes.Count(), 0);
+            }
+        }
+
         private TradeStationApiClient CreateTradeStationApiClient()
         {
             var apiKey = Config.Get("trade-station-api-key");

@@ -275,6 +275,49 @@ public class TradeStationApiClient
     }
 
     /// <summary>
+    /// Retrieves option expirations and corresponding strikes for a given ticker symbol asynchronously.
+    /// </summary>
+    /// <param name="ticker">The ticker symbol for which option expirations and strikes are requested.</param>
+    /// <returns>
+    /// An asynchronous enumerable representing the operation. Each element in the sequence contains an expiration date and a collection of strikes associated with that expiration date.
+    /// </returns>
+    public async IAsyncEnumerable<(DateTime expirationDate, IEnumerable<decimal> strikes)> GetOptionExpirationsAndStrikes(string ticker)
+    {
+        var expirations = await GetOptionExpirations(ticker);
+
+        foreach (var expiration in expirations.Expirations)
+        {
+            var optionStrikes = await GetOptionStrikes(ticker, expiration.Date);
+            yield return (expiration.Date, optionStrikes.Strikes.SelectMany(x => x));
+        }
+    }
+
+    /// <summary>
+    /// Retrieves option expirations for a given ticker symbol asynchronously.
+    /// </summary>
+    /// <param name="ticker">The ticker symbol for which option expirations are requested.</param>
+    /// <returns>
+    /// An asynchronous task representing the operation. The task result contains option expirations for the specified ticker symbol.
+    /// </returns>
+    private async Task<TradeStationOptionExpiration> GetOptionExpirations(string ticker)
+    {
+        return await RequestAsync<TradeStationOptionExpiration>(_baseUrl, $"/v3/marketdata/options/expirations/{ticker}", HttpMethod.Get);
+    }
+
+    /// <summary>
+    /// Retrieves option strikes for a given underlying asset and expiration date asynchronously.
+    /// </summary>
+    /// <param name="underlying">The symbol of the underlying asset for which option strikes are requested.</param>
+    /// <param name="expirationDate">The expiration date of the options.</param>
+    /// <returns>
+    /// An asynchronous task representing the operation. The task result contains option strikes for the specified underlying asset and expiration date.
+    /// </returns>
+    private async Task<TradeStationOptionStrike> GetOptionStrikes(string underlying, DateTime expirationDate)
+    {
+        return await RequestAsync<TradeStationOptionStrike>(_baseUrl, $"/v3/marketdata/options/strikes/{underlying}?expiration={expirationDate.ToStringInvariant("MM-dd-yyyy")}", HttpMethod.Get);
+    }
+
+    /// <summary>
     /// Retrieves orders for the authenticated user from TradeStation brokerage accounts.
     /// </summary>
     /// <param name="accounts">
