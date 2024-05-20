@@ -304,6 +304,14 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
         {
             order.BrokerId.Add(brokerageOrder.OrderID);
 
+            // Check if the order failed due to an existing position. Reason: EC701: You are long/short N shares.
+            if (brokerageOrder.Message.Contains("EC701", StringComparison.InvariantCultureIgnoreCase))
+            {
+                OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
+                { Status = OrderStatus.Invalid, Message = brokerageOrder.Message });
+                return false;
+            }
+
             OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
             { Status = OrderStatus.Submitted });
 
