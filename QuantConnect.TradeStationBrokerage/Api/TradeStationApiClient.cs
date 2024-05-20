@@ -158,11 +158,20 @@ public class TradeStationApiClient
     /// Places an order in TradeStation based on the provided Lean order and symbol.
     /// </summary>
     /// <param name="order">The Lean order to be placed.</param>
-    /// <param name="orderProperty">Additional TradeStation order properties.</param>
+    /// <param name="tradeAction">
+    /// 'BUY' - equities and futures,<br/>
+    /// 'SELL' - equities and futures,<br/>
+    /// 'BUYTOCOVER' - equities,<br/>
+    /// 'SELLSHORT' - equities,<br/>
+    /// 'BUYTOOPEN' - options,<br/>
+    /// 'BUYTOCLOSE' - options,<br/>
+    /// 'SELLTOOPEN' - options,<br/>
+    /// 'SELLTOCLOSE' - options<br/>
+    /// </param>
     /// <param name="symbol">The symbol for which the order is being placed.</param>
     /// <param name="accountType">The account type in current session.</param>
     /// <returns>The response containing the result of the order placement.</returns>
-    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(Lean.Order order, TradeStationOrderProperties orderProperty, string symbol,
+    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(Lean.Order order, string tradeAction, string symbol,
         TradeStationAccountType accountType)
     {
         var accountID = (await GetAccounts()).Single(acc => acc.AccountType == accountType).AccountID;
@@ -170,12 +179,6 @@ public class TradeStationApiClient
         var orderType = order.Type.ConvertLeanOrderTypeToTradeStation();
 
         var (duration, expiryDateTime) = order.TimeInForce.GetBrokerageTimeInForce();
-
-        var tradeAction = order.Direction == OrderDirection.Buy ? "BUY" : "SELL";
-        if (orderProperty != null)
-        {
-            tradeAction = orderProperty.PositionSide.ToStringInvariant().ToUpper();
-        }
 
         var tradeStationOrder = new TradeStationPlaceOrderRequest(accountID, orderType, order.AbsoluteQuantity.ToStringInvariant(), symbol,
                     new Models.TimeInForce(duration, expiryDateTime), tradeAction);

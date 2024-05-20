@@ -284,13 +284,13 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
 
         var symbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
 
-        var orderProperty = order.Properties as TradeStationOrderProperties;
-        if (order.Symbol.SecurityType == SecurityType.Option && orderProperty == null || orderProperty.PositionSide == null)
+        var tradeAction = order.Direction == OrderDirection.Buy ? "BUY" : "SELL";
+        if (order.Symbol.SecurityType == SecurityType.Option)
         {
-            orderProperty = new TradeStationOrderProperties() { PositionSide = GetOrderPosition(order.Direction, order.AbsoluteQuantity) };
+            tradeAction = GetOrderPosition(order.Direction, order.AbsoluteQuantity).ToStringInvariant().ToUpper();
         }
 
-        var result = _tradeStationApiClient.PlaceOrder(order, orderProperty, symbol, _accountType).SynchronouslyAwaitTaskResult();
+        var result = _tradeStationApiClient.PlaceOrder(order, tradeAction, symbol, _accountType).SynchronouslyAwaitTaskResult();
 
         foreach (var error in result.Errors ?? Enumerable.Empty<Models.TradeStationError>())
         {
