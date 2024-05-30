@@ -35,7 +35,9 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Collections.Concurrent;
 using System.Net.NetworkInformation;
+using QuantConnect.Orders.CrossZero;
 using QuantConnect.Brokerages.TradeStation.Api;
+using QuantConnect.Brokerages.TradeStation.Models;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
 
 namespace QuantConnect.Brokerages.TradeStation;
@@ -75,6 +77,9 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     /// </summary>
     private readonly TradeStationAccountType _accountType;
 
+    /// <inheritdoc cref="ISecurityProvider"/>
+    private ISecurityProvider _securityProvider { get; }
+
     /// <summary>
     /// Order provider
     /// </summary>
@@ -101,7 +106,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     /// <param name="useProxy">Boolean value indicating whether to use a proxy for TradeStation API requests. Default is false.</param>
     public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl, string authorizationCodeFromUrl,
         string accountType, IAlgorithm algorithm, bool useProxy = false)
-        : this(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCodeFromUrl, accountType, algorithm?.Portfolio?.Transactions, useProxy)
+        : this(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCodeFromUrl, accountType, algorithm?.Portfolio?.Transactions, algorithm?.Portfolio, useProxy)
     {
     }
 
@@ -120,7 +125,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     /// <param name="orderProvider">The order provider.</param>
     /// <param name="useProxy">Optional. Specifies whether to use a proxy for TradeStation API requests. Default is false.</param>
     public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl,
-        string authorizationCodeFromUrl, string accountType, IOrderProvider orderProvider, bool useProxy = false)
+        string authorizationCodeFromUrl, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider, bool useProxy = false)
         : base("TradeStation")
     {
         if (!Enum.TryParse(accountType, out _accountType) || !Enum.IsDefined(typeof(TradeStationAccountType), _accountType))
@@ -128,6 +133,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
             throw new ArgumentException($"An error occurred while parsing the account type '{accountType}'. Please ensure that the provided account type is valid and supported by the system.");
         }
 
+        _securityProvider = securityProvider;
         OrderProvider = orderProvider;
         _symbolMapper = new TradeStationSymbolMapper();
         _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCodeFromUrl, useProxy: useProxy);
@@ -282,6 +288,24 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
             return false;
         }
 
+        var holdingQuantity = _securityProvider.GetHoldingsQuantity(order.Symbol);
+
+        var isPlaceCrossOrder = TryCrossZeroPositionOrder(order, holdingQuantity);
+
+        if (isPlaceCrossOrder == null)
+        {
+            var response = PlaceTradeStationOrder(order);
+            if (response == null)
+            {
+                return false;
+            }
+            return true;
+        }
+        return isPlaceCrossOrder.Value;
+    }
+
+    private TradeStationPlaceOrderResponse? PlaceTradeStationOrder(Order order, bool isSubmittedEvent = true)
+    {
         var symbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
 
         var tradeAction = order.Direction == OrderDirection.Buy ? "BUY" : "SELL";
@@ -290,17 +314,17 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
             tradeAction = GetOrderPosition(order.Direction, order.AbsoluteQuantity).ToStringInvariant().ToUpper();
         }
 
-        var result = _tradeStationApiClient.PlaceOrder(order, tradeAction, symbol, _accountType).SynchronouslyAwaitTaskResult();
+        var response = _tradeStationApiClient.PlaceOrder(order, tradeAction, symbol, _accountType).SynchronouslyAwaitTaskResult();
 
-        foreach (var error in result.Errors ?? Enumerable.Empty<Models.TradeStationError>())
+        foreach (var error in response.Errors ?? Enumerable.Empty<TradeStationError>())
         {
             OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
             { Status = OrderStatus.Invalid, Message = error.Message });
             OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "PlaceOrderInvalid", error.Message));
-            return false;
+            return null;
         }
 
-        foreach (var brokerageOrder in result.Orders)
+        foreach (var brokerageOrder in response.Orders)
         {
             order.BrokerId.Add(brokerageOrder.OrderID);
 
@@ -309,16 +333,98 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
             {
                 OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
                 { Status = OrderStatus.Invalid, Message = brokerageOrder.Message });
-                return false;
+                return null;
             }
 
+            if (isSubmittedEvent)
+            {
             OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
             { Status = OrderStatus.Submitted });
+            }
+        }
+        return response;
+    }
 
-            return true;
+    /// <summary>
+    /// Places an order that crosses zero (transitions from a short position to a long position or vice versa) and returns the response.
+    /// This method implements brokerage-specific logic for placing such orders using Tradier brokerage.
+    /// </summary>
+    /// <param name="crossZeroOrderRequest">The request object containing details of the cross zero order to be placed.</param>
+    /// <param name="isPlaceOrderWithLeanEvent">
+    /// A boolean indicating whether the order should be placed with triggering a Lean event. 
+    /// Default is <c>true</c>, meaning Lean events will be triggered.
+    /// </param>
+    /// <returns>
+    /// A <see cref="CrossZeroOrderResponse"/> object indicating the result of the order placement.
+    /// </returns>
+    public override CrossZeroOrderResponse PlaceCrossZeroOrder(CrossZeroOrderRequest crossZeroOrderRequest, bool isPlaceOrderWithLeanEvent)
+    {
+        var symbol = _symbolMapper.GetBrokerageSymbol(crossZeroOrderRequest.LeanOrder.Symbol);
+        var tradeAction = ConvertDirection(crossZeroOrderRequest.LeanOrder.Direction, crossZeroOrderRequest.LeanOrder.SecurityType, crossZeroOrderRequest.OrderQuantityHolding);
+
+        var response = _tradeStationApiClient.PlaceOrder(crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce, Math.Abs(crossZeroOrderRequest.OrderQuantity), tradeAction, symbol, _accountType,
+            GetLimitPrice(crossZeroOrderRequest.LeanOrder), GetStopPrice(crossZeroOrderRequest.LeanOrder)).SynchronouslyAwaitTaskResult(); ;
+
+        foreach (var error in response.Errors ?? Enumerable.Empty<TradeStationError>())
+        {
+            OnOrderEvent(new OrderEvent(crossZeroOrderRequest.LeanOrder, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
+            { Status = OrderStatus.Invalid, Message = error.Message });
+            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "PlaceOrderInvalid", error.Message));
+            return new CrossZeroOrderResponse(string.Empty, false);
         }
 
-        return false;
+        foreach (var brokerageOrder in response.Orders)
+        {
+            // Check if the order failed due to an existing position. Reason: EC701: You are long/short N shares.
+            if (brokerageOrder.Message.Contains("EC701", StringComparison.InvariantCultureIgnoreCase))
+            {
+                OnOrderEvent(new OrderEvent(crossZeroOrderRequest.LeanOrder, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
+                { Status = OrderStatus.Invalid, Message = brokerageOrder.Message });
+                return new CrossZeroOrderResponse(string.Empty, false);
+            }
+        }
+        
+        return new CrossZeroOrderResponse(response.Orders.Single().OrderID, true);
+        }
+
+    protected static decimal? GetStopPrice(Order order) => order switch
+    {
+        StopMarketOrder smo => smo.StopPrice,
+        StopLimitOrder slo => slo.StopPrice,
+        _ => null
+    };
+
+    protected static decimal? GetLimitPrice(Order order) => order switch
+    {
+        LimitOrder lo => lo.LimitPrice,
+        StopLimitOrder slo => slo.LimitPrice,
+        _ => null
+    };
+
+    protected static string ConvertDirection(OrderDirection direction, SecurityType securityType, decimal holdingQuantity)
+    {
+        // Equity codes: buy, buy_to_cover, sell, sell_short
+        // Option codes: buy_to_open, buy_to_close, sell_to_open, sell_to_close
+        // Tradier has 4 types of orders for this: buy/sell/buy to cover and sell short.
+
+        var position = GetOrderPosition(direction, holdingQuantity);
+        return position switch
+        {
+            // Increasing existing long position or opening new long position from zero
+            OrderPosition.BuyToOpen => securityType == SecurityType.Option ? "BuyToOpen" : "Buy",
+
+            // Decreasing existing short position or opening new short position from zero
+            OrderPosition.SellToOpen => securityType == SecurityType.Option ? "SellToOpen" : "SellShort",
+
+            // Buying from an existing short position (reducing, closing or flipping)
+            OrderPosition.BuyToClose => securityType == SecurityType.Option ? "BuyToClose" : "BuyToCover",
+
+            // Selling from an existing long position (reducing, closing or flipping)
+            OrderPosition.SellToClose => securityType == SecurityType.Option ? "SellToClose" : "Sell",
+
+            // This should never happen
+            _ => throw new NotSupportedException("")
+        };
     }
 
     /// <summary>
@@ -494,7 +600,12 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
                         if (IsConnected && jObj["AccountID"] != null)
                         {
                             var brokerageOrder = jObj.ToObject<TradeStationOrder>();
-                            var leanOrder = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID).FirstOrDefault();
+
+                            if (!_leanOrderByZeroCrossBrokerageOrderId.TryGetValue(brokerageOrder.OrderID, out var leanOrder))
+                            {
+                                leanOrder = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID)?.SingleOrDefault();
+                            }
+
                             if (leanOrder == null)
                             {
                                 Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}. order id not found: {brokerageOrder.OrderID}");

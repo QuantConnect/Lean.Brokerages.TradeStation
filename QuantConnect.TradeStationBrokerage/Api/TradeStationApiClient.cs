@@ -195,7 +195,37 @@ public class TradeStationApiClient
                 tradeStationOrder.StopPrice = stopLimitOrder.StopPrice.ToStringInvariant();
                 break;
         }
+        Log.Debug($"{nameof(TradeStationApiClient)}.{nameof(PlaceOrder)}.Body: {JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings)}");
+        return await RequestAsync<TradeStationPlaceOrderResponse>(_baseUrl, $"/v3/orderexecution/orders", HttpMethod.Post,
+            JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
+    }
 
+    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(OrderType leanOrderType, Lean.TimeInForce leanTimeInForce, decimal leanAbsoluteQuantity, string tradeAction, string symbol,
+    TradeStationAccountType accountType, decimal? limitPrice = null, decimal? stopPrice = null)
+    {
+        var accountID = (await GetAccounts()).Single(acc => acc.AccountType == accountType).AccountID;
+
+        var orderType = leanOrderType.ConvertLeanOrderTypeToTradeStation();
+
+        var (duration, expiryDateTime) = leanTimeInForce.GetBrokerageTimeInForce();
+
+        var tradeStationOrder = new TradeStationPlaceOrderRequest(accountID, orderType, leanAbsoluteQuantity.ToStringInvariant(), symbol,
+                    new Models.TimeInForce(duration, expiryDateTime), tradeAction);
+
+        switch (leanOrderType)
+        {
+            case OrderType.Limit:
+                tradeStationOrder.LimitPrice = limitPrice.Value.ToStringInvariant();
+                break;
+            case OrderType.StopMarket:
+                tradeStationOrder.StopPrice = stopPrice.Value.ToStringInvariant();
+                break;
+            case OrderType.StopLimit:
+                tradeStationOrder.LimitPrice = limitPrice.Value.ToStringInvariant();
+                tradeStationOrder.StopPrice = stopPrice.Value.ToStringInvariant();
+                break;
+        }
+        Log.Debug($"{nameof(TradeStationApiClient)}.{nameof(PlaceOrder)}.Body: {JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings)}");
         return await RequestAsync<TradeStationPlaceOrderResponse>(_baseUrl, $"/v3/orderexecution/orders", HttpMethod.Post,
             JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
     }
