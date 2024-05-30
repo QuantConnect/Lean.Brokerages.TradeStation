@@ -21,12 +21,12 @@ using QuantConnect.Brokerages.TradeStation.Models.Enums;
 
 namespace QuantConnect.Brokerages.TradeStation.Models;
 
-public readonly struct TradeStationOrder
+public readonly struct TradeStationOrderResponse
 {
     /// <summary>
     /// Gets the collection of orders associated with the positions.
     /// </summary>
-    public IEnumerable<Order> Orders { get; }
+    public IEnumerable<TradeStationOrder> Orders { get; }
 
     /// <summary>
     /// Gets the collection of errors associated with the positions.
@@ -39,7 +39,7 @@ public readonly struct TradeStationOrder
     public string NextToken { get; }
 
     [JsonConstructor]
-    public TradeStationOrder(IEnumerable<Order> orders, IEnumerable<TradeStationError> errors, string nextToken)
+    public TradeStationOrderResponse(IEnumerable<TradeStationOrder> orders, IEnumerable<TradeStationError> errors, string nextToken)
     {
         Orders = orders;
         Errors = errors;
@@ -47,7 +47,7 @@ public readonly struct TradeStationOrder
     }
 }
 
-public readonly struct Order
+public readonly struct TradeStationOrder
 {
     /// <summary>
     /// TradeStation Account ID.
@@ -205,7 +205,7 @@ public readonly struct Order
     public string UnbundledRouteFee { get; }
 
     [JsonConstructor]
-    public Order(string accountID, string advancedOptions, DateTime closedDateTime, decimal commissionFee, IEnumerable<ConditionalOrder> conditionalOrders,
+    public TradeStationOrder(string accountID, string advancedOptions, DateTime closedDateTime, decimal commissionFee, IEnumerable<ConditionalOrder> conditionalOrders,
         string conversionRate, string currency, string duration, string filledPrice, DateTime goodTillDate, string groupName, IEnumerable<Leg> legs,
         IEnumerable<MarketActivationRule> marketActivationRules, IEnumerable<TimeActivationRule> timeActivationRules, decimal limitPrice, string orderID,
         DateTime openedDateTime, TradeStationOrderType orderType, string priceUsedForBuyingPower, string rejectReason, string routing, string showOnlyQuantity,

@@ -493,7 +493,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
                         var jObj = JObject.Parse(json);
                         if (IsConnected && jObj["AccountID"] != null)
                         {
-                            var brokerageOrder = jObj.ToObject<Models.Order>();
+                            var brokerageOrder = jObj.ToObject<TradeStationOrder>();
                             var leanOrder = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID).FirstOrDefault();
                             if (leanOrder == null)
                             {

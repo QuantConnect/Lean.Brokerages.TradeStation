@@ -127,7 +127,7 @@ public class TradeStationApiClient
     /// Retrieves orders for all available brokerage accounts for the current user.
     /// </summary>
     /// <returns>A TradeStationOrder object representing the combined brokerage orders for all available accounts.</returns>
-    public async Task<TradeStationOrder> GetAllAccountOrders()
+    public async Task<TradeStationOrderResponse> GetAllAccountOrders()
     {
         var accounts = (await GetAccounts()).ToList(x => x.AccountID);
         return await GetOrders(accounts);
@@ -171,7 +171,7 @@ public class TradeStationApiClient
     /// <param name="symbol">The symbol for which the order is being placed.</param>
     /// <param name="accountType">The account type in current session.</param>
     /// <returns>The response containing the result of the order placement.</returns>
-    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(Lean.Order order, string tradeAction, string symbol,
+    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(Order order, string tradeAction, string symbol,
         TradeStationAccountType accountType)
     {
         var accountID = (await GetAccounts()).Single(acc => acc.AccountType == accountType).AccountID;
@@ -339,11 +339,11 @@ public class TradeStationApiClient
     /// 1 to 25 Account IDs can be specified, comma separated. Recommended batch size is 10.
     /// </param>
     /// <returns>
-    /// An instance of the <see cref="TradeStationOrder"/> class representing the orders retrieved from the specified accounts.
+    /// An instance of the <see cref="TradeStationOrderResponse"/> class representing the orders retrieved from the specified accounts.
     /// </returns>
-    private async Task<TradeStationOrder> GetOrders(List<string> accounts)
+    private async Task<TradeStationOrderResponse> GetOrders(List<string> accounts)
     {
-        return await RequestAsync<TradeStationOrder>(_baseUrl, $"/v3/brokerage/accounts/{string.Join(',', accounts)}/orders", HttpMethod.Get);
+        return await RequestAsync<TradeStationOrderResponse>(_baseUrl, $"/v3/brokerage/accounts/{string.Join(',', accounts)}/orders", HttpMethod.Get);
     }
 
     /// <summary>
