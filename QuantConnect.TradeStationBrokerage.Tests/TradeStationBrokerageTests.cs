@@ -72,7 +72,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             {
                 yield return new TestCaseData(new LimitOrderTestParameters(Symbols.AAPL, 200m, 170m));
                 yield return new TestCaseData(new StopMarketOrderTestParameters(Symbols.AAPL, 200m, 170m));
-                yield return new TestCaseData(new StopLimitOrderTestParameters(Symbols.AAPL, 200m, 170m));
+                yield return new TestCaseData(new StopLimitOrderTestParameters(Symbols.AAPL, 191m, 200m));
             }
         }
 
@@ -154,13 +154,13 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var marketOrder = new MarketOrderTestParameters(Symbols.AAPL, properties: new OrderProperties() { TimeInForce = TimeInForce.Day });
 
             // place short position to holding at least -1 quantity to run of cross zero order
-            PlaceOrderWaitForStatus(marketOrder.CreateLongMarketOrder(GetDefaultQuantity()), OrderStatus.Filled);
+            PlaceOrderWaitForStatus(marketOrder.CreateLongMarketOrder(GetDefaultQuantity()), OrderStatus.Filled, secondsTimeout: 120);
 
             // validate ordering of order status change events
             Brokerage.OrdersStatusChanged += (_, orderEvents) => actualCrossZeroOrderStatusOrdering.Enqueue(orderEvents[0].Status);
 
             // Place Order with crossZero processing
-            var order = PlaceOrderWaitForStatus(marketOrder.CreateShortMarketOrder(longQuantityMultiplayer * -GetDefaultQuantity()), OrderStatus.Filled);
+            var order = PlaceOrderWaitForStatus(marketOrder.CreateShortMarketOrder(longQuantityMultiplayer * -GetDefaultQuantity()), OrderStatus.Filled, 120);
 
             Assert.IsNotNull(order);
             Assert.Greater(order.BrokerId.Count, 0);

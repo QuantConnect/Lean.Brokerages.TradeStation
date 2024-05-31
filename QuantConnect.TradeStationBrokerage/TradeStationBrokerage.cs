@@ -294,7 +294,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
 
         if (isPlaceCrossOrder == null)
         {
-            var response = PlaceTradeStationOrder(order);
+            var response = PlaceTradeStationOrder(order, holdingQuantity);
             if (response == null)
             {
                 return false;
@@ -304,15 +304,11 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
         return isPlaceCrossOrder.Value;
     }
 
-    private TradeStationPlaceOrderResponse? PlaceTradeStationOrder(Order order, bool isSubmittedEvent = true)
+    private TradeStationPlaceOrderResponse? PlaceTradeStationOrder(Order order, decimal holdingQuantity, bool isSubmittedEvent = true)
     {
         var symbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
 
-        var tradeAction = order.Direction == OrderDirection.Buy ? "BUY" : "SELL";
-        if (order.Symbol.SecurityType == SecurityType.Option)
-        {
-            tradeAction = GetOrderPosition(order.Direction, order.AbsoluteQuantity).ToStringInvariant().ToUpper();
-        }
+        var tradeAction = ConvertDirection(order.Direction, order.SecurityType, holdingQuantity);
 
         var response = _tradeStationApiClient.PlaceOrder(order, tradeAction, symbol, _accountType).SynchronouslyAwaitTaskResult();
 
@@ -357,13 +353,13 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     /// <returns>
     /// A <see cref="CrossZeroOrderResponse"/> object indicating the result of the order placement.
     /// </returns>
-    public override CrossZeroOrderResponse PlaceCrossZeroOrder(CrossZeroOrderRequest crossZeroOrderRequest, bool isPlaceOrderWithLeanEvent)
+    protected override CrossZeroOrderResponse PlaceCrossZeroOrder(CrossZeroOrderRequest crossZeroOrderRequest, bool isPlaceOrderWithLeanEvent)
     {
         var symbol = _symbolMapper.GetBrokerageSymbol(crossZeroOrderRequest.LeanOrder.Symbol);
         var tradeAction = ConvertDirection(crossZeroOrderRequest.LeanOrder.Direction, crossZeroOrderRequest.LeanOrder.SecurityType, crossZeroOrderRequest.OrderQuantityHolding);
 
         var response = _tradeStationApiClient.PlaceOrder(crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce, Math.Abs(crossZeroOrderRequest.OrderQuantity), tradeAction, symbol, _accountType,
-            GetLimitPrice(crossZeroOrderRequest.LeanOrder), GetStopPrice(crossZeroOrderRequest.LeanOrder)).SynchronouslyAwaitTaskResult(); ;
+            GetLimitPrice(crossZeroOrderRequest.LeanOrder), GetStopPrice(crossZeroOrderRequest.LeanOrder)).SynchronouslyAwaitTaskResult();
 
         foreach (var error in response.Errors ?? Enumerable.Empty<TradeStationError>())
         {
@@ -384,6 +380,16 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
             }
         }
         
+        var brokerageId = response.Orders.Single().OrderID;
+
+        crossZeroOrderRequest.LeanOrder.BrokerId.Add(brokerageId);
+
+        if (isPlaceOrderWithLeanEvent)
+        {
+            OnOrderEvent(new OrderEvent(crossZeroOrderRequest.LeanOrder, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
+            { Status = OrderStatus.Submitted });
+        }
+
         return new CrossZeroOrderResponse(response.Orders.Single().OrderID, true);
         }
 
@@ -411,16 +417,16 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
         return position switch
         {
             // Increasing existing long position or opening new long position from zero
-            OrderPosition.BuyToOpen => securityType == SecurityType.Option ? "BuyToOpen" : "Buy",
+            OrderPosition.BuyToOpen => securityType == SecurityType.Option ? "BUYTOOPEN" : "BUY",
 
             // Decreasing existing short position or opening new short position from zero
-            OrderPosition.SellToOpen => securityType == SecurityType.Option ? "SellToOpen" : "SellShort",
+            OrderPosition.SellToOpen => securityType == SecurityType.Option ? "SELLTOOPEN" : "SELLSHORT",
 
             // Buying from an existing short position (reducing, closing or flipping)
-            OrderPosition.BuyToClose => securityType == SecurityType.Option ? "BuyToClose" : "BuyToCover",
+            OrderPosition.BuyToClose => securityType == SecurityType.Option ? "BUYTOCLOSE" : "BUYTOCOVER",
 
             // Selling from an existing long position (reducing, closing or flipping)
-            OrderPosition.SellToClose => securityType == SecurityType.Option ? "SellToClose" : "Sell",
+            OrderPosition.SellToClose => securityType == SecurityType.Option ? "SELLTOCLOSE" : "SELL",
 
             // This should never happen
             _ => throw new NotSupportedException("")
@@ -608,8 +614,13 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
 
                             if (leanOrder == null)
                             {
+                                // If the lean order is still null, wait for up to 10 seconds before trying again to get the order from the cache.
+                                // This is necessary when a CrossZeroOrder was placed successfully and we need to ensure the order is available.
+                                if (!_cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(10)) && !_leanOrderByZeroCrossBrokerageOrderId.TryGetValue(brokerageOrder.OrderID, out leanOrder))
+                                {
                                 Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}. order id not found: {brokerageOrder.OrderID}");
-                                continue;
+                                    return;
+                            }
                             }
 
                             var leg = brokerageOrder.Legs.First();
@@ -643,16 +654,26 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
                                 leanOrder.Status,
                                 leg.BuyOrSell == "Buy" ? OrderDirection.Buy : OrderDirection.Sell,
                                 leg.ExecutionPrice,
-                                leg.ExecQuantity,
+                                leg.BuyOrSell == "Buy" ? leg.ExecQuantity : decimal.Negate(leg.ExecQuantity),
                                 new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD)),
                                 message: brokerageOrder.RejectReason);
 
+                            // if we filled the order and have another contingent order waiting, submit it
+                            if (!TryHandleRemainingCrossZeroOrder(leanOrder, orderEvent))
+                            {
                             OnOrderEvent(orderEvent);
+                            }
+
+                            if (orderEvent.Status == OrderStatus.Filled)
+                            {
+                                // If the order status is 'Filled', remove the cached entry for the second part of the CrossZeroOrder (Note: must use Brokerage.OrderID)
+                                _leanOrderByZeroCrossBrokerageOrderId.TryRemove(brokerageOrder.OrderID, out _);
+                            }
 
                         }
                         else if (jObj["StreamStatus"] != null)
                         {
-                            var status = jObj.ToObject<Models.TradeStationStreamStatus>();
+                            var status = jObj.ToObject<TradeStationStreamStatus>();
                             switch (status.StreamStatus)
                             {
                                 case "EndSnapshot":
