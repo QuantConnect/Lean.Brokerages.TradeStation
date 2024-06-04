@@ -225,44 +225,47 @@ public class TradeStationApiClient
                 tradeStationOrder.StopPrice = stopPrice.Value.ToStringInvariant();
                 break;
         }
-        Log.Debug($"{nameof(TradeStationApiClient)}.{nameof(PlaceOrder)}.Body: {JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings)}");
         return await RequestAsync<TradeStationPlaceOrderResponse>(_baseUrl, $"/v3/orderexecution/orders", HttpMethod.Post,
             JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
     }
 
     /// <summary>
-    /// Replaces an existing order in TradeStation with the provided Lean order.
+    /// Replaces an existing order with the specified parameters.
     /// </summary>
-    /// <param name="order">The Lean order to replace the existing order.</param>
-    /// <returns>The response containing the result of the order replacement.</returns>
-    public async Task<Models.OrderResponse> ReplaceOrder(Lean.Order order)
+    /// <param name="brokerId">The unique identifier of the broker.</param>
+    /// <param name="leanOrderType">The type of order to be placed.</param>
+    /// <param name="newQuantity">The new quantity for the order. If null, the quantity remains unchanged.</param>
+    /// <param name="limitPrice">The limit price for the order. If null, the limit price remains unchanged.</param>
+    /// <param name="stopPrice">The stop price for the order. If null, the stop price remains unchanged.</param>
+    /// <returns>A task representing the asynchronous operation. The task result contains an <see cref="OrderResponse"/> object representing the response to the order replacement.</returns>
+    /// <remarks>
+    /// This method replaces an existing order with new parameters such as quantity, limit price, and stop price.
+    /// If any parameter is not provided (null), the corresponding value of the existing order will remain unchanged.
+    /// </remarks>
+    public async Task<Models.OrderResponse> ReplaceOrder(string brokerId, OrderType leanOrderType, decimal? newQuantity = null, decimal? limitPrice = null, decimal? stopPrice = null)
     {
-        var orderID = order.BrokerId.Single();
+        var tradeStationOrder = new TradeStationReplaceOrderRequest(newQuantity.HasValue ? newQuantity.ToStringInvariant(): null);
 
-        var tradeStationOrder = new TradeStationReplaceOrderRequest(order.AbsoluteQuantity.ToStringInvariant());
-        switch (order)
+        if (limitPrice.HasValue)
         {
-            case LimitOrder limitOrder:
-                tradeStationOrder.LimitPrice = limitOrder.LimitPrice.ToStringInvariant();
-                break;
-            case StopMarketOrder stopMarket:
-                tradeStationOrder.StopPrice = stopMarket.StopPrice.ToStringInvariant();
-                break;
-            case StopLimitOrder stopLimitOrder:
-                tradeStationOrder.LimitPrice = stopLimitOrder.LimitPrice.ToStringInvariant();
-                tradeStationOrder.StopPrice = stopLimitOrder.StopPrice.ToStringInvariant();
-                break;
+            tradeStationOrder.LimitPrice = limitPrice.Value.ToStringInvariant();
+        }
+
+        if (stopPrice.HasValue)
+        {
+            tradeStationOrder.StopPrice = stopPrice.Value.ToStringInvariant();
         }
 
         // Ensure that the order type can only be updated to Market Type. (e.g. Limit -> Market)
-        if (order is MarketOrder)
+        if (leanOrderType == OrderType.Market)
         {
-            tradeStationOrder.OrderType = order.Type.ConvertLeanOrderTypeToTradeStation();
+            tradeStationOrder.OrderType = leanOrderType.ConvertLeanOrderTypeToTradeStation();
         }
 
         try
         {
-            return await RequestAsync<Models.OrderResponse>(_baseUrl, $"/v3/orderexecution/orders/{orderID}", HttpMethod.Put,
+
+            return await RequestAsync<Models.OrderResponse>(_baseUrl, $"/v3/orderexecution/orders/{brokerId}", HttpMethod.Put,
                 JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
         }
         catch

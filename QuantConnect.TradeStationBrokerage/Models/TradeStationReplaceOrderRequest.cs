@@ -40,7 +40,7 @@ public class TradeStationReplaceOrderRequest
     /// <summary>
     /// The order type of this order. Order type can only be updated to <c>Market</c>.
     /// </summary>
-    public TradeStationOrderType OrderType { get; set; }
+    public TradeStationOrderType? OrderType { get; set; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TradeStationReplaceOrderRequest"/> class with the specified quantity.

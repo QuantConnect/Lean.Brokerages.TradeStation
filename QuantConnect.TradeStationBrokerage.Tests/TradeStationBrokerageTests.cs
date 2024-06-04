@@ -71,8 +71,8 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             get
             {
                 yield return new TestCaseData(new LimitOrderTestParameters(Symbols.AAPL, 200m, 170m));
-                yield return new TestCaseData(new StopMarketOrderTestParameters(Symbols.AAPL, 200m, 170m));
-                yield return new TestCaseData(new StopLimitOrderTestParameters(Symbols.AAPL, 191m, 200m));
+                yield return new TestCaseData(new StopMarketOrderTestParameters(Symbols.AAPL, 196m, 200m));
+                yield return new TestCaseData(new StopLimitOrderTestParameters(Symbols.AAPL, 196m, 200m));
             }
         }
 
