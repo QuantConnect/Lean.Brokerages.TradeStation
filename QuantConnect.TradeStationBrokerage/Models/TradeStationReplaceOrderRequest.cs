@@ -23,6 +23,11 @@ namespace QuantConnect.Brokerages.TradeStation.Models;
 public class TradeStationReplaceOrderRequest
 {
     /// <summary>
+    /// The AccountId for this order.
+    /// </summary>
+    public string AccountID { get; }
+
+    /// <summary>
     /// The limit price for this order.
     /// </summary>
     public string LimitPrice { get; set; }
@@ -43,12 +48,20 @@ public class TradeStationReplaceOrderRequest
     public TradeStationOrderType? OrderType { get; set; }
 
     /// <summary>
+    /// The orderId for this order.
+    /// </summary>
+    public string orderID { get; set; }
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="TradeStationReplaceOrderRequest"/> class with the specified quantity.
     /// </summary>
     /// <param name="quantity">The quantity of the order.</param>
-    /// <param name="orderType">The order type of this order.</param>
-    public TradeStationReplaceOrderRequest(string quantity)
+    /// <param name="accountID">The AccountId for this order.</param>
+    /// <param name="brokerageOrderId">The orderId for this order.</param>
+    public TradeStationReplaceOrderRequest(string quantity, string accountID, string brokerageOrderId)
     {
+        AccountID = accountID;
         Quantity = quantity;
+        orderID = brokerageOrderId;
     }
 }

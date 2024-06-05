@@ -85,17 +85,6 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     /// </summary>
     private string[] PlaceOrderTradeStationErrorCodes { get; } = { "EC601", "EC602", "EC701", "EC702" };
 
-    /// <summary>
-    /// Represents a thread-safe collection for storing and retrieving the quantity of orders 
-    /// by brokerage ID after an order is submitted.
-    /// </summary>
-    /// <remarks>
-    /// This collection is used to keep track of the quantity of an order after it was submitted. 
-    /// This allows for comparison of the old quantity with a new one when updating the order, 
-    /// ensuring that the property is updated accurately.
-    /// </remarks>
-    private readonly ConcurrentDictionary<string, decimal> _tempAbsoluteQuantityByBrokerageId = new();
-
     /// <inheritdoc cref="BrokerageConcurrentMessageHandler{T}"/>
     private BrokerageConcurrentMessageHandler<string> _messageHandler;
 
@@ -157,6 +146,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
         _symbolMapper = new TradeStationSymbolMapper();
         _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCodeFromUrl, useProxy: useProxy);
         _messageHandler = new(HandleTradeStationMessage);
+        ValidateSubscription();
     }
 
     #region Brokerage
@@ -279,7 +269,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
         var cashBalance = new List<CashAmount>();
         foreach (var balance in balances.Balances)
         {
-            if (balance.AccountType == _accountType )
+            if (balance.AccountType == _accountType)
             {
                 cashBalance.Add(new CashAmount(decimal.Parse(balance.CashBalance, CultureInfo.InvariantCulture), Currencies.USD));
             }
@@ -310,23 +300,23 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
         var result = default(bool);
         _messageHandler.WithLockedStream(() =>
         {
-        var holdingQuantity = _securityProvider.GetHoldingsQuantity(order.Symbol);
+            var holdingQuantity = _securityProvider.GetHoldingsQuantity(order.Symbol);
 
-        var isPlaceCrossOrder = TryCrossZeroPositionOrder(order, holdingQuantity);
+            var isPlaceCrossOrder = TryCrossZeroPositionOrder(order, holdingQuantity);
 
-        if (isPlaceCrossOrder == null)
-        {
-            var response = PlaceTradeStationOrder(order, holdingQuantity);
-            if (response == null)
+            if (isPlaceCrossOrder == null)
             {
+                var response = PlaceTradeStationOrder(order, holdingQuantity);
+                if (response == null)
+                {
                     result = false;
-            }
+                }
                 result = true;
-        }
+            }
             else
             {
                 result = isPlaceCrossOrder.Value;
-    }
+            }
         });
         return result;
     }
@@ -360,10 +350,9 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
 
             if (isSubmittedEvent)
             {
-            OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
-            { Status = OrderStatus.Submitted });
+                OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
+                { Status = OrderStatus.Submitted });
             }
-            _tempAbsoluteQuantityByBrokerageId.AddOrUpdate(brokerageOrder.OrderID, order.AbsoluteQuantity);
         }
         return response;
     }
@@ -406,7 +395,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
                 return new CrossZeroOrderResponse(string.Empty, false);
             }
         }
-        
+
         var brokerageId = response.Orders.Single().OrderID;
 
         if (isPlaceOrderWithLeanEvent)
@@ -415,10 +404,8 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
             { Status = OrderStatus.Submitted });
         }
 
-        _tempAbsoluteQuantityByBrokerageId.AddOrUpdate(brokerageId, crossZeroOrderRequest.LeanOrder.AbsoluteQuantity);
-
         return new CrossZeroOrderResponse(brokerageId, true);
-        }
+    }
 
     protected static decimal? GetStopPrice(Order order) => order switch
     {
@@ -489,33 +476,26 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     /// <returns>True if the request was made for the order to be updated, false otherwise</returns>
     public override bool UpdateOrder(Order order)
     {
+        var holdingQuantity = _securityProvider.GetHoldingsQuantity(order.Symbol);
+
+
         var response = default(bool);
         _messageHandler.WithLockedStream(() =>
         {
-        try
-        {
-                decimal? newQuantity = null;
-                if (_tempAbsoluteQuantityByBrokerageId.TryGetValue(order.BrokerId.Last(), out var tempAbsoluteQuantity))
-                {
-                    if(order.AbsoluteQuantity != tempAbsoluteQuantity)
-                    {
-                        newQuantity = order.AbsoluteQuantity;
-                        _tempAbsoluteQuantityByBrokerageId.TryUpdate(order.BrokerId.Last(), newQuantity.Value, tempAbsoluteQuantity);
-                    }
-                }
-
-                var result = _tradeStationApiClient.ReplaceOrder(order.BrokerId.Last(), order.Type, newQuantity, GetLimitPrice(order), GetStopPrice(order)).SynchronouslyAwaitTaskResult();
-            OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
+            try
             {
-                Status = OrderStatus.UpdateSubmitted
-            });
+                var result = _tradeStationApiClient.ReplaceOrder(_accountType, order.BrokerId.Last(), order.Type, order.AbsoluteQuantity, GetLimitPrice(order), GetStopPrice(order)).SynchronouslyAwaitTaskResult();
+                OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
+                {
+                    Status = OrderStatus.UpdateSubmitted
+                });
                 response = true;
-        }
-        catch (Exception exception)
-        {
-            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, "UpdateOrderInvalid", exception.Message));
+            }
+            catch (Exception exception)
+            {
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, "UpdateOrderInvalid", exception.Message));
                 response = false;
-        }
+            }
         });
         return response;
     }
@@ -532,7 +512,6 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
         {
             OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, "CancelOrder")
             { Status = OrderStatus.Canceled });
-            _tempAbsoluteQuantityByBrokerageId.TryRemove(brokerageOrderId, out _);
             return true;
         }
         return false;
@@ -685,14 +664,14 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     /// <param name="json">The JSON string containing the TradeStation message.</param>
     private void HandleTradeStationMessage(string json)
     {
-                        var jObj = JObject.Parse(json);
-                        if (IsConnected && jObj["AccountID"] != null)
-                        {
-                            var brokerageOrder = jObj.ToObject<TradeStationOrder>();
+        var jObj = JObject.Parse(json);
+        if (IsConnected && jObj["AccountID"] != null)
+        {
+            var brokerageOrder = jObj.ToObject<TradeStationOrder>();
 
             var leanOrderStatus = default(OrderStatus);
             switch (brokerageOrder.Status)
-                            {
+            {
                 case TradeStationOrderStatusType.Fll:
                 case TradeStationOrderStatusType.Brf:
                     leanOrderStatus = OrderStatus.Filled;
@@ -704,6 +683,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
                 case TradeStationOrderStatusType.Tsc:
                 case TradeStationOrderStatusType.Rjr:
                 case TradeStationOrderStatusType.Bro:
+                case TradeStationOrderStatusType.Out:
                     leanOrderStatus = OrderStatus.Invalid;
                     break;
                 default:
@@ -713,64 +693,59 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
 
             if (!TryGetOrRemoveCrossZeroOrder(brokerageOrder.OrderID, leanOrderStatus == OrderStatus.Filled, out var leanOrder))
             {
-                                leanOrder = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID)?.SingleOrDefault();
-                            }
+                leanOrder = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID)?.SingleOrDefault();
+            }
 
-                            if (leanOrder == null)
-                            {
-                                // If the lean order is still null, wait for up to 10 seconds before trying again to get the order from the cache.
-                                // This is necessary when a CrossZeroOrder was placed successfully and we need to ensure the order is available.
-                                Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}. order id not found: {brokerageOrder.OrderID}");
-                                    return;
-                            }
+            if (leanOrder == null)
+            {
+                // If the lean order is still null, wait for up to 10 seconds before trying again to get the order from the cache.
+                // This is necessary when a CrossZeroOrder was placed successfully and we need to ensure the order is available.
+                Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}. order id not found: {brokerageOrder.OrderID}");
+                return;
+            }
 
-                            var leg = brokerageOrder.Legs.First();
-                            // TODO: Where may we take Market ?
-                            var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
-                                leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
+            var leg = brokerageOrder.Legs.First();
+            // TODO: Where may we take Market ?
+            var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
+                leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
 
             Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}.TradeStationStreamStatus: {json}");
 
-                            var orderEvent = new OrderEvent(
-                                leanOrder.Id,
-                                leanSymbol,
-                                brokerageOrder.OpenedDateTime,
-                                leanOrder.Status,
+            var orderEvent = new OrderEvent(
+                leanOrder.Id,
+                leanSymbol,
+                brokerageOrder.OpenedDateTime,
+                leanOrder.Status,
                 IsShort(leg.BuyOrSell) ? OrderDirection.Sell : OrderDirection.Buy,
-                                leg.ExecutionPrice,
+                leg.ExecutionPrice,
                 IsShort(leg.BuyOrSell) ? decimal.Negate(leg.ExecQuantity) : leg.ExecQuantity,
-                                new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD)),
+                new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD)),
                 message: brokerageOrder.RejectReason)
             { Status = leanOrderStatus };
 
-                            // if we filled the order and have another contingent order waiting, submit it
-                            if (!TryHandleRemainingCrossZeroOrder(leanOrder, orderEvent))
-                            {
-                            OnOrderEvent(orderEvent);
-                            }
-
-            if (leanOrderStatus == OrderStatus.Filled || leanOrderStatus == OrderStatus.Invalid)
+            // if we filled the order and have another contingent order waiting, submit it
+            if (!TryHandleRemainingCrossZeroOrder(leanOrder, orderEvent))
             {
-                _tempAbsoluteQuantityByBrokerageId.TryRemove(brokerageOrder.OrderID, out _);
+                OnOrderEvent(orderEvent);
             }
-                            }
-                        else if (jObj["StreamStatus"] != null)
-                        {
-                            var status = jObj.ToObject<TradeStationStreamStatus>();
-                            switch (status.StreamStatus)
-                            {
-                                case "EndSnapshot":
-                                    _autoResetEvent.Set();
-                                    break;
-                                default:
-                                    Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}.TradeStationStreamStatus: {json}");
-                                    break;
-                            }
-                        }
-                        else
-                        {
+        }
+        else if (jObj["StreamStatus"] != null)
+        {
+            var status = jObj.ToObject<TradeStationStreamStatus>();
+            switch (status.StreamStatus)
+            {
+                case "EndSnapshot":
+                    _autoResetEvent.Set();
+                    break;
+                default:
+                    Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}.TradeStationStreamStatus: {json}");
+                    break;
+            }
+        }
+        else
+        {
             //Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}.Response: {json}");
-            }
+        }
     }
 
     private class ModulesReadLicenseRead : QuantConnect.Api.RestResponse

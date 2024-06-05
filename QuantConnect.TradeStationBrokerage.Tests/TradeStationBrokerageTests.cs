@@ -70,13 +70,25 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             get
             {
-                yield return new TestCaseData(new LimitOrderTestParameters(Symbols.AAPL, 200m, 170m));
-                yield return new TestCaseData(new StopMarketOrderTestParameters(Symbols.AAPL, 196m, 200m));
-                yield return new TestCaseData(new StopLimitOrderTestParameters(Symbols.AAPL, 196m, 200m));
+                var INTL = Symbol.Create("INTL", SecurityType.Equity, Market.USA);
+                yield return new TestCaseData(new LimitOrderTestParameters(INTL, 30m, 20m));
+                yield return new TestCaseData(new StopMarketOrderTestParameters(INTL, 30m, 20m));
+                yield return new TestCaseData(new StopLimitOrderTestParameters(INTL, 30m, 20m));
             }
         }
 
-        [Test, TestCaseSource(nameof(OrderParameters))]
+        private static IEnumerable<TestCaseData> OrderLongParameters
+        {
+            get
+            {
+                var INTL = Symbol.Create("INTL", SecurityType.Equity, Market.USA);
+                yield return new TestCaseData(new LimitOrderTestParameters(INTL, 30m, 20m));
+                yield return new TestCaseData(new StopMarketOrderTestParameters(INTL, 23m, 23m));
+                yield return new TestCaseData(new StopLimitOrderTestParameters(INTL, 23m, 23m));
+            }
+        }
+
+        [Test, TestCaseSource(nameof(OrderLongParameters))]
         public override void CancelOrders(OrderTestParameters parameters)
         {
             base.CancelOrders(parameters);
@@ -112,7 +124,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             base.ShortFromLong(parameters);
         }
 
-        [Test, TestCaseSource(nameof(OrderParameters))]
+        [Test, TestCaseSource(nameof(OrderLongParameters))]
         public override void LongFromShort(OrderTestParameters parameters)
         {
             base.LongFromShort(parameters);
