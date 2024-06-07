@@ -242,11 +242,11 @@ public class TradeStationApiClient
     /// This method replaces an existing order with new parameters such as quantity, limit price, and stop price.
     /// If any parameter is not provided (null), the corresponding value of the existing order will remain unchanged.
     /// </remarks>
-    public async Task<Models.OrderResponse> ReplaceOrder(TradeStationAccountType accountType, string brokerId, OrderType leanOrderType, decimal? newQuantity = null, decimal? limitPrice = null, decimal? stopPrice = null)
+    public async Task<Models.OrderResponse> ReplaceOrder(TradeStationAccountType accountType, string brokerId, OrderType leanOrderType, decimal newQuantity, decimal? limitPrice = null, decimal? stopPrice = null)
     {
         var accountID = (await GetAccounts()).Single(acc => acc.AccountType == accountType).AccountID;
 
-        var tradeStationOrder = new TradeStationReplaceOrderRequest(newQuantity.Value.ToStringInvariant(), accountID, brokerId);
+        var tradeStationOrder = new TradeStationReplaceOrderRequest(newQuantity.ToStringInvariant(), accountID, brokerId);
 
         if (limitPrice.HasValue)
         {

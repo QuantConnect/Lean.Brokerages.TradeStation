@@ -478,7 +478,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     {
         var holdingQuantity = _securityProvider.GetHoldingsQuantity(order.Symbol);
 
-        if (!IsPossibleUpdateCrossZeroOrder(order))
+        if (!IsPossibleUpdateCrossZeroOrder(order, out var orderQuantity))
         {
             OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $"{nameof(TradeStationBrokerage)}.{nameof(UpdateOrder)}: Unable to modify order quantities."));
             return false;
@@ -489,7 +489,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
         {
             try
             {
-                var result = _tradeStationApiClient.ReplaceOrder(_accountType, order.BrokerId.Last(), order.Type, order.AbsoluteQuantity, GetLimitPrice(order), GetStopPrice(order)).SynchronouslyAwaitTaskResult();
+                var result = _tradeStationApiClient.ReplaceOrder(_accountType, order.BrokerId.Last(), order.Type, Math.Abs(orderQuantity), GetLimitPrice(order), GetStopPrice(order)).SynchronouslyAwaitTaskResult();
                 OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)}.{nameof(UpdateOrder)} Order Event")
                 {
                     Status = OrderStatus.UpdateSubmitted
