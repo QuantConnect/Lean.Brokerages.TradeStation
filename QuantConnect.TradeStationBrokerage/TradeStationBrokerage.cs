@@ -478,6 +478,11 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     {
         var holdingQuantity = _securityProvider.GetHoldingsQuantity(order.Symbol);
 
+        if (!IsPossibleUpdateCrossZeroOrder(order))
+        {
+            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $"{nameof(TradeStationBrokerage)}.{nameof(UpdateOrder)}: Unable to modify order quantities."));
+            return false;
+        }
 
         var response = default(bool);
         _messageHandler.WithLockedStream(() =>
@@ -485,7 +490,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
             try
             {
                 var result = _tradeStationApiClient.ReplaceOrder(_accountType, order.BrokerId.Last(), order.Type, order.AbsoluteQuantity, GetLimitPrice(order), GetStopPrice(order)).SynchronouslyAwaitTaskResult();
-                OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
+                OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)}.{nameof(UpdateOrder)} Order Event")
                 {
                     Status = OrderStatus.UpdateSubmitted
                 });
@@ -683,8 +688,10 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
                 case TradeStationOrderStatusType.Tsc:
                 case TradeStationOrderStatusType.Rjr:
                 case TradeStationOrderStatusType.Bro:
-                case TradeStationOrderStatusType.Out:
                     leanOrderStatus = OrderStatus.Invalid;
+                    break;
+                case TradeStationOrderStatusType.Out:
+                    leanOrderStatus = OrderStatus.Canceled;
                     break;
                 default:
                     Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}.TradeStationStreamStatus: {json}");

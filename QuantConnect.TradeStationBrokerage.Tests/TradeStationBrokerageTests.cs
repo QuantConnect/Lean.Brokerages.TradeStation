@@ -19,6 +19,7 @@ using System.Linq;
 using NUnit.Framework;
 using QuantConnect.Tests;
 using QuantConnect.Orders;
+using QuantConnect.Logging;
 using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using QuantConnect.Configuration;
@@ -57,77 +58,164 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             return false;
         }
 
+        /// <summary>
+        /// Indicates whether the order is a long order. This field is used in the <see cref="GetAskPrice(Symbol)"/> method
+        /// to determine the ask price. If it is a long position, the stop price must be greater. If it is a short position,
+        /// the stop price must be lower.
+        /// </summary>
+        private bool IsLongOrder = false;
+
+        /// <summary>
+        /// Gets the ask price for a given symbol. If the order is a long order, 
+        /// it returns the last price plus 0.1, rounded to 2 decimal places. 
+        /// Otherwise, it returns the last price minus 0.1, rounded to 2 decimal places.
+        /// </summary>
+        /// <param name="symbol">The symbol for which to get the ask price.</param>
+        /// <returns>The ask price for the specified symbol.</returns>
         protected override decimal GetAskPrice(Symbol symbol)
         {
-            return (Brokerage as TradeStationBrokerage).GetQuote(symbol).Quotes.Single().Ask;
+            if (IsLongOrder)
+            {
+                return Math.Round(GetLastPrice(symbol) + 0.1m, 2);
         }
 
+            return Math.Round(GetLastPrice(symbol) - 0.1m, 2);
+        }
 
         /// <summary>
         /// Provides the data required to test each order type in various cases
         /// </summary>
-        private static IEnumerable<TestCaseData> OrderParameters
+        private static IEnumerable<TestCaseData> OrderMoreRealToLiveParameters
         {
             get
             {
                 var INTL = Symbol.Create("INTL", SecurityType.Equity, Market.USA);
-                yield return new TestCaseData(new LimitOrderTestParameters(INTL, 30m, 20m));
-                yield return new TestCaseData(new StopMarketOrderTestParameters(INTL, 30m, 20m));
-                yield return new TestCaseData(new StopLimitOrderTestParameters(INTL, 30m, 20m));
+                yield return new TestCaseData(new LimitOrderTestParameters(INTL, 23m, 22m));
+                yield return new TestCaseData(new StopMarketOrderTestParameters(INTL, 22.68m, 22m));
+                yield return new TestCaseData(new StopLimitOrderTestParameters(INTL, 22.70m, 22.77m));
             }
         }
 
-        private static IEnumerable<TestCaseData> OrderLongParameters
+        private static IEnumerable<TestCaseData> OrderSimpleParameters
         {
             get
             {
                 var INTL = Symbol.Create("INTL", SecurityType.Equity, Market.USA);
-                yield return new TestCaseData(new LimitOrderTestParameters(INTL, 30m, 20m));
-                yield return new TestCaseData(new StopMarketOrderTestParameters(INTL, 23m, 23m));
+                yield return new TestCaseData(new LimitOrderTestParameters(INTL, 23m, 22m));
+                yield return new TestCaseData(new StopMarketOrderTestParameters(INTL, 23m, 22m));
                 yield return new TestCaseData(new StopLimitOrderTestParameters(INTL, 23m, 23m));
             }
         }
 
-        [Test, TestCaseSource(nameof(OrderLongParameters))]
+        private static IEnumerable<TestCaseData> SymbolOrderTypeParameters
+        {
+            get
+            {
+                var INTL = Symbol.Create("INTL", SecurityType.Equity, Market.USA);
+                yield return new TestCaseData(INTL, OrderType.Limit);
+                yield return new TestCaseData(INTL, OrderType.StopMarket);
+                yield return new TestCaseData(INTL, OrderType.StopLimit);
+            }
+        }
+
+        [Test, TestCaseSource(nameof(OrderSimpleParameters))]
         public override void CancelOrders(OrderTestParameters parameters)
         {
             base.CancelOrders(parameters);
         }
 
-        [Test, TestCaseSource(nameof(OrderParameters))]
+        [Test, TestCaseSource(nameof(OrderMoreRealToLiveParameters))]
         public override void LongFromZero(OrderTestParameters parameters)
         {
             base.LongFromZero(parameters);
         }
 
-        [Test, TestCaseSource(nameof(OrderParameters))]
+        [Test, TestCaseSource(nameof(OrderMoreRealToLiveParameters))]
         public override void CloseFromLong(OrderTestParameters parameters)
         {
             base.CloseFromLong(parameters);
         }
 
-        [Test, TestCaseSource(nameof(OrderParameters))]
+        [Test, TestCaseSource(nameof(OrderMoreRealToLiveParameters))]
         public override void ShortFromZero(OrderTestParameters parameters)
         {
             base.ShortFromZero(parameters);
         }
 
-        [Test, TestCaseSource(nameof(OrderParameters))]
+        [Test, TestCaseSource(nameof(OrderMoreRealToLiveParameters))]
         public override void CloseFromShort(OrderTestParameters parameters)
         {
             base.CloseFromShort(parameters);
         }
 
-        [Test, TestCaseSource(nameof(OrderParameters))]
+        [Test, TestCaseSource(nameof(OrderMoreRealToLiveParameters))]
+        [Explicit("The TradeStation doesn't support update of CrossZeroOrder")]
         public override void ShortFromLong(OrderTestParameters parameters)
         {
             base.ShortFromLong(parameters);
         }
 
-        [Test, TestCaseSource(nameof(OrderLongParameters))]
+        [Test, TestCaseSource(nameof(OrderSimpleParameters))]
+        [Explicit("The TradeStation doesn't support update of CrossZeroOrder")]
         public override void LongFromShort(OrderTestParameters parameters)
         {
             base.LongFromShort(parameters);
+        }
+
+        [Test, TestCaseSource(nameof(SymbolOrderTypeParameters))]
+        public void ShortFromShort(Symbol symbol, OrderType orderType)
+        {
+            IsLongOrder = false;
+            var lastPrice = GetLastPrice(symbol);
+            OrderTestParameters parameters = orderType switch
+            {
+                OrderType.Limit => new LimitOrderTestParameters(symbol, Math.Round(lastPrice + 0.5m, 2), Math.Round(lastPrice - 0.5m)),
+                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, Math.Round(lastPrice - 0.2m, 2), Math.Round(lastPrice - 0.4m, 2)),
+                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, Math.Round(lastPrice - 0.05m, 2), Math.Round(lastPrice - 0.02m, 2)),
+                _ => throw new NotImplementedException("Not supported type of order")
+            };;
+
+            Log.Trace("");
+            Log.Trace("SHORT FROM SHORT");
+            Log.Trace("");
+            // first fo short
+            PlaceOrderWaitForStatus(parameters.CreateShortMarketOrder(-GetDefaultQuantity()), OrderStatus.Filled);
+
+            // now go long
+            var order = PlaceOrderWaitForStatus(parameters.CreateShortOrder(-2 * GetDefaultQuantity()), parameters.ExpectedStatus);
+
+            if (parameters.ModifyUntilFilled)
+            {
+                ModifyOrderUntilFilled(order, parameters);
+            }
+        }
+
+        [Test, TestCaseSource(nameof(SymbolOrderTypeParameters))]
+        public virtual void LongFromLong(Symbol symbol, OrderType orderType)
+        {
+            IsLongOrder = true;
+            var lastPrice = GetLastPrice(symbol);
+            OrderTestParameters parameters = orderType switch
+            {
+                OrderType.Limit => new LimitOrderTestParameters(symbol, Math.Round(lastPrice + 0.5m, 2), Math.Round(lastPrice - 0.5m)),
+                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, Math.Round(lastPrice + 0.5m, 2), Math.Round(lastPrice + 0.6m, 2)),
+                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, Math.Round(lastPrice + 0.5m, 2), Math.Round(lastPrice + 0.6m, 2)),
+                _ => throw new NotImplementedException("Not supported type of order")
+            };
+
+            Log.Trace("");
+            Log.Trace("LONG FROM LONG");
+            Log.Trace("");
+            // first go long
+            PlaceOrderWaitForStatus(parameters.CreateLongMarketOrder(GetDefaultQuantity()));
+
+            // now go net short
+            var order = PlaceOrderWaitForStatus(parameters.CreateLongOrder(2 * GetDefaultQuantity()), parameters.ExpectedStatus);
+
+            if (parameters.ModifyUntilFilled)
+            {
+                ModifyOrderUntilFilled(order, parameters);
+            }
         }
 
         [Test]
@@ -177,6 +265,11 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.IsNotNull(order);
             Assert.Greater(order.BrokerId.Count, 0);
             CollectionAssert.AreEquivalent(expectedOrderStatusChangedOrdering, actualCrossZeroOrderStatusOrdering);
+        }
+
+        private decimal GetLastPrice(Symbol symbol)
+        {
+            return (Brokerage as TradeStationBrokerage).GetQuote(symbol).Quotes.Single().Last;
         }
     }
 }
