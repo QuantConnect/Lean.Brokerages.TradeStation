@@ -100,10 +100,15 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             get
             {
+                var AAPLOption = Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 205m, new DateTime(2024, 6, 14));
+                yield return new TestCaseData(new LimitOrderTestParameters(AAPLOption, 2.5m, 2.0m)).SetCategory("Option").SetName("AAPL Option Limit");
+                yield return new TestCaseData(new StopMarketOrderTestParameters(AAPLOption, 2.5m, 2.0m)).SetCategory("Option").SetName("AAPL Option StopMarket");
+                yield return new TestCaseData(new StopLimitOrderTestParameters(AAPLOption, 2.55m, 2.55m)).SetCategory("Option").SetName("AAPL Option StopLimit");
+
                 var INTL = Symbol.Create("INTL", SecurityType.Equity, Market.USA);
-                yield return new TestCaseData(new LimitOrderTestParameters(INTL, 23m, 22m));
-                yield return new TestCaseData(new StopMarketOrderTestParameters(INTL, 23m, 22m));
-                yield return new TestCaseData(new StopLimitOrderTestParameters(INTL, 23m, 23m));
+                yield return new TestCaseData(new LimitOrderTestParameters(INTL, 23m, 22m)).SetCategory("Equity").SetName("INTL Limit");
+                yield return new TestCaseData(new StopMarketOrderTestParameters(INTL, 23m, 22m)).SetCategory("Equity").SetName("INTL StopMarket");
+                yield return new TestCaseData(new StopLimitOrderTestParameters(INTL, 23m, 23m)).SetCategory("Equity").SetName("INTL StopLimit");
             }
         }
 
