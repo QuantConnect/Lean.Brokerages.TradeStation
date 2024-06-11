@@ -157,6 +157,7 @@ public class TradeStationApiClient
     /// <summary>
     /// Places an order in TradeStation based on the provided Lean order and symbol.
     /// </summary>
+    /// <param name="accountID">The working accountID of Trade Station based on <see cref="TradeStationAccountType"/></param>
     /// <param name="order">The Lean order to be placed.</param>
     /// <param name="tradeAction">
     /// 'BUY' - equities and futures,<br/>
@@ -171,11 +172,9 @@ public class TradeStationApiClient
     /// <param name="symbol">The symbol for which the order is being placed.</param>
     /// <param name="accountType">The account type in current session.</param>
     /// <returns>The response containing the result of the order placement.</returns>
-    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(Order order, string tradeAction, string symbol,
+    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(string accountID, Order order, string tradeAction, string symbol,
         TradeStationAccountType accountType)
     {
-        var accountID = (await GetAccounts()).Single(acc => acc.AccountType == accountType).AccountID;
-
         var orderType = order.Type.ConvertLeanOrderTypeToTradeStation();
 
         var (duration, expiryDateTime) = order.TimeInForce.GetBrokerageTimeInForce();
@@ -200,11 +199,10 @@ public class TradeStationApiClient
             JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
     }
 
-    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(OrderType leanOrderType, Lean.TimeInForce leanTimeInForce, decimal leanAbsoluteQuantity, string tradeAction, string symbol,
+    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(
+        string accountID, OrderType leanOrderType, Lean.TimeInForce leanTimeInForce, decimal leanAbsoluteQuantity, string tradeAction, string symbol,
     TradeStationAccountType accountType, decimal? limitPrice = null, decimal? stopPrice = null)
     {
-        var accountID = (await GetAccounts()).Single(acc => acc.AccountType == accountType).AccountID;
-
         var orderType = leanOrderType.ConvertLeanOrderTypeToTradeStation();
 
         var (duration, expiryDateTime) = leanTimeInForce.GetBrokerageTimeInForce();
@@ -232,9 +230,10 @@ public class TradeStationApiClient
     /// <summary>
     /// Replaces an existing order with the specified parameters.
     /// </summary>
+    /// <param name="accountID">The working accountID of Trade Station based on <see cref="TradeStationAccountType"/></param>
     /// <param name="brokerId">The unique identifier of the broker.</param>
     /// <param name="leanOrderType">The type of order to be placed.</param>
-    /// <param name="newQuantity">The new quantity for the order. If null, the quantity remains unchanged.</param>
+    /// <param name="quantity">The new quantity for the order. If null, the quantity remains unchanged.</param>
     /// <param name="limitPrice">The limit price for the order. If null, the limit price remains unchanged.</param>
     /// <param name="stopPrice">The stop price for the order. If null, the stop price remains unchanged.</param>
     /// <returns>A task representing the asynchronous operation. The task result contains an <see cref="OrderResponse"/> object representing the response to the order replacement.</returns>
@@ -242,11 +241,10 @@ public class TradeStationApiClient
     /// This method replaces an existing order with new parameters such as quantity, limit price, and stop price.
     /// If any parameter is not provided (null), the corresponding value of the existing order will remain unchanged.
     /// </remarks>
-    public async Task<Models.OrderResponse> ReplaceOrder(TradeStationAccountType accountType, string brokerId, OrderType leanOrderType, decimal newQuantity, decimal? limitPrice = null, decimal? stopPrice = null)
+    public async Task<Models.OrderResponse> ReplaceOrder(string accountID, string brokerId, OrderType leanOrderType, decimal quantity,
+        decimal? limitPrice = null, decimal? stopPrice = null)
     {
-        var accountID = (await GetAccounts()).Single(acc => acc.AccountType == accountType).AccountID;
-
-        var tradeStationOrder = new TradeStationReplaceOrderRequest(newQuantity.ToStringInvariant(), accountID, brokerId);
+        var tradeStationOrder = new TradeStationReplaceOrderRequest(quantity.ToStringInvariant(), accountID, brokerId);
 
         if (limitPrice.HasValue)
         {
@@ -335,6 +333,23 @@ public class TradeStationApiClient
     public async Task<TradeStationQuoteSnapshot> GetQuoteSnapshot(string ticker)
     {
         return await RequestAsync<TradeStationQuoteSnapshot>(_baseUrl, $"/v3/marketdata/quotes/{ticker}", HttpMethod.Get);
+    }
+
+    /// <summary>
+    /// Retrieves the account ID for a specified TradeStation account type.
+    /// </summary>
+    /// <param name="accountType">The type of TradeStation account to retrieve the ID for.</param>
+    /// <returns>
+    /// A task that represents the asynchronous operation. The task result contains the account ID 
+    /// for the specified account type.
+    /// </returns>
+    /// <remarks>
+    /// If the account ID is already cached, it returns the cached value. Otherwise, it fetches the
+    /// account information, filters it by the specified account type, caches the account ID, and returns it.
+    /// </remarks>
+    public async Task<string> GetAccountIDByAccountType(TradeStationAccountType accountType)
+    {
+        return (await GetAccounts()).Single(acc => acc.AccountType == accountType).AccountID;
     }
 
     /// <summary>

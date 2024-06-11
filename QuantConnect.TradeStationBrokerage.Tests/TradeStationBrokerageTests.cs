@@ -149,16 +149,16 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         }
 
         [Test, TestCaseSource(nameof(OrderMoreRealToLiveParameters))]
-        [Explicit("The TradeStation doesn't support update of CrossZeroOrder")]
         public override void ShortFromLong(OrderTestParameters parameters)
         {
+            IsLongOrder = false;
             base.ShortFromLong(parameters);
         }
 
         [Test, TestCaseSource(nameof(OrderSimpleParameters))]
-        [Explicit("The TradeStation doesn't support update of CrossZeroOrder")]
         public override void LongFromShort(OrderTestParameters parameters)
         {
+            IsLongOrder = true;
             base.LongFromShort(parameters);
         }
 
@@ -178,10 +178,10 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Log.Trace("");
             Log.Trace("SHORT FROM SHORT");
             Log.Trace("");
-            // first fo short
+            // first go short
             PlaceOrderWaitForStatus(parameters.CreateShortMarketOrder(-GetDefaultQuantity()), OrderStatus.Filled);
 
-            // now go long
+            // now go short again
             var order = PlaceOrderWaitForStatus(parameters.CreateShortOrder(-2 * GetDefaultQuantity()), parameters.ExpectedStatus);
 
             if (parameters.ModifyUntilFilled)
@@ -209,7 +209,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             // first go long
             PlaceOrderWaitForStatus(parameters.CreateLongMarketOrder(GetDefaultQuantity()));
 
-            // now go net short
+            // now go long again
             var order = PlaceOrderWaitForStatus(parameters.CreateLongOrder(2 * GetDefaultQuantity()), parameters.ExpectedStatus);
 
             if (parameters.ModifyUntilFilled)
