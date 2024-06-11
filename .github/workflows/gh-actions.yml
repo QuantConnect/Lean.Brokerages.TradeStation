@@ -49,4 +49,4 @@ jobs:
         run: dotnet build /p:Configuration=Release /v:quiet /p:WarningLevel=1 QuantConnect.TradeStationBrokerage.sln
 
       - name: Run Trade Station Tests
-        run: dotnet test ./QuantConnect.TradeStationBrokerage.Tests/bin/Release/QuantConnect.Brokerages.TradeStation.dll
+        run: dotnet test ./QuantConnect.TradeStationBrokerage.Tests/bin/Release/QuantConnect.Brokerages.TradeStation.Tests.dll
