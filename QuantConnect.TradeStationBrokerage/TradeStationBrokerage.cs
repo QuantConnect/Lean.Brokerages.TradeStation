@@ -381,7 +381,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
 
         var response = _tradeStationApiClient.PlaceOrder(_accountID, crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
             Math.Abs(crossZeroOrderRequest.OrderQuantity), tradeAction, symbol, _accountType,
-            GetLimitPrice(crossZeroOrderRequest.LeanOrder), GetStopPrice(crossZeroOrderRequest.LeanOrder)).SynchronouslyAwaitTaskResult();
+            crossZeroOrderRequest.LeanOrder.GetLimitPrice(), crossZeroOrderRequest.LeanOrder.GetStopPrice()).SynchronouslyAwaitTaskResult();
 
         foreach (var error in response.Errors ?? Enumerable.Empty<TradeStationError>())
         {
@@ -413,20 +413,6 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
         return new CrossZeroOrderResponse(brokerageId, true);
     }
 
-    protected static decimal? GetStopPrice(Order order) => order switch
-    {
-        StopMarketOrder smo => smo.StopPrice,
-        StopLimitOrder slo => slo.StopPrice,
-        _ => null
-    };
-
-    protected static decimal? GetLimitPrice(Order order) => order switch
-    {
-        LimitOrder lo => lo.LimitPrice,
-        StopLimitOrder slo => slo.LimitPrice,
-        _ => null
-    };
-
     /// <summary>
     /// Updates the order with the same id
     /// </summary>
@@ -447,7 +433,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
         {
             try
             {
-                var result = _tradeStationApiClient.ReplaceOrder(_accountID, order.BrokerId.Last(), order.Type, Math.Abs(orderQuantity), GetLimitPrice(order), GetStopPrice(order)).SynchronouslyAwaitTaskResult();
+                var result = _tradeStationApiClient.ReplaceOrder(_accountID, order.BrokerId.Last(), order.Type, Math.Abs(orderQuantity), order.GetLimitPrice(), order.GetStopPrice()).SynchronouslyAwaitTaskResult();
                 OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)}.{nameof(UpdateOrder)} Order Event")
                 {
                     Status = OrderStatus.UpdateSubmitted

@@ -165,4 +165,28 @@ public static class TradeStationExtensions
         // This should never happen
         _ => throw new NotSupportedException("The specified order position is not supported.")
     };
+
+    /// <summary>
+    /// Gets the stop price of the specified order.
+    /// </summary>
+    /// <param name="order">The order to retrieve the stop price from.</param>
+    /// <returns>The stop price if the order is a StopMarketOrder or StopLimitOrder; otherwise, null.</returns>
+    public static decimal? GetStopPrice(this Order order) => order switch
+    {
+        StopMarketOrder smo => smo.StopPrice,
+        StopLimitOrder slo => slo.StopPrice,
+        _ => null
+    };
+
+    /// <summary>
+    /// Gets the limit price of the specified order.
+    /// </summary>
+    /// <param name="order">The order to retrieve the limit price from.</param>
+    /// <returns>The limit price if the order is a LimitOrder or StopLimitOrder; otherwise, null.</returns>
+    public static decimal? GetLimitPrice(this Order order) => order switch
+    {
+        LimitOrder lo => lo.LimitPrice,
+        StopLimitOrder slo => slo.LimitPrice,
+        _ => null
+    };
 }
