@@ -50,6 +50,19 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.That(res.Errors.First().Message, Is.EqualTo("Request not supported for account type."));
         }
 
+        [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""BuyOrSell"": ""BUY"" } ] } ],""Errors"":[] }", TradeStationTradeActionType.Buy)]
+        [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""BuyOrSell"": ""Buy"" } ] } ],""Errors"":[] }", TradeStationTradeActionType.Buy)]
+        [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""BuyOrSell"": ""SELL"" } ] } ],""Errors"":[] }", TradeStationTradeActionType.Sell)]
+        [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""BuyOrSell"": ""Sell"" } ] } ],""Errors"":[] }", TradeStationTradeActionType.Sell)]
+        [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""BuyOrSell"": ""BUYTOCOVER"" } ] } ],""Errors"":[] }", TradeStationTradeActionType.BuyToCover)]
+        [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""BuyOrSell"": ""BuyToCover"" } ] } ],""Errors"":[] }", TradeStationTradeActionType.BuyToCover)]
+        public void DeserializeTradeStationTradeActionType(string json, TradeStationTradeActionType expectedActionType)
+        {
+            var result = JsonConvert.DeserializeObject<TradeStationOrderResponse>(json);
+            var actualActionType = result.Orders.First().Legs.First().BuyOrSell;
+            Assert.That(actualActionType, Is.EqualTo(expectedActionType));            
+        }
+
         [Test]
         public void GetTradeStationAccountsBalance()
         {

@@ -267,7 +267,8 @@ public readonly struct Leg
     /// <summary>
     /// Identifies whether the order is a buy or sell. Valid values are Buy, Sell, SellShort, or BuyToCover.
     /// </summary>
-    public string BuyOrSell { get; }
+    [JsonConverter(typeof(StringEnumConverter))]
+    public TradeStationTradeActionType BuyOrSell { get; }
 
     /// <summary>
     /// Symbol for the leg order.
@@ -307,7 +308,7 @@ public readonly struct Leg
     public decimal StrikePrice { get; }
 
     [JsonConstructor]
-    public Leg(string openOrClose, decimal quantityOrdered, decimal execQuantity, decimal quantityRemaining, string buyOrSell, string symbol, string underlying,
+    public Leg(string openOrClose, decimal quantityOrdered, decimal execQuantity, decimal quantityRemaining, TradeStationTradeActionType buyOrSell, string symbol, string underlying,
         TradeStationAssetType assetType, decimal executionPrice, DateTime expirationDate, TradeStationOptionType optionType, decimal strikePrice)
     {
         OpenOrClose = openOrClose;

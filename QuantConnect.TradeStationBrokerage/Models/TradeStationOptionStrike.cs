@@ -15,7 +15,7 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace QuantConnect.Brokerages.TradeStation.Models.Enums;
+namespace QuantConnect.Brokerages.TradeStation.Models;
 
 /// <summary>
 /// Represents an option strike configuration for TradeStation with a specific spread type and a collection of strike prices.
@@ -38,5 +38,5 @@ public readonly struct TradeStationOptionStrike
     /// <param name="spreadType">The type of the spread.</param>
     /// <param name="strikes">The collection of strike prices.</param>
     [JsonConstructor]
-    public TradeStationOptionStrike(string spreadType, IEnumerable<IEnumerable<decimal>> strikes) => (SpreadType, Strikes) = (spreadType, strikes); 
+    public TradeStationOptionStrike(string spreadType, IEnumerable<IEnumerable<decimal>> strikes) => (SpreadType, Strikes) = (spreadType, strikes);
 }

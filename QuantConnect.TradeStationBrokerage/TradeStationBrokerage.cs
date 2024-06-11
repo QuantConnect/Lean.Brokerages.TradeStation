@@ -330,7 +330,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     {
         var symbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
 
-        var tradeAction = ConvertDirection(order.Direction, order.SecurityType, holdingQuantity);
+        var tradeAction = GetOrderPosition(order.Direction, holdingQuantity).ConvertDirection(order.SecurityType).ToStringInvariant().ToUpperInvariant();
 
         var response = _tradeStationApiClient.PlaceOrder(_accountID, order, tradeAction, symbol, _accountType).SynchronouslyAwaitTaskResult();
 
@@ -377,7 +377,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     protected override CrossZeroOrderResponse PlaceCrossZeroOrder(CrossZeroOrderRequest crossZeroOrderRequest, bool isPlaceOrderWithLeanEvent)
     {
         var symbol = _symbolMapper.GetBrokerageSymbol(crossZeroOrderRequest.LeanOrder.Symbol);
-        var tradeAction = ConvertDirection(crossZeroOrderRequest.LeanOrder.Direction, crossZeroOrderRequest.LeanOrder.SecurityType, crossZeroOrderRequest.OrderQuantityHolding);
+        var tradeAction = GetOrderPosition(crossZeroOrderRequest.LeanOrder.Direction, crossZeroOrderRequest.OrderQuantityHolding).ConvertDirection(crossZeroOrderRequest.LeanOrder.SecurityType).ToStringInvariant().ToUpperInvariant();
 
         var response = _tradeStationApiClient.PlaceOrder(_accountID, crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
             Math.Abs(crossZeroOrderRequest.OrderQuantity), tradeAction, symbol, _accountType,
@@ -426,54 +426,6 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
         StopLimitOrder slo => slo.LimitPrice,
         _ => null
     };
-
-    protected static string ConvertDirection(OrderDirection direction, SecurityType securityType, decimal holdingQuantity)
-    {
-        // Equity codes: buy, buy_to_cover, sell, sell_short
-        // Option codes: buy_to_open, buy_to_close, sell_to_open, sell_to_close
-        // Tradier has 4 types of orders for this: buy/sell/buy to cover and sell short.
-
-        var position = GetOrderPosition(direction, holdingQuantity);
-        return position switch
-        {
-            // Increasing existing long position or opening new long position from zero
-            OrderPosition.BuyToOpen => securityType == SecurityType.Option ? "BUYTOOPEN" : "BUY",
-
-            // Decreasing existing short position or opening new short position from zero
-            OrderPosition.SellToOpen => securityType == SecurityType.Option ? "SELLTOOPEN" : "SELLSHORT",
-
-            // Buying from an existing short position (reducing, closing or flipping)
-            OrderPosition.BuyToClose => securityType == SecurityType.Option ? "BUYTOCLOSE" : "BUYTOCOVER",
-
-            // Selling from an existing long position (reducing, closing or flipping)
-            OrderPosition.SellToClose => securityType == SecurityType.Option ? "SELLTOCLOSE" : "SELL",
-
-            // This should never happen
-            _ => throw new NotSupportedException("")
-        };
-    }
-
-    protected static bool IsShort(string buyOrSell)
-    {
-        switch (buyOrSell.ToUpperInvariant())
-        {
-            case "SELL":
-            case "SELLSHORT":
-            case "SELLTOOPEN":
-            case "SELLTOCLOSE":
-                return true;
-
-            case "BUY":
-            case "BUYTOCOVER":
-            case "BUYTOCLOSE":
-            case "BUYTOOPEN":
-                return false;
-
-            default:
-                throw new ArgumentOutOfRangeException("buyOrSell", buyOrSell, null);
-        }
-    }
-
 
     /// <summary>
     /// Updates the order with the same id
@@ -731,9 +683,9 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
                 leanSymbol,
                 brokerageOrder.OpenedDateTime,
                 leanOrder.Status,
-                IsShort(leg.BuyOrSell) ? OrderDirection.Sell : OrderDirection.Buy,
+                leg.BuyOrSell.IsShort() ? OrderDirection.Sell : OrderDirection.Buy,
                 leg.ExecutionPrice,
-                IsShort(leg.BuyOrSell) ? decimal.Negate(leg.ExecQuantity) : leg.ExecQuantity,
+                leg.BuyOrSell.IsShort() ? decimal.Negate(leg.ExecQuantity) : leg.ExecQuantity,
                 new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD)),
                 message: brokerageOrder.RejectReason)
             { Status = leanOrderStatus };
