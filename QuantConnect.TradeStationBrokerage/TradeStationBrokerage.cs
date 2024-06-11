@@ -332,7 +332,8 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
 
         var tradeAction = GetOrderPosition(order.Direction, holdingQuantity).ConvertDirection(order.SecurityType).ToStringInvariant().ToUpperInvariant();
 
-        var response = _tradeStationApiClient.PlaceOrder(_accountID, order, tradeAction, symbol, _accountType).SynchronouslyAwaitTaskResult();
+        var response = _tradeStationApiClient.PlaceOrder(_accountID, order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, symbol,
+            order.GetLimitPrice(), order.GetStopPrice()).SynchronouslyAwaitTaskResult();
 
         foreach (var error in response.Errors ?? Enumerable.Empty<TradeStationError>())
         {
@@ -380,8 +381,8 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
         var tradeAction = GetOrderPosition(crossZeroOrderRequest.LeanOrder.Direction, crossZeroOrderRequest.OrderQuantityHolding).ConvertDirection(crossZeroOrderRequest.LeanOrder.SecurityType).ToStringInvariant().ToUpperInvariant();
 
         var response = _tradeStationApiClient.PlaceOrder(_accountID, crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
-            Math.Abs(crossZeroOrderRequest.OrderQuantity), tradeAction, symbol, _accountType,
-            crossZeroOrderRequest.LeanOrder.GetLimitPrice(), crossZeroOrderRequest.LeanOrder.GetStopPrice()).SynchronouslyAwaitTaskResult();
+            Math.Abs(crossZeroOrderRequest.OrderQuantity), tradeAction, symbol, crossZeroOrderRequest.LeanOrder.GetLimitPrice(), crossZeroOrderRequest.LeanOrder.GetStopPrice())
+            .SynchronouslyAwaitTaskResult();
 
         foreach (var error in response.Errors ?? Enumerable.Empty<TradeStationError>())
         {

@@ -157,51 +157,17 @@ public class TradeStationApiClient
     /// <summary>
     /// Places an order in TradeStation based on the provided Lean order and symbol.
     /// </summary>
-    /// <param name="accountID">The working accountID of Trade Station based on <see cref="TradeStationAccountType"/></param>
-    /// <param name="order">The Lean order to be placed.</param>
-    /// <param name="tradeAction">
-    /// 'BUY' - equities and futures,<br/>
-    /// 'SELL' - equities and futures,<br/>
-    /// 'BUYTOCOVER' - equities,<br/>
-    /// 'SELLSHORT' - equities,<br/>
-    /// 'BUYTOOPEN' - options,<br/>
-    /// 'BUYTOCLOSE' - options,<br/>
-    /// 'SELLTOOPEN' - options,<br/>
-    /// 'SELLTOCLOSE' - options<br/>
-    /// </param>
+    /// <param name="accountID">The working account ID of TradeStation.</param>
+    /// <param name="leanOrderType">The type of Lean order to be placed.</param>
+    /// <param name="leanTimeInForce">The Lean time-in-force for the order.</param>
+    /// <param name="leanAbsoluteQuantity">The absolute quantity of the Lean order.</param>
+    /// <param name="tradeAction">The action to be taken for the trade: <see cref="TradeStationTradeActionType"/> </param>
     /// <param name="symbol">The symbol for which the order is being placed.</param>
-    /// <param name="accountType">The account type in current session.</param>
-    /// <returns>The response containing the result of the order placement.</returns>
-    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(string accountID, Order order, string tradeAction, string symbol,
-        TradeStationAccountType accountType)
-    {
-        var orderType = order.Type.ConvertLeanOrderTypeToTradeStation();
-
-        var (duration, expiryDateTime) = order.TimeInForce.GetBrokerageTimeInForce();
-
-        var tradeStationOrder = new TradeStationPlaceOrderRequest(accountID, orderType, order.AbsoluteQuantity.ToStringInvariant(), symbol,
-                    new Models.TimeInForce(duration, expiryDateTime), tradeAction);
-        switch (order)
-        {
-            case LimitOrder limitOrder:
-                tradeStationOrder.LimitPrice = limitOrder.LimitPrice.ToStringInvariant();
-                break;
-            case StopMarketOrder stopMarket:
-                tradeStationOrder.StopPrice = stopMarket.StopPrice.ToStringInvariant();
-                break;
-            case StopLimitOrder stopLimitOrder:
-                tradeStationOrder.LimitPrice = stopLimitOrder.LimitPrice.ToStringInvariant();
-                tradeStationOrder.StopPrice = stopLimitOrder.StopPrice.ToStringInvariant();
-                break;
-        }
-        Log.Debug($"{nameof(TradeStationApiClient)}.{nameof(PlaceOrder)}.Body: {JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings)}");
-        return await RequestAsync<TradeStationPlaceOrderResponse>(_baseUrl, $"/v3/orderexecution/orders", HttpMethod.Post,
-            JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
-    }
-
-    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(
-        string accountID, OrderType leanOrderType, Lean.TimeInForce leanTimeInForce, decimal leanAbsoluteQuantity, string tradeAction, string symbol,
-    TradeStationAccountType accountType, decimal? limitPrice = null, decimal? stopPrice = null)
+    /// <param name="limitPrice">The limit price for the order (optional).</param>
+    /// <param name="stopPrice">The stop price for the order (optional).</param>
+    /// <returns>A <see cref="TradeStationPlaceOrderResponse"/> containing the result of the order placement.</returns>
+    public async Task<TradeStationPlaceOrderResponse> PlaceOrder( string accountID, OrderType leanOrderType, Lean.TimeInForce leanTimeInForce, decimal leanAbsoluteQuantity,
+        string tradeAction, string symbol, decimal? limitPrice = null, decimal? stopPrice = null)
     {
         var orderType = leanOrderType.ConvertLeanOrderTypeToTradeStation();
 
