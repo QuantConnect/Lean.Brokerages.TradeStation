@@ -62,7 +62,7 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// <example>{ESZ24}</example>
     private string GenerateBrokerageFuture(Symbol symbol)
     {
-        return $"{symbol.ID.Symbol}{SymbolRepresentation.FuturesMonthLookup[symbol.ID.Date.Month]}{symbol.ID.Date.ToString("yy")}";
+        return $"{symbol.ID.Symbol}{SymbolRepresentation.FuturesMonthLookup[symbol.ID.Date.Month]}{symbol.ID.Date:yy}";
     }
 
     /// <summary>
@@ -73,7 +73,7 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// <example>{AAPL 240510C167.5}</example>
     private string GenerateBrokerageOption(Symbol symbol)
     {
-        return $"{symbol.Underlying.Value} {symbol.ID.Date.ToString("yyMMdd")}{symbol.ID.OptionRight.ToString()[0]}{symbol.ID.StrikePrice}";
+        return $"{symbol.Underlying.Value} {symbol.ID.Date:yyMMdd}{symbol.ID.OptionRight.ToString()[0]}{symbol.ID.StrikePrice}";
     }
 
     /// <inheritdoc cref="ISymbolMapper.GetLeanSymbol(string, SecurityType, string, DateTime, decimal, OptionRight)"/>

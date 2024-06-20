@@ -330,7 +330,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     {
         var symbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
 
-        var tradeAction = GetOrderPosition(order.Direction, holdingQuantity).ConvertDirection(order.SecurityType).ToStringInvariant().ToUpperInvariant();
+        var tradeAction = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity).ToStringInvariant().ToUpperInvariant();
 
         var response = _tradeStationApiClient.PlaceOrder(_accountID, order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, symbol,
             order.GetLimitPrice(), order.GetStopPrice()).SynchronouslyAwaitTaskResult();
@@ -378,7 +378,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     protected override CrossZeroOrderResponse PlaceCrossZeroOrder(CrossZeroOrderRequest crossZeroOrderRequest, bool isPlaceOrderWithLeanEvent)
     {
         var symbol = _symbolMapper.GetBrokerageSymbol(crossZeroOrderRequest.LeanOrder.Symbol);
-        var tradeAction = GetOrderPosition(crossZeroOrderRequest.LeanOrder.Direction, crossZeroOrderRequest.OrderQuantityHolding).ConvertDirection(crossZeroOrderRequest.LeanOrder.SecurityType).ToStringInvariant().ToUpperInvariant();
+        var tradeAction = ConvertDirection(crossZeroOrderRequest.LeanOrder.SecurityType, crossZeroOrderRequest.LeanOrder.Direction, crossZeroOrderRequest.OrderQuantityHolding).ToStringInvariant().ToUpperInvariant();
 
         var response = _tradeStationApiClient.PlaceOrder(_accountID, crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
             Math.Abs(crossZeroOrderRequest.OrderQuantity), tradeAction, symbol, crossZeroOrderRequest.LeanOrder.GetLimitPrice(), crossZeroOrderRequest.LeanOrder.GetStopPrice())
@@ -701,6 +701,25 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
             //Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}.Response: {json}");
         }
     }
+
+    /// <summary>
+    /// Converts the given <see cref="OrderDirection"/> and <see cref="SecurityType"/> to a <see cref="TradeStationTradeActionType"/>.
+    /// </summary>
+    /// <param name="securityType">The type of security (e.g., Future, Equity, Option).</param>
+    /// <param name="leanOrderDirection">The direction of the order (Buy or Sell).</param>
+    /// <param name="holdingQuantity">The quantity of holdings.</param>
+    /// <returns>
+    /// A <see cref="TradeStationTradeActionType"/> that represents the trade action type for TradeStation.
+    /// For Futures, returns Buy if the order direction is Buy, otherwise returns Sell.
+    /// For Equities or Options, calls <see cref="GetOrderPosition"/> to determine the trade action type.
+    /// </returns>
+    /// <exception cref="ArgumentException">Thrown when an unsupported <see cref="SecurityType"/> is provided.</exception>
+    private static TradeStationTradeActionType ConvertDirection(SecurityType securityType, OrderDirection leanOrderDirection, decimal holdingQuantity) => securityType switch
+    {
+        SecurityType.Future => leanOrderDirection == OrderDirection.Buy ? TradeStationTradeActionType.Buy : TradeStationTradeActionType.Sell,
+        SecurityType.Equity or SecurityType.Option => GetOrderPosition(leanOrderDirection, holdingQuantity).ConvertDirection(securityType),
+        _ => throw new ArgumentException($"Unsupported security type: {securityType}", nameof(securityType))
+    };
 
     private class ModulesReadLicenseRead : QuantConnect.Api.RestResponse
     {

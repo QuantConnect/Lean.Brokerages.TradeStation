@@ -91,8 +91,8 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             {
                 var INTL = Symbol.Create("INTL", SecurityType.Equity, Market.USA);
                 yield return new TestCaseData(new LimitOrderTestParameters(INTL, 23m, 22m));
-                yield return new TestCaseData(new StopMarketOrderTestParameters(INTL, 22.68m, 22m));
-                yield return new TestCaseData(new StopLimitOrderTestParameters(INTL, 22.70m, 22.77m));
+                yield return new TestCaseData(new StopMarketOrderTestParameters(INTL, 22.61m, 23m));
+                yield return new TestCaseData(new StopLimitOrderTestParameters(INTL, 22.61m, 28.65m));
             }
         }
 
@@ -100,15 +100,20 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             get
             {
-                var AAPLOption = Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 205m, new DateTime(2024, 6, 14));
-                yield return new TestCaseData(new LimitOrderTestParameters(AAPLOption, 2.5m, 2.0m)).SetCategory("Option").SetName("AAPL Option Limit");
-                yield return new TestCaseData(new StopMarketOrderTestParameters(AAPLOption, 2.5m, 2.0m)).SetCategory("Option").SetName("AAPL Option StopMarket");
-                yield return new TestCaseData(new StopLimitOrderTestParameters(AAPLOption, 2.55m, 2.55m)).SetCategory("Option").SetName("AAPL Option StopLimit");
+                var AAPLOption = Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 205m, new DateTime(2024, 6, 21));
+                yield return new TestCaseData(new LimitOrderTestParameters(AAPLOption, 7m, 6.5m)).SetCategory("Option").SetName("AAPL Option Limit");
+                yield return new TestCaseData(new StopMarketOrderTestParameters(AAPLOption, 7.25m, 7.20m)).SetCategory("Option").SetName("AAPL Option StopMarket");
+                yield return new TestCaseData(new StopLimitOrderTestParameters(AAPLOption, 7.25m, 7.25m)).SetCategory("Option").SetName("AAPL Option StopLimit");
 
                 var INTL = Symbol.Create("INTL", SecurityType.Equity, Market.USA);
                 yield return new TestCaseData(new LimitOrderTestParameters(INTL, 23m, 22m)).SetCategory("Equity").SetName("INTL Limit");
                 yield return new TestCaseData(new StopMarketOrderTestParameters(INTL, 23m, 22m)).SetCategory("Equity").SetName("INTL StopMarket");
                 yield return new TestCaseData(new StopLimitOrderTestParameters(INTL, 23m, 23m)).SetCategory("Equity").SetName("INTL StopLimit");
+
+                var COTTON = Symbol.CreateFuture(Futures.Softs.Cotton2, Market.USA, new DateTime(2024, 7, 1));
+                yield return new TestCaseData(new LimitOrderTestParameters(COTTON, 72m, 70m)).SetCategory("Future").SetName("COTTON Future Limit");
+                yield return new TestCaseData(new StopMarketOrderTestParameters(COTTON, 72m, 70m)).SetCategory("Future").SetName("COTTON StopMarket");
+                yield return new TestCaseData(new StopLimitOrderTestParameters(COTTON, 72m, 70m)).SetCategory("Future").SetName("COTTON StopLimit");
             }
         }
 
