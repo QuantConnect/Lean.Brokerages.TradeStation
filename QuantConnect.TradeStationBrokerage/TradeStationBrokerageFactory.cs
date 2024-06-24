@@ -43,8 +43,14 @@ public class TradeStationBrokerageFactory : BrokerageFactory
         // LIVE: https://api.tradestation.com/v3
         { "trade-station-api-url", Config.Get("trade-station-api-url") },
         { "trade-station-redirect-url", Config.Get("trade-station-redirect-url") },
+        { "trade-station-code-from-url", Config.Get("trade-station-code-from-url") },
         /// <see cref="Models.Enums.TradeStationAccountType"/>
-        { "trade-station-account-type", Config.Get("trade-station-account-type") }
+        { "trade-station-account-type", Config.Get("trade-station-account-type") },
+        // proxy
+        { "trade-station-use-proxy", Config.Get("trade-station-use-proxy", "false") },
+        { "trade-station-proxy-address-port", Config.Get("trade-station-proxy-address-port", string.Empty) },
+        { "trade-station-proxy-username", Config.Get("trade-station-proxy-username", string.Empty) },
+        { "trade-station-proxy-password", Config.Get("trade-station-proxy-password", string.Empty) }
     };
 
     /// <summary>
@@ -77,10 +83,17 @@ public class TradeStationBrokerageFactory : BrokerageFactory
         var authorizationCodeFromUrl = Read<string>(job.BrokerageData, "trade-station-code-from-url", errors);
         var accountType = Read<string>(job.BrokerageData, "trade-station-account-type", errors);
 
+        var useProxy = Read<bool>(job.BrokerageData, "trade-station-use-proxy", errors);
+
         if (errors.Count != 0)
         {
             // if we had errors then we can't create the instance
             throw new ArgumentException(string.Join(Environment.NewLine, errors));
+        }
+
+        if (useProxy)
+        {
+            return new TradeStationBrokerage(apiKey, apiSecret, apiUrl, redirectUrl, authorizationCodeFromUrl, accountType, algorithm, useProxy);
         }
 
         return new TradeStationBrokerage(apiKey, apiSecret, apiUrl, redirectUrl, authorizationCodeFromUrl, accountType, algorithm);
