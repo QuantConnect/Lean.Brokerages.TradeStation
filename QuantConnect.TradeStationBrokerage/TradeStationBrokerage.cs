@@ -703,21 +703,26 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     /// <summary>
     /// Converts the given <see cref="OrderDirection"/> and <see cref="SecurityType"/> to a <see cref="TradeStationTradeActionType"/>.
     /// </summary>
-    /// <param name="securityType">The type of security (e.g., Future, Equity, Option).</param>
+    /// <param name="securityType">The type of security (e.g., Equity, Option, Future).</param>
     /// <param name="leanOrderDirection">The direction of the order (Buy or Sell).</param>
     /// <param name="holdingQuantity">The quantity of holdings.</param>
     /// <returns>
     /// A <see cref="TradeStationTradeActionType"/> that represents the trade action type for TradeStation.
     /// For Futures, returns Buy if the order direction is Buy, otherwise returns Sell.
-    /// For Equities or Options, calls <see cref="GetOrderPosition"/> to determine the trade action type.
+    /// For Equities or Options, calls <see cref="GetOrderPosition(OrderDirection, decimal)"/> to determine the trade action type.
     /// </returns>
     /// <exception cref="ArgumentException">Thrown when an unsupported <see cref="SecurityType"/> is provided.</exception>
-    private static TradeStationTradeActionType ConvertDirection(SecurityType securityType, OrderDirection leanOrderDirection, decimal holdingQuantity) => securityType switch
+    private static TradeStationTradeActionType ConvertDirection(SecurityType securityType, OrderDirection leanOrderDirection, decimal holdingQuantity)
     {
-        SecurityType.Future => leanOrderDirection == OrderDirection.Buy ? TradeStationTradeActionType.Buy : TradeStationTradeActionType.Sell,
-        SecurityType.Equity or SecurityType.Option => GetOrderPosition(leanOrderDirection, holdingQuantity).ConvertDirection(securityType),
-        _ => throw new ArgumentException($"Unsupported security type: {securityType}", nameof(securityType))
-    };
+        switch (securityType)
+        {
+            case SecurityType.Equity:
+            case SecurityType.Option:
+                return GetOrderPosition(leanOrderDirection, holdingQuantity).ConvertDirection(securityType);
+            default:
+                return leanOrderDirection == OrderDirection.Buy ? TradeStationTradeActionType.Buy : TradeStationTradeActionType.Sell;
+        }
+    }
 
     private class ModulesReadLicenseRead : QuantConnect.Api.RestResponse
     {
