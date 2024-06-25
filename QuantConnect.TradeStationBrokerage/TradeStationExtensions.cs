@@ -189,4 +189,28 @@ public static class TradeStationExtensions
         StopLimitOrder slo => slo.LimitPrice,
         _ => null
     };
+
+    /// <summary>
+    /// Parses the provided account type string into a <see cref="TradeStationAccountType"/> enum value.
+    /// </summary>
+    /// <param name="accountType">The account type string to parse.</param>
+    /// <returns>The parsed <see cref="TradeStationAccountType"/> enum value.</returns>
+    /// <exception cref="ArgumentException">
+    /// Thrown when the provided account type is null, empty, or not a valid <see cref="TradeStationAccountType"/>.
+    /// </exception>
+    public static TradeStationAccountType ParseAccountType(string accountType)
+    {
+        if (string.IsNullOrWhiteSpace(accountType))
+        {
+            throw new ArgumentException("Account type cannot be null or empty.", nameof(accountType));
+        }
+
+        if (!Enum.TryParse<TradeStationAccountType>(accountType, true, out var parsedAccountType) ||
+            !Enum.IsDefined(typeof(TradeStationAccountType), parsedAccountType))
+        {
+            throw new ArgumentException($"An error occurred while parsing the account type '{accountType}'. Please ensure that the provided account type is valid and supported by the system.");
+        }
+
+        return parsedAccountType;
+    }
 }

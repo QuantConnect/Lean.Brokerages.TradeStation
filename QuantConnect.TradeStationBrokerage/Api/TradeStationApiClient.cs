@@ -51,13 +51,9 @@ public class TradeStationApiClient
     private readonly string _redirectUri;
 
     /// <summary>
-    /// Represents a cache for TradeStation trading accounts.
+    /// Stores the account ID for a TradeStation account, categorized by its <see cref="TradeStationAccountType"/>.
     /// </summary>
-    /// <remarks>
-    /// This cache holds instances of <see cref="Account"/> representing trading accounts
-    /// used within the TradeStation platform.
-    /// </remarks>
-    private IEnumerable<Account> _tradingAccounts;
+    private Lazy<string> _accountID;
 
     /// <summary>
     /// Gets or sets the JSON serializer settings used for serialization.
@@ -75,16 +71,17 @@ public class TradeStationApiClient
     private readonly string _baseUrl;
 
     /// <summary>
-    /// Initializes a new instance of the TradeStationApiClient class with the specified API Key, API Key Secret, and REST API URL.
+    /// Initializes a new instance of the TradeStationApiClient class with the specified API Key, API Key Secret, REST API URL, redirect URI, account type, and optional parameters.
     /// </summary>
     /// <param name="apiKey">The API Key used by the client application to authenticate requests.</param>
     /// <param name="apiKeySecret">The secret associated with the client application’s API Key for authentication.</param>
     /// <param name="restApiUrl">The URL of the REST API.</param>
     /// <param name="redirectUri">The URI to which the user will be redirected after authentication.</param>
-    /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL during OAuth authentication.</param>
+    /// <param name="tradeStationAccountType">The type of TradeStation account.</param>
+    /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL during OAuth authentication. Default is an empty string.</param>
     /// <param name="signInUri">The URI of the sign-in page for TradeStation authentication. Default is "https://signin.tradestation.com".</param>
-    public TradeStationApiClient(string apiKey, string apiKeySecret, string restApiUrl, string redirectUri, string authorizationCodeFromUrl = "",
-        string signInUri = "https://signin.tradestation.com")
+    public TradeStationApiClient(string apiKey, string apiKeySecret, string restApiUrl, string redirectUri, TradeStationAccountType tradeStationAccountType,
+        string authorizationCodeFromUrl = "", string signInUri = "https://signin.tradestation.com")
     {
         _apiKey = apiKey;
         _redirectUri = redirectUri;
@@ -94,38 +91,39 @@ public class TradeStationApiClient
         var tokenRefreshHandler = new TokenRefreshHandler(httpClientHandler, apiKey, apiKeySecret, authorizationCodeFromUrl, signInUri, redirectUri,
             Config.GetValue<string>("trade-station-refresh-token"));
         _httpClient = new(tokenRefreshHandler);
+        _accountID = new Lazy<string>(() =>
+        {
+            return GetAccountIDByAccountType(tradeStationAccountType).SynchronouslyAwaitTaskResult();
+        });
     }
 
     /// <summary>
-    /// Retrieves balances for all available brokerage accounts for the current user.
+    /// Retrieves balances for available brokerage accounts for the current user.
     /// </summary>
     /// <returns>
-    /// A TradeStationBalance object representing the combined brokerage account balances for all available accounts.
+    /// A TradeStationBalance object representing the combined brokerage account balances for available accounts.
     /// </returns>
-    public async Task<TradeStationBalance> GetAllAccountBalances()
+    public async Task<TradeStationBalance> GetAccountBalance()
     {
-        var accounts = (await GetAccounts()).ToList(x => x.AccountID);
-        return await GetBalances(accounts);
+        return await GetBalanceByID(_accountID.Value);
     }
 
     /// <summary>
-    /// Retrieves position for all available brokerage accounts for the current user.
+    /// Retrieves position for available brokerage account for the current user.
     /// </summary>
-    /// <returns>A TradeStationPosition object representing the combined brokerage position for all available accounts.</returns>
-    public async Task<TradeStationPosition> GetAllAccountPositions()
+    /// <returns>A TradeStationPosition object representing the combined brokerage position for account.</returns>
+    public async Task<TradeStationPosition> GetAccountPositions()
     {
-        var accounts = (await GetAccounts()).ToList(x => x.AccountID);
-        return await GetPositions(accounts);
+        return await GetPositions(_accountID.Value);
     }
 
     /// <summary>
-    /// Retrieves orders for all available brokerage accounts for the current user.
+    /// Retrieves orders for available brokerage account for the current user.
     /// </summary>
-    /// <returns>A TradeStationOrder object representing the combined brokerage orders for all available accounts.</returns>
-    public async Task<TradeStationOrderResponse> GetAllAccountOrders()
+    /// <returns>A TradeStationOrder object representing the combined brokerage orders for account.</returns>
+    public async Task<TradeStationOrderResponse> GetOrders()
     {
-        var accounts = (await GetAccounts()).ToList(x => x.AccountID);
-        return await GetOrders(accounts);
+        return await GetOrdersByAccountID(_accountID.Value);
     }
 
     /// <summary>
@@ -152,7 +150,6 @@ public class TradeStationApiClient
     /// <summary>
     /// Places an order in TradeStation based on the provided Lean order and symbol.
     /// </summary>
-    /// <param name="accountID">The working account ID of TradeStation.</param>
     /// <param name="leanOrderType">The type of Lean order to be placed.</param>
     /// <param name="leanTimeInForce">The Lean time-in-force for the order.</param>
     /// <param name="leanAbsoluteQuantity">The absolute quantity of the Lean order.</param>
@@ -161,14 +158,14 @@ public class TradeStationApiClient
     /// <param name="limitPrice">The limit price for the order (optional).</param>
     /// <param name="stopPrice">The stop price for the order (optional).</param>
     /// <returns>A <see cref="TradeStationPlaceOrderResponse"/> containing the result of the order placement.</returns>
-    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(string accountID, OrderType leanOrderType, Lean.TimeInForce leanTimeInForce, decimal leanAbsoluteQuantity,
+    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(OrderType leanOrderType, Lean.TimeInForce leanTimeInForce, decimal leanAbsoluteQuantity,
         string tradeAction, string symbol, decimal? limitPrice = null, decimal? stopPrice = null)
     {
         var orderType = leanOrderType.ConvertLeanOrderTypeToTradeStation();
 
         var (duration, expiryDateTime) = leanTimeInForce.GetBrokerageTimeInForce();
 
-        var tradeStationOrder = new TradeStationPlaceOrderRequest(accountID, orderType, leanAbsoluteQuantity.ToStringInvariant(), symbol,
+        var tradeStationOrder = new TradeStationPlaceOrderRequest(_accountID.Value, orderType, leanAbsoluteQuantity.ToStringInvariant(), symbol,
                     new Models.TimeInForce(duration, expiryDateTime), tradeAction);
 
         switch (leanOrderType)
@@ -191,7 +188,6 @@ public class TradeStationApiClient
     /// <summary>
     /// Replaces an existing order with the specified parameters.
     /// </summary>
-    /// <param name="accountID">The working accountID of Trade Station based on <see cref="TradeStationAccountType"/></param>
     /// <param name="brokerId">The unique identifier of the broker.</param>
     /// <param name="leanOrderType">The type of order to be placed.</param>
     /// <param name="quantity">The new quantity for the order. If null, the quantity remains unchanged.</param>
@@ -202,10 +198,10 @@ public class TradeStationApiClient
     /// This method replaces an existing order with new parameters such as quantity, limit price, and stop price.
     /// If any parameter is not provided (null), the corresponding value of the existing order will remain unchanged.
     /// </remarks>
-    public async Task<Models.OrderResponse> ReplaceOrder(string accountID, string brokerId, OrderType leanOrderType, decimal quantity,
+    public async Task<Models.OrderResponse> ReplaceOrder(string brokerId, OrderType leanOrderType, decimal quantity,
         decimal? limitPrice = null, decimal? stopPrice = null)
     {
-        var tradeStationOrder = new TradeStationReplaceOrderRequest(quantity.ToStringInvariant(), accountID, brokerId);
+        var tradeStationOrder = new TradeStationReplaceOrderRequest(quantity.ToStringInvariant(), _accountID.Value, brokerId);
 
         if (limitPrice.HasValue)
         {
@@ -243,9 +239,7 @@ public class TradeStationApiClient
     /// </remarks>
     public async IAsyncEnumerable<string> StreamOrders()
     {
-        var accounts = (await GetAccounts()).ToList(x => x.AccountID);
-
-        using (var request = new HttpRequestMessage(HttpMethod.Get, $"{_baseUrl}/v3/brokerage/stream/accounts/{string.Join(',', accounts)}/orders"))
+        using (var request = new HttpRequestMessage(HttpMethod.Get, $"{_baseUrl}/v3/brokerage/stream/accounts/{_accountID.Value}/orders"))
         {
             using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false))
             {
@@ -339,31 +333,25 @@ public class TradeStationApiClient
     }
 
     /// <summary>
-    /// Retrieves orders for the authenticated user from TradeStation brokerage accounts.
+    /// Retrieves orders for the authenticated user from TradeStation brokerage account.
     /// </summary>
-    /// <param name="accounts">
-    /// List of valid Account IDs for the authenticated user in comma separated format; for example "61999124,68910124".
-    /// 1 to 25 Account IDs can be specified, comma separated. Recommended batch size is 10.
-    /// </param>
+    /// <param name="accounts">The valid Account ID for the authenticated user.</param>
     /// <returns>
-    /// An instance of the <see cref="TradeStationOrderResponse"/> class representing the orders retrieved from the specified accounts.
+    /// An instance of the <see cref="TradeStationOrderResponse"/> class representing the orders retrieved from the specified account.
     /// </returns>
-    private async Task<TradeStationOrderResponse> GetOrders(List<string> accounts)
+    private async Task<TradeStationOrderResponse> GetOrdersByAccountID(string accountID)
     {
-        return await RequestAsync<TradeStationOrderResponse>(_baseUrl, $"/v3/brokerage/accounts/{string.Join(',', accounts)}/orders", HttpMethod.Get);
+        return await RequestAsync<TradeStationOrderResponse>(_baseUrl, $"/v3/brokerage/accounts/{accountID}/orders", HttpMethod.Get);
     }
 
     /// <summary>
-    /// Fetches positions for the given Accounts. Request valid for Cash, Margin, Futures, and DVP account types.
+    /// Fetches positions for the given Account. Request valid for Cash, Margin, Futures, and DVP account types.
     /// </summary>
-    /// <param name="accounts">
-    /// List of valid Account IDs for the authenticated user in comma separated format; for example "61999124,68910124".
-    /// 1 to 25 Account IDs can be specified, comma separated. Recommended batch size is 10.
-    /// </param>
+    /// <param name="accounts"> The valid Account ID for the authenticated user.</param>
     /// <returns></returns>
-    private async Task<TradeStationPosition> GetPositions(List<string> accounts)
+    private async Task<TradeStationPosition> GetPositions(string accountID)
     {
-        return await RequestAsync<TradeStationPosition>(_baseUrl, $"/v3/brokerage/accounts/{string.Join(',', accounts)}/positions", HttpMethod.Get);
+        return await RequestAsync<TradeStationPosition>(_baseUrl, $"/v3/brokerage/accounts/{accountID}/positions", HttpMethod.Get);
     }
 
     /// <summary>
@@ -374,30 +362,19 @@ public class TradeStationApiClient
     /// </returns>
     private async Task<IEnumerable<Account>> GetAccounts()
     {
-        // If trading accounts are already cached, return them
-        if (_tradingAccounts != null && _tradingAccounts.Any())
-        {
-            return _tradingAccounts;
-        }
-
-        _tradingAccounts = (await RequestAsync<TradeStationAccount>(_baseUrl, "/v3/brokerage/accounts", HttpMethod.Get)).Accounts;
-
-        return _tradingAccounts;
+        return (await RequestAsync<TradeStationAccount>(_baseUrl, "/v3/brokerage/accounts", HttpMethod.Get)).Accounts;
     }
 
     /// <summary>
     /// Fetches the brokerage account Balances for one or more given accounts. Request valid for Cash, Margin, Futures, and DVP account types.
     /// </summary>
-    /// <param name="accounts">
-    /// List of valid Account IDs for the authenticated user in comma separated format; for example "61999124,68910124".
-    /// 1 to 25 Account IDs can be specified, comma separated. Recommended batch size is 10.
-    /// </param>
+    /// <param name="accountID">The valid Account IDs for the authenticated user.</param>
     /// <returns>
     /// A TradeStationBalance object representing the brokerage account balances for the specified accounts.
     /// </returns>
-    private async Task<TradeStationBalance> GetBalances(List<string> accounts)
+    private async Task<TradeStationBalance> GetBalanceByID(string accountID)
     {
-        return await RequestAsync<TradeStationBalance>(_baseUrl, $"/v3/brokerage/accounts/{string.Join(',', accounts)}/balances", HttpMethod.Get);
+        return await RequestAsync<TradeStationBalance>(_baseUrl, $"/v3/brokerage/accounts/{accountID}/balances", HttpMethod.Get);
     }
 
     /// <summary>

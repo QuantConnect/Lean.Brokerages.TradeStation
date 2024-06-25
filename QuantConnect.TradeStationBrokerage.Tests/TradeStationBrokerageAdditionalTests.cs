@@ -68,7 +68,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             var tradeStationApiClient = CreateTradeStationApiClient();
 
-            var accountBalances = tradeStationApiClient.GetAllAccountBalances().SynchronouslyAwaitTaskResult();
+            var accountBalances = tradeStationApiClient.GetAccountBalance().SynchronouslyAwaitTaskResult();
 
             Assert.Greater(accountBalances.Balances.Count(), 0);
             Assert.That(accountBalances.Errors.Count(), Is.EqualTo(0));
@@ -78,7 +78,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         public void GetTradeStationPositions()
         {
             var tradeStationApiClient = CreateTradeStationApiClient();
-            var accountBalances = tradeStationApiClient.GetAllAccountPositions().SynchronouslyAwaitTaskResult();
+            var accountBalances = tradeStationApiClient.GetAccountPositions().SynchronouslyAwaitTaskResult();
 
             Assert.IsNotNull(accountBalances);
             Assert.Greater(accountBalances.Positions.Count(), 0);
@@ -89,7 +89,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             var tradeStationApiClient = CreateTradeStationApiClient();
 
-            var orders = await tradeStationApiClient.GetAllAccountOrders();
+            var orders = await tradeStationApiClient.GetOrders();
 
             Assert.IsNotNull(orders);
 
@@ -120,7 +120,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var apiUrl = Config.Get("trade-station-api-url");
             var redirectUrl = Config.Get("trade-station-redirect-url");
 
-            var tradeStationApiClient = new TradeStationApiClient(apiKey, apiSecret, apiUrl, redirectUrl);
+            var tradeStationApiClient = new TradeStationApiClient(apiKey, apiSecret, apiUrl, redirectUrl, TradeStationAccountType.Margin);
 
             var signInUrl = tradeStationApiClient.GetSignInUrl();
             Assert.IsNotNull(signInUrl);
@@ -161,13 +161,16 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var apiSecret = Config.Get("trade-station-api-secret");
             var apiUrl = Config.Get("trade-station-api-url");
             var authorizationCodeFromUrl = Config.Get("trade-station-code-from-url");
+            var redirectUrl = Config.Get("trade-station-redirect-url");
+            var accountType = Config.Get("trade-station-account-type");
 
             if (new string[] { apiKey, apiSecret, apiUrl }.Any(string.IsNullOrEmpty))
             {
                 throw new ArgumentException("API key, secret, and URL cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
             }
 
-            return new TradeStationApiClient(apiKey, apiSecret, apiUrl, authorizationCodeFromUrl);
+            return new TradeStationApiClient(apiKey, apiSecret, apiUrl, redirectUrl,
+                TradeStationExtensions.ParseAccountType(accountType), authorizationCodeFromUrl, useProxy: true);
         }
     }
 }

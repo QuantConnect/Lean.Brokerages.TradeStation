@@ -70,18 +70,6 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     /// </summary>
     private readonly IEnumerable<OptionRight> _optionRights = new[] { OptionRight.Call, OptionRight.Put };
 
-    /// <summary>
-    /// Represents the type of account used in TradeStation.
-    /// For <see cref="TradeStationAccountType.Cash"/> accounts, it is used for trading <seealso cref="SecurityType.Equity"/> and <seealso cref="SecurityType.Option"/>.
-    /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.
-    /// </summary>
-    private readonly TradeStationAccountType _accountType;
-
-    /// <summary>
-    /// Stores the account ID for a TradeStation account, categorized by its <see cref="TradeStationAccountType"/>.
-    /// </summary>
-    private string _accountID;
-
     /// <inheritdoc cref="ISecurityProvider"/>
     private ISecurityProvider _securityProvider { get; }
 
@@ -114,7 +102,10 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     /// <param name="restApiUrl">The URL of the REST API.</param>
     /// <param name="redirectUrl">The redirect URL to generate great link to get right "authorizationCodeFromUrl"</param>
     /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL.</param>
-    /// <param name="accountType">The type of TradeStation account for the current session.</param>
+    /// <param name="accountType">The type of TradeStation account for the current session.
+    /// For <see cref="TradeStationAccountType.Cash"/> or <seealso cref="TradeStationAccountType.Margin"/> accounts,
+    /// it is used for trading <seealso cref="SecurityType.Equity"/> and <seealso cref="SecurityType.Option"/>.
+    /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
     /// <param name="algorithm">The algorithm instance is required to retrieve account type</param>
     public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl, string authorizationCodeFromUrl,
         string accountType, IAlgorithm algorithm)
@@ -133,21 +124,19 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     /// <param name="restApiUrl">The URL of the REST API.</param>
     /// <param name="redirectUrl">The redirect URL to generate great link to get right "authorizationCodeFromUrl"</param>
     /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL.</param>
-    /// <param name="accountType">The type of TradeStation account for the current session.</param>
+    /// <param name="accountType">The type of TradeStation account for the current session.
+    /// For <see cref="TradeStationAccountType.Cash"/> or <seealso cref="TradeStationAccountType.Margin"/> accounts, it is used for trading <seealso cref="SecurityType.Equity"/> and <seealso cref="SecurityType.Option"/>.
+    /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
     /// <param name="orderProvider">The order provider.</param>
     public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl,
         string authorizationCodeFromUrl, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
         : base("TradeStation")
     {
-        if (!Enum.TryParse(accountType, out _accountType) || !Enum.IsDefined(typeof(TradeStationAccountType), _accountType))
-        {
-            throw new ArgumentException($"An error occurred while parsing the account type '{accountType}'. Please ensure that the provided account type is valid and supported by the system.");
-        }
-
         _securityProvider = securityProvider;
         OrderProvider = orderProvider;
         _symbolMapper = new TradeStationSymbolMapper();
-        _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCodeFromUrl);
+        _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl, redirectUrl,
+            TradeStationExtensions.ParseAccountType(accountType), authorizationCodeFromUrl);
         _messageHandler = new(HandleTradeStationMessage);
         ValidateSubscription();
     }
@@ -161,7 +150,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     /// <returns>The open orders returned from IB</returns>
     public override List<Order> GetOpenOrders()
     {
-        var orders = _tradeStationApiClient.GetAllAccountOrders().SynchronouslyAwaitTaskResult();
+        var orders = _tradeStationApiClient.GetOrders().SynchronouslyAwaitTaskResult();
 
         var leanOrders = new List<Order>();
         foreach (var order in orders.Orders.Where(o => o.Status is TradeStationOrderStatusType.Ack or TradeStationOrderStatusType.Don))
@@ -206,7 +195,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     /// <returns>The current holdings from the account</returns>
     public override List<Holding> GetAccountHoldings()
     {
-        var positions = _tradeStationApiClient.GetAllAccountPositions().SynchronouslyAwaitTaskResult();
+        var positions = _tradeStationApiClient.GetAccountPositions().SynchronouslyAwaitTaskResult();
 
         foreach (var positionError in positions.Errors)
         {
@@ -217,26 +206,18 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
         foreach (var position in positions.Positions)
         {
             var leanSymbol = default(Symbol);
-            if (_accountType == TradeStationAccountType.Futures && position.AssetType == TradeStationAssetType.Future)
+            switch (position.AssetType)
             {
-                leanSymbol = _symbolMapper.GetLeanSymbol(SymbolRepresentation.ParseFutureTicker(position.Symbol).Underlying, SecurityType.Future, Market.USA, position.ExpirationDate);
-            }
-            else if (_accountType is TradeStationAccountType.Cash or TradeStationAccountType.Margin or TradeStationAccountType.DVP && position.AssetType != TradeStationAssetType.Future)
-            {
-                switch (position.AssetType)
-                {
-                    case TradeStationAssetType.Stock:
-                        leanSymbol = _symbolMapper.GetLeanSymbol(position.Symbol, SecurityType.Equity, Market.USA);
-                        break;
-                    case TradeStationAssetType.StockOption:
-                        var optionParam = _symbolMapper.ParsePositionOptionSymbol(position.Symbol);
-                        leanSymbol = _symbolMapper.GetLeanSymbol(optionParam.symbol, SecurityType.Option, Market.USA, optionParam.expiryDate, optionParam.strikePrice, optionParam.optionRight == 'C' ? OptionRight.Call : OptionRight.Put);
-                        break;
-                }
-            }
-            else
-            {
-                continue;
+                case TradeStationAssetType.Future:
+                    leanSymbol = _symbolMapper.GetLeanSymbol(SymbolRepresentation.ParseFutureTicker(position.Symbol).Underlying, SecurityType.Future, Market.USA, position.ExpirationDate);
+                    break;
+                case TradeStationAssetType.Stock:
+                    leanSymbol = _symbolMapper.GetLeanSymbol(position.Symbol, SecurityType.Equity, Market.USA);
+                    break;
+                case TradeStationAssetType.StockOption:
+                    var optionParam = _symbolMapper.ParsePositionOptionSymbol(position.Symbol);
+                    leanSymbol = _symbolMapper.GetLeanSymbol(optionParam.symbol, SecurityType.Option, Market.USA, optionParam.expiryDate, optionParam.strikePrice, optionParam.optionRight == 'C' ? OptionRight.Call : OptionRight.Put);
+                    break;
             }
 
             holdings.Add(new Holding()
@@ -262,7 +243,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     /// <returns>The current cash balance for each currency available for trading</returns>
     public override List<CashAmount> GetCashBalance()
     {
-        var balances = _tradeStationApiClient.GetAllAccountBalances().SynchronouslyAwaitTaskResult();
+        var balances = _tradeStationApiClient.GetAccountBalance().SynchronouslyAwaitTaskResult();
 
         foreach (var balanceError in balances.Errors)
         {
@@ -272,15 +253,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
         var cashBalance = new List<CashAmount>();
         foreach (var balance in balances.Balances)
         {
-            if (balance.AccountType == _accountType)
-            {
-                cashBalance.Add(new CashAmount(decimal.Parse(balance.CashBalance, CultureInfo.InvariantCulture), Currencies.USD));
-            }
-        }
-
-        if (cashBalance.Count == 0)
-        {
-            throw new Exception($"Unable to retrieve cash balance for {_accountType}. No suitable account was found. Please select one of the following account types: {string.Join(',', balances.Balances.Select(x => x.AccountType))}");
+            cashBalance.Add(new CashAmount(decimal.Parse(balance.CashBalance, CultureInfo.InvariantCulture), Currencies.USD));
         }
 
         return cashBalance;
@@ -330,7 +303,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
 
         var tradeAction = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity).ToStringInvariant().ToUpperInvariant();
 
-        var response = _tradeStationApiClient.PlaceOrder(_accountID, order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, symbol,
+        var response = _tradeStationApiClient.PlaceOrder(order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, symbol,
             order.GetLimitPrice(), order.GetStopPrice()).SynchronouslyAwaitTaskResult();
 
         foreach (var error in response.Errors ?? Enumerable.Empty<TradeStationError>())
@@ -378,7 +351,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
         var symbol = _symbolMapper.GetBrokerageSymbol(crossZeroOrderRequest.LeanOrder.Symbol);
         var tradeAction = crossZeroOrderRequest.OrderPosition.ConvertDirection(crossZeroOrderRequest.LeanOrder.SecurityType).ToStringInvariant().ToUpperInvariant();
 
-        var response = _tradeStationApiClient.PlaceOrder(_accountID, crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
+        var response = _tradeStationApiClient.PlaceOrder(crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
             crossZeroOrderRequest.AbsoluteOrderQuantity, tradeAction, symbol, crossZeroOrderRequest.LeanOrder.GetLimitPrice(), crossZeroOrderRequest.LeanOrder.GetStopPrice())
             .SynchronouslyAwaitTaskResult();
 
@@ -432,7 +405,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
         {
             try
             {
-                var result = _tradeStationApiClient.ReplaceOrder(_accountID, order.BrokerId.Last(), order.Type, Math.Abs(orderQuantity), order.GetLimitPrice(), order.GetStopPrice()).SynchronouslyAwaitTaskResult();
+                var result = _tradeStationApiClient.ReplaceOrder(order.BrokerId.Last(), order.Type, Math.Abs(orderQuantity), order.GetLimitPrice(), order.GetStopPrice()).SynchronouslyAwaitTaskResult();
                 OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)}.{nameof(UpdateOrder)} Order Event")
                 {
                     Status = OrderStatus.UpdateSubmitted
@@ -475,7 +448,6 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
             return;
         }
 
-        _accountID = _tradeStationApiClient.GetAccountIDByAccountType(_accountType).SynchronouslyAwaitTaskResult();
         _isSubscribeOnStreamOrderUpdate = SubscribeOnOrderUpdate();
     }
 
