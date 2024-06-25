@@ -100,7 +100,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             get
             {
-                var AAPLOption = Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 205m, new DateTime(2024, 6, 21));
+                var AAPLOption = Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 205m, new DateTime(2024, 6, 28));
                 yield return new TestCaseData(new LimitOrderTestParameters(AAPLOption, 7m, 6.5m)).SetCategory("Option").SetName("AAPL Option Limit");
                 yield return new TestCaseData(new StopMarketOrderTestParameters(AAPLOption, 7.25m, 7.20m)).SetCategory("Option").SetName("AAPL Option StopMarket");
                 yield return new TestCaseData(new StopLimitOrderTestParameters(AAPLOption, 7.25m, 7.25m)).SetCategory("Option").SetName("AAPL Option StopLimit");
@@ -112,8 +112,8 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
                 var COTTON = Symbol.CreateFuture(Futures.Softs.Cotton2, Market.USA, new DateTime(2024, 7, 1));
                 yield return new TestCaseData(new LimitOrderTestParameters(COTTON, 72m, 70m)).SetCategory("Future").SetName("COTTON Future Limit");
-                yield return new TestCaseData(new StopMarketOrderTestParameters(COTTON, 72m, 70m)).SetCategory("Future").SetName("COTTON StopMarket");
-                yield return new TestCaseData(new StopLimitOrderTestParameters(COTTON, 72m, 70m)).SetCategory("Future").SetName("COTTON StopLimit");
+                yield return new TestCaseData(new StopMarketOrderTestParameters(COTTON, 72m, 70m)).SetCategory("Future").SetName("COTTON Future StopMarket");
+                yield return new TestCaseData(new StopLimitOrderTestParameters(COTTON, 72m, 70m)).SetCategory("Future").SetName("COTTON Future StopLimit");
             }
         }
 

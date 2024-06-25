@@ -35,7 +35,7 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Collections.Concurrent;
 using System.Net.NetworkInformation;
-using QuantConnect.Orders.CrossZero;
+using QuantConnect.Brokerages.CrossZero;
 using QuantConnect.Brokerages.TradeStation.Api;
 using QuantConnect.Brokerages.TradeStation.Models;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
@@ -375,13 +375,13 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     /// <returns>
     /// A <see cref="CrossZeroOrderResponse"/> object indicating the result of the order placement.
     /// </returns>
-    protected override CrossZeroOrderResponse PlaceCrossZeroOrder(CrossZeroOrderRequest crossZeroOrderRequest, bool isPlaceOrderWithLeanEvent)
+    protected override CrossZeroOrderResponse PlaceCrossZeroOrder(CrossZeroFirstOrderRequest crossZeroOrderRequest, bool isPlaceOrderWithLeanEvent)
     {
         var symbol = _symbolMapper.GetBrokerageSymbol(crossZeroOrderRequest.LeanOrder.Symbol);
-        var tradeAction = ConvertDirection(crossZeroOrderRequest.LeanOrder.SecurityType, crossZeroOrderRequest.LeanOrder.Direction, crossZeroOrderRequest.OrderQuantityHolding).ToStringInvariant().ToUpperInvariant();
+        var tradeAction = crossZeroOrderRequest.OrderPosition.ConvertDirection(crossZeroOrderRequest.LeanOrder.SecurityType).ToStringInvariant().ToUpperInvariant();
 
         var response = _tradeStationApiClient.PlaceOrder(_accountID, crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
-            Math.Abs(crossZeroOrderRequest.OrderQuantity), tradeAction, symbol, crossZeroOrderRequest.LeanOrder.GetLimitPrice(), crossZeroOrderRequest.LeanOrder.GetStopPrice())
+            crossZeroOrderRequest.AbsoluteOrderQuantity, tradeAction, symbol, crossZeroOrderRequest.LeanOrder.GetLimitPrice(), crossZeroOrderRequest.LeanOrder.GetStopPrice())
             .SynchronouslyAwaitTaskResult();
 
         foreach (var error in response.Errors ?? Enumerable.Empty<TradeStationError>())
@@ -423,7 +423,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     {
         var holdingQuantity = _securityProvider.GetHoldingsQuantity(order.Symbol);
 
-        if (!IsPossibleUpdateCrossZeroOrder(order, out var orderQuantity))
+        if (!TryGetUpdateCrossZeroOrderQuantity(order, out var orderQuantity))
         {
             OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $"{nameof(TradeStationBrokerage)}.{nameof(UpdateOrder)}: Unable to modify order quantities."));
             return false;
