@@ -83,19 +83,14 @@ public class TradeStationApiClient
     /// <param name="redirectUri">The URI to which the user will be redirected after authentication.</param>
     /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL during OAuth authentication.</param>
     /// <param name="signInUri">The URI of the sign-in page for TradeStation authentication. Default is "https://signin.tradestation.com".</param>
-    /// <param name="useProxy">Boolean value indicating whether to use a proxy for API requests. Default is false.</param>
     public TradeStationApiClient(string apiKey, string apiKeySecret, string restApiUrl, string redirectUri, string authorizationCodeFromUrl = "",
-        string signInUri = "https://signin.tradestation.com", bool useProxy = false)
+        string signInUri = "https://signin.tradestation.com")
     {
         _apiKey = apiKey;
         _redirectUri = redirectUri;
         _baseUrl = restApiUrl;
 
         var httpClientHandler = new HttpClientHandler();
-        if (useProxy)
-        {
-            httpClientHandler.Proxy = GetProxyConfiguration();
-        }
         var tokenRefreshHandler = new TokenRefreshHandler(httpClientHandler, apiKey, apiKeySecret, authorizationCodeFromUrl, signInUri, redirectUri,
             Config.GetValue<string>("trade-station-refresh-token"));
         _httpClient = new(tokenRefreshHandler);
@@ -166,7 +161,7 @@ public class TradeStationApiClient
     /// <param name="limitPrice">The limit price for the order (optional).</param>
     /// <param name="stopPrice">The stop price for the order (optional).</param>
     /// <returns>A <see cref="TradeStationPlaceOrderResponse"/> containing the result of the order placement.</returns>
-    public async Task<TradeStationPlaceOrderResponse> PlaceOrder( string accountID, OrderType leanOrderType, Lean.TimeInForce leanTimeInForce, decimal leanAbsoluteQuantity,
+    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(string accountID, OrderType leanOrderType, Lean.TimeInForce leanTimeInForce, decimal leanAbsoluteQuantity,
         string tradeAction, string symbol, decimal? limitPrice = null, decimal? stopPrice = null)
     {
         var orderType = leanOrderType.ConvertLeanOrderTypeToTradeStation();
@@ -467,23 +462,5 @@ public class TradeStationApiClient
                 throw new Exception(ex.Message);
             }
         }
-    }
-
-    /// <summary>
-    /// Configures the specified RestClient instances to use a proxy with the provided proxy address, username, and password.
-    /// </summary>
-    /// <exception cref="ArgumentException">Thrown when proxy address, username, or password is empty or null. Indicates that these values must be correctly set in the configuration file.</exception>
-    private WebProxy GetProxyConfiguration()
-    {
-        var proxyAddress = Config.Get("trade-station-proxy-address-port");
-        var proxyUsername = Config.Get("trade-station-proxy-username");
-        var proxyPassword = Config.Get("trade-station-proxy-password");
-
-        if (new string[] { proxyAddress, proxyUsername, proxyPassword }.Any(string.IsNullOrEmpty))
-        {
-            throw new ArgumentException("Proxy Address, Proxy Username, and Proxy Password cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
-        }
-
-        return new WebProxy(proxyAddress) { Credentials = new NetworkCredential(proxyUsername, proxyPassword) };
     }
 }

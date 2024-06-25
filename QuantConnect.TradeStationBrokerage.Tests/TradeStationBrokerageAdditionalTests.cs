@@ -60,7 +60,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             var result = JsonConvert.DeserializeObject<TradeStationOrderResponse>(json);
             var actualActionType = result.Orders.First().Legs.First().BuyOrSell;
-            Assert.That(actualActionType, Is.EqualTo(expectedActionType));            
+            Assert.That(actualActionType, Is.EqualTo(expectedActionType));
         }
 
         [Test]
@@ -167,7 +167,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 throw new ArgumentException("API key, secret, and URL cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
             }
 
-            return new TradeStationApiClient(apiKey, apiSecret, apiUrl, authorizationCodeFromUrl, useProxy: true);
+            return new TradeStationApiClient(apiKey, apiSecret, apiUrl, authorizationCodeFromUrl);
         }
     }
 }

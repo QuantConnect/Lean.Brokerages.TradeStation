@@ -116,10 +116,9 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL.</param>
     /// <param name="accountType">The type of TradeStation account for the current session.</param>
     /// <param name="algorithm">The algorithm instance is required to retrieve account type</param>
-    /// <param name="useProxy">Boolean value indicating whether to use a proxy for TradeStation API requests. Default is false.</param>
     public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl, string authorizationCodeFromUrl,
-        string accountType, IAlgorithm algorithm, bool useProxy = false)
-        : this(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCodeFromUrl, accountType, algorithm?.Portfolio?.Transactions, algorithm?.Portfolio, useProxy)
+        string accountType, IAlgorithm algorithm)
+        : this(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCodeFromUrl, accountType, algorithm?.Portfolio?.Transactions, algorithm?.Portfolio)
     {
     }
 
@@ -136,9 +135,8 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL.</param>
     /// <param name="accountType">The type of TradeStation account for the current session.</param>
     /// <param name="orderProvider">The order provider.</param>
-    /// <param name="useProxy">Optional. Specifies whether to use a proxy for TradeStation API requests. Default is false.</param>
     public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl,
-        string authorizationCodeFromUrl, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider, bool useProxy = false)
+        string authorizationCodeFromUrl, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
         : base("TradeStation")
     {
         if (!Enum.TryParse(accountType, out _accountType) || !Enum.IsDefined(typeof(TradeStationAccountType), _accountType))
@@ -149,7 +147,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
         _securityProvider = securityProvider;
         OrderProvider = orderProvider;
         _symbolMapper = new TradeStationSymbolMapper();
-        _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCodeFromUrl, useProxy: useProxy);
+        _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCodeFromUrl);
         _messageHandler = new(HandleTradeStationMessage);
         ValidateSubscription();
     }

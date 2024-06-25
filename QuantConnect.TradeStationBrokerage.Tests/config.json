@@ -1,15 +1,10 @@
 {
   "data-folder": "../../../../Lean/Data/",
-
   "trade-station-api-key": "",
   "trade-station-api-secret": "",
   "trade-station-redirect-url": "http://localhost",
   "trade-station-code-from-url": "",
   "trade-station-refresh-token": "",
   "trade-station-api-url": "https://sim-api.tradestation.com",
-  "trade-station-account-type": "Margin",
-  "trade-station-use-proxy": false,
-  "trade-station-proxy-address-port": "http://",
-  "trade-station-proxy-username": "",
-  "trade-station-proxy-password": ""
+  "trade-station-account-type": "Margin"
 }

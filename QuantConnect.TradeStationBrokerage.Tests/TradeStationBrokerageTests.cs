@@ -51,7 +51,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 throw new ArgumentException("API key, secret, and URL cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
             }
 
-            return new TradeStationBrokerage(apiKey, apiSecret, apiUrl, redirectUrl, authorizationCodeFromUrl, accountType, orderProvider, securityProvider, useProxy: true);
+            return new TradeStationBrokerage(apiKey, apiSecret, apiUrl, redirectUrl, authorizationCodeFromUrl, accountType, orderProvider, securityProvider);
         }
         protected override bool IsAsync()
         {
@@ -77,7 +77,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             if (IsLongOrder)
             {
                 return Math.Round(GetLastPrice(symbol) + 0.1m, 2);
-        }
+            }
 
             return Math.Round(GetLastPrice(symbol) - 0.1m, 2);
         }
@@ -183,7 +183,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, Math.Round(lastPrice - 0.2m, 2), Math.Round(lastPrice - 0.4m, 2)),
                 OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, Math.Round(lastPrice - 0.05m, 2), Math.Round(lastPrice - 0.02m, 2)),
                 _ => throw new NotImplementedException("Not supported type of order")
-            };;
+            };
 
             Log.Trace("");
             Log.Trace("SHORT FROM SHORT");
