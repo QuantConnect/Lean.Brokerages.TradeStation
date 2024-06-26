@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -197,11 +197,6 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     {
         var positions = _tradeStationApiClient.GetAccountPositions().SynchronouslyAwaitTaskResult();
 
-        foreach (var positionError in positions.Errors)
-        {
-            Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(GetAccountHoldings)}: Error encountered in Account ID: {positionError.AccountID}. Type: {positionError.Error}. Message: {positionError.Message}");
-        }
-
         var holdings = new List<Holding>();
         foreach (var position in positions.Positions)
         {
@@ -244,11 +239,6 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     public override List<CashAmount> GetCashBalance()
     {
         var balances = _tradeStationApiClient.GetAccountBalance().SynchronouslyAwaitTaskResult();
-
-        foreach (var balanceError in balances.Errors)
-        {
-            Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(GetCashBalance)}: Error encountered in Account ID: {balanceError.AccountID}. Type: {balanceError.Error}. Message: {balanceError.Message}");
-        }
 
         var cashBalance = new List<CashAmount>();
         foreach (var balance in balances.Balances)

@@ -15,17 +15,16 @@
 
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
+using QuantConnect.Brokerages.TradeStation.Models.Interfaces;
 
 namespace QuantConnect.Brokerages.TradeStation.Models;
 
 /// <summary>
 /// Represents a response from TradeStation after placing an order.
 /// </summary>
-public readonly struct TradeStationPlaceOrderResponse
+public readonly struct TradeStationPlaceOrderResponse : ITradeStationError
 {
-    /// <summary>
-    /// Gets the collection of errors occurred during the order placement process.
-    /// </summary>
+    /// <inheritdoc cref="ITradeStationError.Errors"/>
     public IEnumerable<TradeStationError> Errors { get; }
 
     /// <summary>

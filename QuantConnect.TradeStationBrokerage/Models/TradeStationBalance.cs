@@ -17,22 +17,21 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using System.Collections.Generic;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
+using QuantConnect.Brokerages.TradeStation.Models.Interfaces;
 
 namespace QuantConnect.Brokerages.TradeStation.Models;
 
 /// <summary>
 /// Represents the balances and errors retrieved from TradeStation.
 /// </summary>
-public readonly struct TradeStationBalance
+public readonly struct TradeStationBalance : ITradeStationError
 {
     /// <summary>
     /// Gets the balances information.
     /// </summary>
     public IEnumerable<Balance> Balances { get; }
 
-    /// <summary>
-    /// Gets the errors occurred during the retrieval.
-    /// </summary>
+    /// <inheritdoc cref="ITradeStationError.Errors"/>
     public IEnumerable<TradeStationError> Errors { get; }
 
     /// <summary>

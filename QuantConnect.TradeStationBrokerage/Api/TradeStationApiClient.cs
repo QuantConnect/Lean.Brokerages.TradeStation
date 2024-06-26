@@ -29,6 +29,7 @@ using System.Collections.Generic;
 using Lean = QuantConnect.Orders;
 using QuantConnect.Brokerages.TradeStation.Models;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
+using QuantConnect.Brokerages.TradeStation.Models.Interfaces;
 
 namespace QuantConnect.Brokerages.TradeStation.Api;
 
@@ -432,7 +433,17 @@ public class TradeStationApiClient
 
                 var response = await responseMessage.Content.ReadAsStringAsync();
 
-                return JsonConvert.DeserializeObject<T>(response);
+                var deserializeResponse = JsonConvert.DeserializeObject<T>(response);
+
+                if (deserializeResponse is ITradeStationError errors && errors.Errors != null)
+                {
+                    foreach (var positionError in errors.Errors)
+                    {
+                        throw new Exception($"Error in {nameof(TradeStationApiClient)}.{nameof(RequestAsync)}: {positionError.Message} while accessing resource: {resource}");
+                    }
+                }
+
+                return deserializeResponse;
             }
             catch (Exception ex)
             {

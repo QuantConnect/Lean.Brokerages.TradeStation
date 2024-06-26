@@ -18,13 +18,14 @@ using Newtonsoft.Json;
 using System.Collections.Generic;
 using Newtonsoft.Json.Converters;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
+using QuantConnect.Brokerages.TradeStation.Models.Interfaces;
 
 namespace QuantConnect.Brokerages.TradeStation.Models;
 
 /// <summary>
 /// Represents a collection of positions retrieved from TradeStation, along with any associated errors.
 /// </summary>
-public readonly struct TradeStationPosition
+public readonly struct TradeStationPosition : ITradeStationError
 {
     /// <summary>
     /// Gets the collection of positions.
@@ -32,9 +33,7 @@ public readonly struct TradeStationPosition
     [JsonProperty("Positions")]
     public IEnumerable<Position> Positions { get; }
 
-    /// <summary>
-    /// Gets the collection of errors associated with the positions.
-    /// </summary>
+    /// <inheritdoc cref="ITradeStationError.Errors"/>
     [JsonProperty("Errors")]
     public IEnumerable<TradeStationError> Errors { get; }
 
