@@ -31,6 +31,11 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
     [TestFixture]
     public partial class TradeStationBrokerageTests : BrokerageTests
     {
+        /// <summary>
+        /// Gets the TradeStationBrokerageTest instance from the Brokerage.
+        /// </summary>
+        private TradeStationBrokerageTest _brokerage => Brokerage as TradeStationBrokerageTest;
+
         protected override Symbol Symbol { get; } = Symbols.AAPL;
 
         protected override SecurityType SecurityType { get; }
@@ -51,7 +56,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 throw new ArgumentException("API key, secret, and URL cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
             }
 
-            return new TradeStationBrokerage(apiKey, apiSecret, apiUrl, redirectUrl, authorizationCodeFromUrl, accountType, orderProvider, securityProvider);
+            return new TradeStationBrokerageTest(apiKey, apiSecret, apiUrl, redirectUrl, authorizationCodeFromUrl, accountType, orderProvider, securityProvider, useProxy: true);
         }
         protected override bool IsAsync()
         {
@@ -76,10 +81,10 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             if (IsLongOrder)
             {
-                return Math.Round(GetLastPrice(symbol) + 0.1m, 2);
+                return Math.Round(_brokerage.GetLastPrice(symbol) + 0.1m, 2);
             }
 
-            return Math.Round(GetLastPrice(symbol) - 0.1m, 2);
+            return Math.Round(_brokerage.GetLastPrice(symbol) - 0.1m, 2);
         }
 
         /// <summary>
@@ -176,7 +181,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         public void ShortFromShort(Symbol symbol, OrderType orderType)
         {
             IsLongOrder = false;
-            var lastPrice = GetLastPrice(symbol);
+            var lastPrice = _brokerage.GetLastPrice(symbol);
             OrderTestParameters parameters = orderType switch
             {
                 OrderType.Limit => new LimitOrderTestParameters(symbol, Math.Round(lastPrice + 0.5m, 2), Math.Round(lastPrice - 0.5m)),
@@ -204,7 +209,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         public virtual void LongFromLong(Symbol symbol, OrderType orderType)
         {
             IsLongOrder = true;
-            var lastPrice = GetLastPrice(symbol);
+            var lastPrice = _brokerage.GetLastPrice(symbol);
             OrderTestParameters parameters = orderType switch
             {
                 OrderType.Limit => new LimitOrderTestParameters(symbol, Math.Round(lastPrice + 0.5m, 2), Math.Round(lastPrice - 0.5m)),
@@ -277,9 +282,37 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             CollectionAssert.AreEquivalent(expectedOrderStatusChangedOrdering, actualCrossZeroOrderStatusOrdering);
         }
 
-        private decimal GetLastPrice(Symbol symbol)
+        public class TradeStationBrokerageTest : TradeStationBrokerage
         {
-            return (Brokerage as TradeStationBrokerage).GetQuote(symbol).Quotes.Single().Last;
+            /// <summary>
+            /// Constructor for the TradeStation brokerage.
+            /// </summary>
+            /// <remarks>
+            /// This constructor initializes a new instance of the TradeStationBrokerage class with the provided parameters.
+            /// </remarks>
+            /// <param name="apiKey">The API key for authentication.</param>
+            /// <param name="apiKeySecret">The API key secret for authentication.</param>
+            /// <param name="restApiUrl">The URL of the REST API.</param>
+            /// <param name="redirectUrl">The redirect URL to generate great link to get right "authorizationCodeFromUrl"</param>
+            /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL.</param>
+            /// <param name="accountType">The type of TradeStation account for the current session.
+            /// For <see cref="TradeStationAccountType.Cash"/> or <seealso cref="TradeStationAccountType.Margin"/> accounts, it is used for trading <seealso cref="SecurityType.Equity"/> and <seealso cref="SecurityType.Option"/>.
+            /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
+            /// <param name="orderProvider">The order provider.</param>
+            public TradeStationBrokerageTest(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl,
+                string authorizationCodeFromUrl, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider, bool useProxy = false)
+                : base(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCodeFromUrl, accountType, orderProvider, securityProvider, useProxy)
+            { }
+
+            /// <summary>
+            /// Retrieves the last price of the specified symbol.
+            /// </summary>
+            /// <param name="symbol">The symbol for which to retrieve the last price.</param>
+            /// <returns>The last price of the specified symbol as a decimal.</returns>
+            public decimal GetLastPrice(Symbol symbol)
+            {
+                return GetQuote(symbol).Quotes.Single().Last;
+            }
         }
     }
 }

@@ -467,7 +467,7 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
     /// </summary>
     /// <param name="symbol">The symbol for which to retrieve the quote snapshot.</param>
     /// <returns>A <see cref="Models.TradeStationQuoteSnapshot"/> containing the quote data for the specified symbol.</returns>
-    public Models.TradeStationQuoteSnapshot GetQuote(Symbol symbol)
+    protected TradeStationQuoteSnapshot GetQuote(Symbol symbol)
     {
         var brokerageTicker = _symbolMapper.GetBrokerageSymbol(symbol);
         return _tradeStationApiClient.GetQuoteSnapshot(brokerageTicker).SynchronouslyAwaitTaskResult();
