@@ -33,7 +33,6 @@ using QuantConnect.Securities;
 using QuantConnect.Orders.Fees;
 using System.Collections.Generic;
 using System.Security.Cryptography;
-using System.Collections.Concurrent;
 using System.Net.NetworkInformation;
 using QuantConnect.Brokerages.CrossZero;
 using QuantConnect.Brokerages.TradeStation.Api;
@@ -43,7 +42,7 @@ using QuantConnect.Brokerages.TradeStation.Models.Enums;
 namespace QuantConnect.Brokerages.TradeStation;
 
 [BrokerageFactory(typeof(TradeStationBrokerageFactory))]
-public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
+public class TradeStationBrokerage : Brokerage
 {
     /// <inheritdoc cref="TradeStationApiClient" />
     private readonly TradeStationApiClient _tradeStationApiClient;
@@ -462,64 +461,6 @@ public class TradeStationBrokerage : Brokerage, IDataQueueUniverseProvider
         var brokerageTicker = _symbolMapper.GetBrokerageSymbol(symbol);
         return _tradeStationApiClient.GetQuoteSnapshot(brokerageTicker).SynchronouslyAwaitTaskResult();
     }
-
-    #region IDataQueueUniverseProvider
-
-    /// <summary>
-    /// Method returns a collection of Symbols that are available at the data source.
-    /// </summary>
-    /// <param name="symbol">Symbol to lookup</param>
-    /// <param name="includeExpired">Include expired contracts</param>
-    /// <param name="securityCurrency">Expected security currency(if any)</param>
-    /// <returns>Enumerable of Symbols, that are associated with the provided Symbol</returns>
-    public IEnumerable<Symbol> LookupSymbols(Symbol symbol, bool includeExpired, string securityCurrency = null)
-    {
-        if (!symbol.SecurityType.IsOption())
-        {
-            Log.Error("The provided symbol is not an option. SecurityType: " + symbol.SecurityType);
-            return Enumerable.Empty<Symbol>();
-        }
-        var blockingOptionCollection = new BlockingCollection<Symbol>();
-
-        Task.Run(async () =>
-        {
-            var underlying = symbol.Underlying.Value;
-            await foreach (var optionParameters in _tradeStationApiClient.GetOptionExpirationsAndStrikes(underlying))
-            {
-                foreach (var optionStrike in optionParameters.strikes)
-                {
-                    foreach (var right in _optionRights)
-                    {
-                        blockingOptionCollection.Add(_symbolMapper.GetLeanSymbol(underlying, SecurityType.Option, Market.USA,
-                            optionParameters.expirationDate, optionStrike, right));
-                    }
-                }
-            }
-        }).ContinueWith(_ => blockingOptionCollection.CompleteAdding());
-
-        var options = blockingOptionCollection.GetConsumingEnumerable();
-
-        // Validate if the collection contains at least one successful response from history.
-        if (!options.Any())
-        {
-            return null;
-        }
-
-        return options;
-    }
-
-    /// <summary>
-    /// Returns whether selection can take place or not.
-    /// </summary>
-    /// <remarks>This is useful to avoid a selection taking place during invalid times, for example IB reset times or when not connected,
-    /// because if allowed selection would fail since IB isn't running and would kill the algorithm</remarks>
-    /// <returns>True if selection can take place</returns>
-    public bool CanPerformSelection()
-    {
-        return IsConnected;
-    }
-
-    #endregion
 
     /// <summary>
     /// Determines whether a symbol can be subscribed to.

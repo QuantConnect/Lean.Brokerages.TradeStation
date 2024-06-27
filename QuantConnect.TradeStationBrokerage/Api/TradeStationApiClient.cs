@@ -263,24 +263,6 @@ public class TradeStationApiClient
     }
 
     /// <summary>
-    /// Retrieves option expirations and corresponding strikes for a given ticker symbol asynchronously.
-    /// </summary>
-    /// <param name="ticker">The ticker symbol for which option expirations and strikes are requested.</param>
-    /// <returns>
-    /// An asynchronous enumerable representing the operation. Each element in the sequence contains an expiration date and a collection of strikes associated with that expiration date.
-    /// </returns>
-    public async IAsyncEnumerable<(DateTime expirationDate, IEnumerable<decimal> strikes)> GetOptionExpirationsAndStrikes(string ticker)
-    {
-        var expirations = await GetOptionExpirations(ticker);
-
-        foreach (var expiration in expirations.Expirations)
-        {
-            var optionStrikes = await GetOptionStrikes(ticker, expiration.Date);
-            yield return (expiration.Date, optionStrikes.Strikes.SelectMany(x => x));
-        }
-    }
-
-    /// <summary>
     /// Retrieves a snapshot of quotes for a given ticker from TradeStation.
     /// </summary>
     /// <param name="ticker">The ticker symbol for which to retrieve the quote snapshot.</param>

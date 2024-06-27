@@ -129,18 +129,6 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         }
 
         [TestCase("AAPL")]
-        public async Task GetOptionExpirations(string ticker)
-        {
-            var tradeStationApiClient = CreateTradeStationApiClient();
-
-            await foreach (var optionContract in tradeStationApiClient.GetOptionExpirationsAndStrikes(ticker))
-            {
-                Assert.That(optionContract.expirationDate, Is.Not.EqualTo(default(DateTime)));
-                Assert.Greater(optionContract.strikes.Count(), 0);
-            }
-        }
-
-        [TestCase("AAPL")]
         public async Task GetQuoteSnapshot(string ticker)
         {
             var tradeStationApiClient = CreateTradeStationApiClient();
