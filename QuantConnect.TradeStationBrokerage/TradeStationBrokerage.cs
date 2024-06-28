@@ -37,6 +37,7 @@ using System.Net.NetworkInformation;
 using QuantConnect.Brokerages.CrossZero;
 using QuantConnect.Brokerages.TradeStation.Api;
 using QuantConnect.Brokerages.TradeStation.Models;
+using TimeInForce = QuantConnect.Orders.TimeInForce;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
 
 namespace QuantConnect.Brokerages.TradeStation;
@@ -286,26 +287,64 @@ public class TradeStationBrokerage : Brokerage
         return result;
     }
 
+    /// <summary>
+    /// Places an order using TradeStation.
+    /// </summary>
+    /// <param name="order">The order to be placed.</param>
+    /// <param name="holdingQuantity">The holding quantity associated with the order.</param>
+    /// <param name="isSubmittedEvent">Indicates if the order submission event should be triggered.</param>
+    /// <returns>A response from TradeStation after placing the order.</returns>
     private TradeStationPlaceOrderResponse? PlaceTradeStationOrder(Order order, decimal holdingQuantity, bool isSubmittedEvent = true)
     {
         var symbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
-
         var tradeAction = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity).ToStringInvariant().ToUpperInvariant();
+        return PlaceOrderCommon(order, order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, symbol, order.GetLimitPrice(), order.GetStopPrice(), isSubmittedEvent);
+    }
 
-        var response = _tradeStationApiClient.PlaceOrder(order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, symbol,
-            order.GetLimitPrice(), order.GetStopPrice()).SynchronouslyAwaitTaskResult();
+    /// <summary>
+    /// Places a CrossZero order.
+    /// </summary>
+    /// <param name="crossZeroOrderRequest">The CrossZero order request containing the necessary details.</param>
+    /// <param name="isPlaceOrderWithLeanEvent">Indicates if the Lean event should be triggered upon order placement.</param>
+    /// <returns>A response indicating the success or failure of the CrossZero order placement.</returns>
+    protected override CrossZeroOrderResponse PlaceCrossZeroOrder(CrossZeroFirstOrderRequest crossZeroOrderRequest, bool isPlaceOrderWithLeanEvent)
+    {
+        var symbol = _symbolMapper.GetBrokerageSymbol(crossZeroOrderRequest.LeanOrder.Symbol);
+        var tradeAction = crossZeroOrderRequest.OrderPosition.ConvertDirection(crossZeroOrderRequest.LeanOrder.SecurityType).ToStringInvariant().ToUpperInvariant();
 
-        foreach (var error in response.Errors ?? Enumerable.Empty<TradeStationError>())
+        var response = PlaceOrderCommon(crossZeroOrderRequest.LeanOrder, crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
+            crossZeroOrderRequest.AbsoluteOrderQuantity, tradeAction, symbol, crossZeroOrderRequest.LeanOrder.GetLimitPrice(), crossZeroOrderRequest.LeanOrder.GetStopPrice(), isPlaceOrderWithLeanEvent);
+
+        if (response == null || !response.Value.Orders.Any())
         {
-            OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
-            { Status = OrderStatus.Invalid, Message = error.Message });
-            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "PlaceOrderInvalid", error.Message));
-            return null;
+            return new CrossZeroOrderResponse(string.Empty, false);
         }
+
+        var brokerageId = response.Value.Orders.Single().OrderID;
+        return new CrossZeroOrderResponse(brokerageId, true);
+    }
+
+    /// <summary>
+    /// Places a common order.
+    /// </summary>
+    /// <param name="order">The order to be placed.</param>
+    /// <param name="orderType">The type of the order.</param>
+    /// <param name="timeInForce">The time in force for the order.</param>
+    /// <param name="quantity">The quantity of the order.</param>
+    /// <param name="tradeAction">The trade action (BUY/SELL) of the order.</param>
+    /// <param name="symbol">The symbol for the order.</param>
+    /// <param name="limitPrice">The limit price for the order, if applicable.</param>
+    /// <param name="stopPrice">The stop price for the order, if applicable.</param>
+    /// <param name="isSubmittedEvent">Indicates if the order submission event should be triggered.</param>
+    /// <returns>A response from TradeStation after placing the order.</returns>
+    private TradeStationPlaceOrderResponse? PlaceOrderCommon(Order order, OrderType orderType, TimeInForce timeInForce, decimal quantity, string tradeAction, string symbol, decimal? limitPrice, decimal? stopPrice, bool isSubmittedEvent)
+    {
+        var response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, quantity, tradeAction, symbol, limitPrice, stopPrice).SynchronouslyAwaitTaskResult();
 
         foreach (var brokerageOrder in response.Orders)
         {
             order.BrokerId.Add(brokerageOrder.OrderID);
+
             // Check if the order failed due to an existing position. Reason: EC701: You are long/short N shares.
             if (PlaceOrderTradeStationErrorCodes.Any(item => brokerageOrder.Message.Contains(item, StringComparison.InvariantCultureIgnoreCase)))
             {
@@ -321,57 +360,6 @@ public class TradeStationBrokerage : Brokerage
             }
         }
         return response;
-    }
-
-    /// <summary>
-    /// Places an order that crosses zero (transitions from a short position to a long position or vice versa) and returns the response.
-    /// This method implements brokerage-specific logic for placing such orders using Tradier brokerage.
-    /// </summary>
-    /// <param name="crossZeroOrderRequest">The request object containing details of the cross zero order to be placed.</param>
-    /// <param name="isPlaceOrderWithLeanEvent">
-    /// A boolean indicating whether the order should be placed with triggering a Lean event. 
-    /// Default is <c>true</c>, meaning Lean events will be triggered.
-    /// </param>
-    /// <returns>
-    /// A <see cref="CrossZeroOrderResponse"/> object indicating the result of the order placement.
-    /// </returns>
-    protected override CrossZeroOrderResponse PlaceCrossZeroOrder(CrossZeroFirstOrderRequest crossZeroOrderRequest, bool isPlaceOrderWithLeanEvent)
-    {
-        var symbol = _symbolMapper.GetBrokerageSymbol(crossZeroOrderRequest.LeanOrder.Symbol);
-        var tradeAction = crossZeroOrderRequest.OrderPosition.ConvertDirection(crossZeroOrderRequest.LeanOrder.SecurityType).ToStringInvariant().ToUpperInvariant();
-
-        var response = _tradeStationApiClient.PlaceOrder(crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
-            crossZeroOrderRequest.AbsoluteOrderQuantity, tradeAction, symbol, crossZeroOrderRequest.LeanOrder.GetLimitPrice(), crossZeroOrderRequest.LeanOrder.GetStopPrice())
-            .SynchronouslyAwaitTaskResult();
-
-        foreach (var error in response.Errors ?? Enumerable.Empty<TradeStationError>())
-        {
-            OnOrderEvent(new OrderEvent(crossZeroOrderRequest.LeanOrder, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
-            { Status = OrderStatus.Invalid, Message = error.Message });
-            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "PlaceOrderInvalid", error.Message));
-            return new CrossZeroOrderResponse(string.Empty, false);
-        }
-
-        foreach (var brokerageOrder in response.Orders)
-        {
-            // Check if the order failed due to an existing position. Reason: EC701: You are long/short N shares.
-            if (PlaceOrderTradeStationErrorCodes.Any(item => brokerageOrder.Message.Contains(item, StringComparison.InvariantCultureIgnoreCase)))
-            {
-                OnOrderEvent(new OrderEvent(crossZeroOrderRequest.LeanOrder, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
-                { Status = OrderStatus.Invalid, Message = brokerageOrder.Message });
-                return new CrossZeroOrderResponse(string.Empty, false);
-            }
-        }
-
-        var brokerageId = response.Orders.Single().OrderID;
-
-        if (isPlaceOrderWithLeanEvent)
-        {
-            OnOrderEvent(new OrderEvent(crossZeroOrderRequest.LeanOrder, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
-            { Status = OrderStatus.Submitted });
-        }
-
-        return new CrossZeroOrderResponse(brokerageId, true);
     }
 
     /// <summary>
