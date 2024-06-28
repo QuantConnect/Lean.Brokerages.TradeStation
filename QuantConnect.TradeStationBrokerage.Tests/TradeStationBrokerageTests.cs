@@ -56,7 +56,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 throw new ArgumentException("API key, secret, and URL cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
             }
 
-            return new TradeStationBrokerageTest(apiKey, apiSecret, apiUrl, redirectUrl, authorizationCodeFromUrl, accountType, orderProvider, securityProvider, useProxy: true);
+            return new TradeStationBrokerageTest(apiKey, apiSecret, apiUrl, redirectUrl, authorizationCodeFromUrl, accountType, orderProvider, securityProvider);
         }
         protected override bool IsAsync()
         {
@@ -106,9 +106,9 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             get
             {
                 var AAPLOption = Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 205m, new DateTime(2024, 6, 28));
-                yield return new TestCaseData(new LimitOrderTestParameters(AAPLOption, 7m, 6.5m)).SetCategory("Option").SetName("AAPL Option Limit");
-                yield return new TestCaseData(new StopMarketOrderTestParameters(AAPLOption, 7.25m, 7.20m)).SetCategory("Option").SetName("AAPL Option StopMarket");
-                yield return new TestCaseData(new StopLimitOrderTestParameters(AAPLOption, 7.25m, 7.25m)).SetCategory("Option").SetName("AAPL Option StopLimit");
+                yield return new TestCaseData(new LimitOrderTestParameters(AAPLOption, 9m, 7.9m)).SetCategory("Option").SetName("AAPL Option Limit");
+                yield return new TestCaseData(new StopMarketOrderTestParameters(AAPLOption, 8.0m, 8.0m)).SetCategory("Option").SetName("AAPL Option StopMarket");
+                yield return new TestCaseData(new StopLimitOrderTestParameters(AAPLOption, 8.05m, 8.05m)).SetCategory("Option").SetName("AAPL Option StopLimit");
 
                 var INTL = Symbol.Create("INTL", SecurityType.Equity, Market.USA);
                 yield return new TestCaseData(new LimitOrderTestParameters(INTL, 23m, 22m)).SetCategory("Equity").SetName("INTL Limit");
@@ -233,7 +233,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             }
         }
 
-        [Test]
+        [Test, Explicit("Not implemented IDataQueueUniverseProvider")]
         public void LookupSymbols()
         {
             var option = Symbol.CreateCanonicalOption(Symbols.AAPL);
@@ -300,8 +300,8 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
             /// <param name="orderProvider">The order provider.</param>
             public TradeStationBrokerageTest(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl,
-                string authorizationCodeFromUrl, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider, bool useProxy = false)
-                : base(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCodeFromUrl, accountType, orderProvider, securityProvider, useProxy)
+                string authorizationCodeFromUrl, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
+                : base(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCodeFromUrl, accountType, orderProvider, securityProvider)
             { }
 
             /// <summary>

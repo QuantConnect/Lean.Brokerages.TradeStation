@@ -158,7 +158,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             }
 
             return new TradeStationApiClient(apiKey, apiSecret, apiUrl, redirectUrl,
-                TradeStationExtensions.ParseAccountType(accountType), authorizationCodeFromUrl, useProxy: true);
+                TradeStationExtensions.ParseAccountType(accountType), authorizationCodeFromUrl);
         }
     }
 }
