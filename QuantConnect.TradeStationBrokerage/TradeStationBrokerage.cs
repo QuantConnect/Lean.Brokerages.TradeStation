@@ -501,7 +501,7 @@ public class TradeStationBrokerage : Brokerage
     private void HandleTradeStationMessage(string json)
     {
         var jObj = JObject.Parse(json);
-        if (IsConnected && jObj["AccountID"] != null)
+        if (_isSubscribeOnStreamOrderUpdate && jObj["AccountID"] != null)
         {
             var brokerageOrder = jObj.ToObject<TradeStationOrder>();
 
@@ -571,7 +571,11 @@ public class TradeStationBrokerage : Brokerage
             switch (status.StreamStatus)
             {
                 case "EndSnapshot":
+                    _isSubscribeOnStreamOrderUpdate = true;
                     _autoResetEvent.Set();
+                    break;
+                case "GoAway":
+                    _isSubscribeOnStreamOrderUpdate = false;
                     break;
                 default:
                     Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}.TradeStationStreamStatus: {json}");
