@@ -13,20 +13,19 @@
  * limitations under the License.
 */
 
-using NUnit.Framework;
-using QuantConnect.Util;
-using QuantConnect.Interfaces;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
 
-namespace QuantConnect.Brokerages.Template.Tests
+namespace QuantConnect.Brokerages.TradeStation.Models.Enums;
+
+/// <summary>
+/// The order type of the order.
+/// </summary>
+[JsonConverter(typeof(StringEnumConverter))]
+public enum TradeStationOrderType
 {
-    [TestFixture]
-    public class TemplateBrokerageAdditionalTests
-    {
-        [Test]
-        public void ParameterlessConstructorComposerUsage()
-        {
-            var brokerage = Composer.Instance.GetExportedValueByTypeName<IDataQueueHandler>("TemplateBrokerage");
-            Assert.IsNotNull(brokerage);
-        }
-    }
+    Limit = 0,
+    StopMarket = 1,
+    Market = 2,
+    StopLimit = 3
 }

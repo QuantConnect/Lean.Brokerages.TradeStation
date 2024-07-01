@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
+		<Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+		<TargetFramework>net6.0</TargetFramework>
+
+		<IsPackable>false</IsPackable>
+		<Copyright>Copyright ©  2021</Copyright>
+		<TestProjectType>UnitTest</TestProjectType>
+		<OutputPath>bin\$(Configuration)\</OutputPath>
+		<Product>QuantConnect.Brokerages.TradeStation.Tests</Product>
+		<AssemblyName>QuantConnect.Brokerages.TradeStation.Tests</AssemblyName>
+		<RootNamespace>QuantConnect.Brokerages.TradeStation.Tests</RootNamespace>
+		<AssemblyTitle>QuantConnect.Brokerages.TradeStation.Tests</AssemblyTitle>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
+		<PackageReference Include="NUnit" Version="3.13.3" />
+		<PackageReference Include="NUnit3TestAdapter" Version="4.2.1">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.9.4" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Remove="config.json" />
+		<Content Include="config.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\Lean\Tests\QuantConnect.Tests.csproj" />
+		<ProjectReference Include="..\QuantConnect.TradeStationBrokerage\QuantConnect.TradeStationBrokerage.csproj" />
+	</ItemGroup>
+</Project>

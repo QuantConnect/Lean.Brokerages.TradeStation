@@ -13,23 +13,27 @@
  * limitations under the License.
 */
 
+using Moq;
 using NUnit.Framework;
+using QuantConnect.Util;
+using QuantConnect.Packets;
+using QuantConnect.Interfaces;
 
-namespace QuantConnect.Brokerages.Template.Tests
+namespace QuantConnect.Brokerages.TradeStation.Tests
 {
-    [TestFixture, Ignore("Not implemented")]
-    public class TemplateBrokerageSymbolMapperTests
+    [TestFixture]
+    public class TradeStationBrokerageFactoryTests
     {
         [Test]
-        public void ReturnsCorrectLeanSymbol()
+        public void InitializesFactoryFromComposer()
         {
+            using var factory = Composer.Instance.Single<IBrokerageFactory>(instance => instance.BrokerageType == typeof(TradeStationBrokerage));
 
-        }
+            var liveNodePacket = new LiveNodePacket() { BrokerageData = factory.BrokerageData };
 
-        [Test]
-        public void ReturnsCorrectBrokerageSymbol()
-        {
-
+            using var brokerageInstance = factory.CreateBrokerage(liveNodePacket, new Mock<IAlgorithm>().Object);
+            Assert.IsNotNull(factory);
+            Assert.IsNotNull(brokerageInstance);
         }
     }
 }
