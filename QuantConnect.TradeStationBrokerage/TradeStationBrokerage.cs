@@ -491,7 +491,7 @@ public class TradeStationBrokerage : Brokerage
             }
         }, _cancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
-        return _autoResetEvent.WaitOne(TimeSpan.FromSeconds(10), _cancellationTokenSource.Token);
+        return _autoResetEvent.WaitOne(TimeSpan.FromSeconds(30), _cancellationTokenSource.Token);
     }
 
     /// <summary>
