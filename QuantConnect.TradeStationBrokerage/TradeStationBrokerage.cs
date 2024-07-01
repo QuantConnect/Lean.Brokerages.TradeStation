@@ -525,7 +525,7 @@ public class TradeStationBrokerage : Brokerage
                     leanOrderStatus = OrderStatus.Canceled;
                     break;
                 default:
-                    Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}.TradeStationStreamStatus: {json}");
+                    Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}.TradeStationStreamStatus: {json}");
                     return;
             };
 
@@ -538,7 +538,7 @@ public class TradeStationBrokerage : Brokerage
             {
                 // If the lean order is still null, wait for up to 10 seconds before trying again to get the order from the cache.
                 // This is necessary when a CrossZeroOrder was placed successfully and we need to ensure the order is available.
-                Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}. order id not found: {brokerageOrder.OrderID}");
+                Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}. order id not found: {brokerageOrder.OrderID}");
                 return;
             }
 
@@ -546,8 +546,6 @@ public class TradeStationBrokerage : Brokerage
             // TODO: Where may we take Market ?
             var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
                 leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
-
-            Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}.TradeStationStreamStatus: {json}");
 
             var orderEvent = new OrderEvent(
                 leanOrder.Id,
@@ -576,13 +574,9 @@ public class TradeStationBrokerage : Brokerage
                     _autoResetEvent.Set();
                     break;
                 default:
-                    Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}.TradeStationStreamStatus: {json}");
+                    Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}.TradeStationStreamStatus: {json}");
                     break;
             }
-        }
-        else
-        {
-            //Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}.Response: {json}");
         }
     }
 
