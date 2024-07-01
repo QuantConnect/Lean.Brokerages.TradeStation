@@ -73,11 +73,6 @@ public class TradeStationBrokerage : Brokerage
     /// <inheritdoc cref="ISecurityProvider"/>
     private ISecurityProvider _securityProvider { get; }
 
-    /// <summary>
-    /// Gets an array of error codes related to placing orders on TradeStation.
-    /// </summary>
-    private string[] PlaceOrderTradeStationErrorCodes { get; } = { "EC601", "EC602", "EC701", "EC702" };
-
     /// <inheritdoc cref="BrokerageConcurrentMessageHandler{T}"/>
     private BrokerageConcurrentMessageHandler<string> _messageHandler;
 
@@ -345,8 +340,8 @@ public class TradeStationBrokerage : Brokerage
         {
             order.BrokerId.Add(brokerageOrder.OrderID);
 
-            // Check if the order failed due to an existing position. Reason: EC701: You are long/short N shares.
-            if (PlaceOrderTradeStationErrorCodes.Any(item => brokerageOrder.Message.Contains(item, StringComparison.InvariantCultureIgnoreCase)))
+            // Check if the order failed due to an existing position. Reason: [EC601,EC602,EC701,EC702]: You are long/short N shares.
+            if (brokerageOrder.Message.Contains("Order failed", StringComparison.InvariantCultureIgnoreCase))
             {
                 OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
                 { Status = OrderStatus.Invalid, Message = brokerageOrder.Message });
