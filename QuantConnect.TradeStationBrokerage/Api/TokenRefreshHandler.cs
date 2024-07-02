@@ -103,7 +103,7 @@ public class TokenRefreshHandler : DelegatingHandler
     /// If provided explicitly through configuration, it can expedite development processes by avoiding constant requests for new refresh tokens.
     /// If omitted, the handler may automatically determine the need for refreshing based on the presence of the authorization code obtained from the URL during OAuth authentication.</param>
     public TokenRefreshHandler(HttpMessageHandler innerHandler, string apiKey, string apiKeySecret, string authorizationCodeFromUrl, string baseSignInUrl,
-        string redirectUri, string refreshToken = "") : base(innerHandler)
+        string redirectUri, string refreshToken) : base(innerHandler)
     {
         _apiKey = apiKey;
         _apiKeySecret = apiKeySecret;

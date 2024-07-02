@@ -42,10 +42,15 @@ public class TradeStationBrokerageFactory : BrokerageFactory
         // Simulator(SIM): https://sim-api.tradestation.com/v3
         // LIVE: https://api.tradestation.com/v3
         { "trade-station-api-url", Config.Get("trade-station-api-url") },
-        { "trade-station-redirect-url", Config.Get("trade-station-redirect-url") },
-        { "trade-station-code-from-url", Config.Get("trade-station-code-from-url") },
         /// <see cref="Models.Enums.TradeStationAccountType"/>
-        { "trade-station-account-type", Config.Get("trade-station-account-type") }
+        { "trade-station-account-type", Config.Get("trade-station-account-type") },
+        
+        // USE CASE 1 (normal): lean CLI & live cloud wizard
+        { "trade-station-refresh-token", Config.Get("trade-station-refresh-token") },
+
+        // USE CASE 2 (developing): Only if refresh token not provided
+        { "trade-station-redirect-url", Config.Get("trade-station-redirect-url") },
+        { "trade-station-authorization-code", Config.Get("trade-station-authorization-code") }
     };
 
     /// <summary>
@@ -74,8 +79,6 @@ public class TradeStationBrokerageFactory : BrokerageFactory
         var apiKey = Read<string>(job.BrokerageData, "trade-station-api-key", errors);
         var apiSecret = Read<string>(job.BrokerageData, "trade-station-api-secret", errors);
         var apiUrl = Read<string>(job.BrokerageData, "trade-station-api-url", errors);
-        var redirectUrl = Read<string>(job.BrokerageData, "trade-station-redirect-url", errors);
-        var authorizationCodeFromUrl = Read<string>(job.BrokerageData, "trade-station-code-from-url", errors);
         var accountType = Read<string>(job.BrokerageData, "trade-station-account-type", errors);
 
         if (errors.Count != 0)
@@ -84,7 +87,22 @@ public class TradeStationBrokerageFactory : BrokerageFactory
             throw new ArgumentException(string.Join(Environment.NewLine, errors));
         }
 
-        return new TradeStationBrokerage(apiKey, apiSecret, apiUrl, redirectUrl, authorizationCodeFromUrl, accountType, algorithm);
+        var refreshToken = Read<string>(job.BrokerageData, "trade-station-refresh-token", errors);
+
+        if (string.IsNullOrEmpty(refreshToken))
+        {
+            var authorizationCode = Read<string>(job.BrokerageData, "trade-station-authorization-code", errors);
+            var redirectUrl = Read<string>(job.BrokerageData, "trade-station-redirect-url", errors);
+
+            if (string.IsNullOrEmpty(authorizationCode) || string.IsNullOrEmpty(redirectUrl))
+            {
+                throw new ArgumentException("RedirectUrl or AuthorizationCode cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
+            }
+
+            return new TradeStationBrokerage(apiKey, apiSecret, apiUrl, redirectUrl, authorizationCode, accountType, algorithm);
+        }
+
+        return new TradeStationBrokerage(apiKey, apiSecret, apiUrl, refreshToken, accountType, algorithm);
     }
 
     /// <summary>

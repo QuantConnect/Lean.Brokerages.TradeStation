@@ -45,18 +45,32 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var algorithm = new Mock<IAlgorithm>();
 
             var apiKey = Config.Get("trade-station-api-key");
-            var apiSecret = Config.Get("trade-station-api-secret");
-            var apiUrl = Config.Get("trade-station-api-url");
-            var authorizationCodeFromUrl = Config.Get("trade-station-code-from-url");
+            var apiKeySecret = Config.Get("trade-station-api-secret");
+            var restApiUrl = Config.Get("trade-station-api-url");
             var accountType = Config.Get("trade-station-account-type");
-            var redirectUrl = Config.Get("trade-station-redirect-url");
 
-            if (new string[] { apiKey, apiSecret, apiUrl }.Any(string.IsNullOrEmpty))
+            if (new string[] { apiKey, apiKeySecret, restApiUrl, accountType }.Any(string.IsNullOrEmpty))
             {
                 throw new ArgumentException("API key, secret, and URL cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
             }
 
-            return new TradeStationBrokerageTest(apiKey, apiSecret, apiUrl, redirectUrl, authorizationCodeFromUrl, accountType, orderProvider, securityProvider);
+            var refreshToken = Config.Get("trade-station-refresh-token");
+
+            if (string.IsNullOrEmpty(refreshToken))
+            {
+                var redirectUrl = Config.Get("trade-station-redirect-url");
+                var authorizationCode = Config.Get("trade-station-authorization-code");
+
+                if (new string[] { redirectUrl, authorizationCode }.Any(string.IsNullOrEmpty))
+                {
+                    throw new ArgumentException("RedirectUrl or AuthorizationCode cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
+                }
+
+                return new TradeStationBrokerageTest(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, string.Empty,
+                    accountType, orderProvider, securityProvider);
+            }
+
+            return new TradeStationBrokerageTest(apiKey, apiKeySecret, restApiUrl, string.Empty, string.Empty, refreshToken, accountType, orderProvider, securityProvider);
         }
         protected override bool IsAsync()
         {
@@ -294,14 +308,15 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             /// <param name="apiKeySecret">The API key secret for authentication.</param>
             /// <param name="restApiUrl">The URL of the REST API.</param>
             /// <param name="redirectUrl">The redirect URL to generate great link to get right "authorizationCodeFromUrl"</param>
-            /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL.</param>
+            /// <param name="authorizationCode">The authorization code obtained from the URL.</param>
+            /// <param name="refreshToken">The refresh token used to obtain new access tokens for authentication.</param>
             /// <param name="accountType">The type of TradeStation account for the current session.
             /// For <see cref="TradeStationAccountType.Cash"/> or <seealso cref="TradeStationAccountType.Margin"/> accounts, it is used for trading <seealso cref="SecurityType.Equity"/> and <seealso cref="SecurityType.Option"/>.
             /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
             /// <param name="orderProvider">The order provider.</param>
             public TradeStationBrokerageTest(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl,
-                string authorizationCodeFromUrl, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
-                : base(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCodeFromUrl, accountType, orderProvider, securityProvider)
+                string authorizationCode, string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
+                : base(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider)
             { }
 
             /// <summary>

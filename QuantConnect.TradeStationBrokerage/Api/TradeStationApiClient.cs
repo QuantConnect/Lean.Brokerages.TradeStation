@@ -78,20 +78,20 @@ public class TradeStationApiClient
     /// <param name="apiKey">The API Key used by the client application to authenticate requests.</param>
     /// <param name="apiKeySecret">The secret associated with the client application’s API Key for authentication.</param>
     /// <param name="restApiUrl">The URL of the REST API.</param>
-    /// <param name="redirectUri">The URI to which the user will be redirected after authentication.</param>
     /// <param name="tradeStationAccountType">The type of TradeStation account.</param>
-    /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL during OAuth authentication. Default is an empty string.</param>
+    /// <param name="refreshToken">The type of TradeStation account.</param>
+    /// <param name="redirectUri">The URI to which the user will be redirected after authentication.</param>
+    /// <param name="authorizationCode">The authorization code obtained from the URL during OAuth authentication. Default is an empty string.</param>
     /// <param name="signInUri">The URI of the sign-in page for TradeStation authentication. Default is "https://signin.tradestation.com".</param>
-    public TradeStationApiClient(string apiKey, string apiKeySecret, string restApiUrl, string redirectUri, TradeStationAccountType tradeStationAccountType,
-        string authorizationCodeFromUrl = "", string signInUri = "https://signin.tradestation.com")
+    public TradeStationApiClient(string apiKey, string apiKeySecret, string restApiUrl, TradeStationAccountType tradeStationAccountType,
+        string refreshToken, string redirectUri, string authorizationCode, string signInUri = "https://signin.tradestation.com")
     {
         _apiKey = apiKey;
         _redirectUri = redirectUri;
         _baseUrl = restApiUrl;
 
         var httpClientHandler = new HttpClientHandler();
-        var tokenRefreshHandler = new TokenRefreshHandler(httpClientHandler, apiKey, apiKeySecret, authorizationCodeFromUrl, signInUri, redirectUri,
-            Config.GetValue<string>("trade-station-refresh-token"));
+        var tokenRefreshHandler = new TokenRefreshHandler(httpClientHandler, apiKey, apiKeySecret, authorizationCode, signInUri, redirectUri, refreshToken);
         _httpClient = new(tokenRefreshHandler);
         _accountID = new Lazy<string>(() =>
         {
