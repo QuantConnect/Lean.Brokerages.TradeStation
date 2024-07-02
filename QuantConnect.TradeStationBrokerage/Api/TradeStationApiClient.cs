@@ -20,6 +20,7 @@ using System.Linq;
 using System.Text;
 using System.Net.Http;
 using Newtonsoft.Json;
+using System.Threading;
 using QuantConnect.Util;
 using QuantConnect.Orders;
 using QuantConnect.Logging;
@@ -27,6 +28,7 @@ using System.Threading.Tasks;
 using QuantConnect.Configuration;
 using System.Collections.Generic;
 using Lean = QuantConnect.Orders;
+using System.Runtime.CompilerServices;
 using QuantConnect.Brokerages.TradeStation.Models;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
 using QuantConnect.Brokerages.TradeStation.Models.Interfaces;
@@ -238,24 +240,27 @@ public class TradeStationApiClient
     /// <remarks>
     /// This method retrieves accounts from the brokerage service, then opens a stream to continuously receive order updates for these accounts.
     /// </remarks>
-    public async IAsyncEnumerable<string> StreamOrders()
+    /// <param name="cancellationToken">A token to cancel the asynchronous operation.</param>
+    public async IAsyncEnumerable<string> StreamOrders([EnumeratorCancellation] CancellationToken cancellationToken)
     {
         using (var request = new HttpRequestMessage(HttpMethod.Get, $"{_baseUrl}/v3/brokerage/stream/accounts/{_accountID.Value}/orders"))
         {
-            using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false))
+            using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
             {
                 response.EnsureSuccessStatusCode();
 
-                using (var stream = await response.Content.ReadAsStreamAsync())
+                using (var stream = await response.Content.ReadAsStreamAsync(cancellationToken))
                 {
                     using (StreamReader reader = new StreamReader(stream))
                     {
+                        Log.Trace($"{nameof(TradeStationApiClient)}.{nameof(StreamOrders)}: We are now starting to read the order stream.");
                         while (!reader.EndOfStream)
                         {
                             var jsonLine = await reader.ReadLineAsync();
                             if (jsonLine == null) break;
                             yield return jsonLine;
                         }
+                        Log.Trace($"{nameof(TradeStationApiClient)}.{nameof(StreamOrders)}: We have completed reading the order stream.");
                     }
                 }
             }

@@ -467,18 +467,25 @@ public class TradeStationBrokerage : Brokerage
     }
 
     /// <summary>
-    /// Subscribes to order updates.
+    /// Subscribes to order updates and processes them asynchronously.
     /// </summary>
-    /// <returns>True if the subscription was successful; otherwise, false.</returns>
+    /// <returns>
+    /// A boolean value indicating whether the subscription was successfully established within the specified timeout period.
+    /// </returns>
+    /// <remarks>
+    /// This method starts a new long-running task that continuously listens for order updates from the TradeStation API.
+    /// If an exception occurs during the streaming process, the method will wait for 10 seconds before attempting to reconnect.
+    /// </remarks>
     private bool SubscribeOnOrderUpdate()
     {
         Task.Factory.StartNew(async () =>
         {
             while (!_cancellationTokenSource.IsCancellationRequested)
             {
+                Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}: Starting to listen for order updates...");
                 try
                 {
-                    await foreach (var json in _tradeStationApiClient.StreamOrders())
+                    await foreach (var json in _tradeStationApiClient.StreamOrders(_cancellationTokenSource.Token))
                     {
                         _messageHandler.HandleNewMessage(json);
                     }
@@ -487,7 +494,8 @@ public class TradeStationBrokerage : Brokerage
                 {
                     Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}.Exception: {ex}");
                 }
-                _cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(5));
+                Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}: Connection lost. Reconnecting in 10 seconds...");
+                _cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(10));
             }
         }, _cancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
@@ -574,7 +582,7 @@ public class TradeStationBrokerage : Brokerage
                     _isSubscribeOnStreamOrderUpdate = true;
                     _autoResetEvent.Set();
                     break;
-                case "GoAway":
+                case "GoAway": // Before stream is terminated by server GoAway status is sent indicating that client must restart the stream
                     _isSubscribeOnStreamOrderUpdate = false;
                     break;
                 default:
