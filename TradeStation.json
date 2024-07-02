@@ -10,6 +10,6 @@
 		}
 	],
 	"order-types": [ "Market",  "Limit", "Stop Market",  "Stop Limit" ],
-	"assets": [ "Equity", "Equity Options" ], 
+	"assets": [ "Equity", "Equity Options", "Futures" ], 
 	"brokerage-url": "https://tradestation.com/"
 }
