@@ -1,0 +1,15 @@
+{
+    "description": "TradeStation provides a complete range of advanced trading tools and online brokerage services. Trade stocks, ETFs, and options easily and efficiently.",
+    "platforms-features": [
+		{
+			"Platforms": ["Cloud Platform", "Local Platform", "LEAN CLI"],
+			"Download Data": [0,0,0],
+			"Backtesting": [0,0,0],
+			"Optimization": [0,0,0],
+			"Live Trading":	[1,1,1]
+		}
+	],
+	"order-types": [ "Market",  "Limit", "Stop Market",  "Stop Limit" ],
+	"assets": [ "Equity", "Equity Options", "Futures" ], 
+	"brokerage-url": "https://tradestation.com/"
+}

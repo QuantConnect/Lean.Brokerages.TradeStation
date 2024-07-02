@@ -13,28 +13,27 @@
  * limitations under the License.
 */
 
-using QuantConnect.ToolBox;
-using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
-namespace QuantConnect.Brokerages.Template.ToolBox
+namespace QuantConnect.Brokerages.TradeStation.Models;
+
+/// <summary>
+/// Represents the status of a trade stream in TradeStation.
+/// </summary>
+public readonly struct TradeStationStreamStatus
 {
     /// <summary>
-    /// Template Brokerage implementation of <see cref="IExchangeInfoDownloader"/>
+    /// Gets the status of the stream.
     /// </summary>
-    public class TemplateExchangeInfoDownloader : IExchangeInfoDownloader
-    {
-        /// <summary>
-        /// Market
-        /// </summary>
-        public string Market => throw new System.NotImplementedException();
+    public string StreamStatus { get; }
 
-        /// <summary>
-        /// Get exchange info coma-separated data
-        /// </summary>
-        /// <returns>Enumerable of exchange info for this market</returns>
-        public IEnumerable<string> Get()
-        {
-            throw new System.NotImplementedException();
-        }
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TradeStationStreamStatus"/> struct with the specified stream status.
+    /// </summary>
+    /// <param name="streamStatus">The status of the stream.</param>
+    [JsonConstructor]
+    public TradeStationStreamStatus(string streamStatus)
+    {
+        StreamStatus = streamStatus;
     }
 }
