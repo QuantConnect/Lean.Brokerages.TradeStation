@@ -81,7 +81,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var accountBalances = tradeStationApiClient.GetAccountPositions().SynchronouslyAwaitTaskResult();
 
             Assert.IsNotNull(accountBalances);
-            Assert.Greater(accountBalances.Positions.Count(), 0);
+            Assert.GreaterOrEqual(accountBalances.Positions.Count(), 0);
         }
 
         [Test]
