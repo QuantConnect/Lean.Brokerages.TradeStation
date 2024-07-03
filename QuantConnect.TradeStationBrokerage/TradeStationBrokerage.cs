@@ -570,8 +570,15 @@ public class TradeStationBrokerage : Brokerage
             }
 
             var leg = brokerageOrder.Legs.First();
+            var securityType = leg.AssetType.ConvertAssetTypeToSecurityType();
+            var brokerageSymbol = leg.Underlying ?? leg.Symbol;
+            if (leanOrderStatus == OrderStatus.Invalid && securityType == SecurityType.Option)
+            {
+                brokerageSymbol = _symbolMapper.ParsePositionOptionSymbol(brokerageSymbol).symbol;
+            }
+
             // TODO: Where may we take Market ?
-            var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
+            var leanSymbol = _symbolMapper.GetLeanSymbol(brokerageSymbol, securityType, Market.USA,
                 leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
 
             var orderEvent = new OrderEvent(

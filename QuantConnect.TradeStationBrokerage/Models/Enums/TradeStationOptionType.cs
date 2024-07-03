@@ -29,4 +29,6 @@ public enum TradeStationOptionType
     [EnumMember(Value = "PUT")]
     Put = 1,
 
+    [EnumMember(Value = "NA")]
+    Na = 2
 }
