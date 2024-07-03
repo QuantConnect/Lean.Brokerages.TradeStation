@@ -93,13 +93,20 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
             Assert.IsNotNull(orders);
 
-            var order = orders.Orders.First();
+            if (orders.Orders.Any())
+            {
+                var order = orders.Orders.First();
 
-            Assert.IsInstanceOf<TradeStationOrderStatusType>(order.Status);
-            Assert.IsInstanceOf<TradeStationOrderType>(order.OrderType);
-            Assert.IsInstanceOf<TradeStationAssetType>(order.Legs.First().AssetType);
-            Assert.IsInstanceOf<TradeStationOptionType>(order.Legs.First().OptionType);
-            Assert.That(order.OpenedDateTime, Is.Not.EqualTo(default(DateTime)));
+                Assert.IsInstanceOf<TradeStationOrderStatusType>(order.Status);
+                Assert.IsInstanceOf<TradeStationOrderType>(order.OrderType);
+                Assert.IsInstanceOf<TradeStationAssetType>(order.Legs.First().AssetType);
+                Assert.IsInstanceOf<TradeStationOptionType>(order.Legs.First().OptionType);
+                Assert.That(order.OpenedDateTime, Is.Not.EqualTo(default(DateTime)));
+            }
+            else
+            {
+                Assert.Pass("No orders are currently available in TradeStation.");
+            }
         }
 
         [Test]
