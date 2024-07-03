@@ -95,10 +95,10 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             if (IsLongOrder)
             {
-                return Math.Round(_brokerage.GetLastPrice(symbol) + 0.2m, 2, MidpointRounding.ToEven);
+                return Math.Round(_brokerage.GetLastPrice(symbol) + 0.11m, 2, MidpointRounding.ToEven);
             }
 
-            return Math.Round(_brokerage.GetLastPrice(symbol) - 0.2m, 2, MidpointRounding.ToEven);
+            return Math.Round(_brokerage.GetLastPrice(symbol) - 0.11m, 2, MidpointRounding.ToEven);
         }
 
         /// <summary>
@@ -119,7 +119,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             get
             {
-                var AAPLOption = Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 205m, new DateTime(2024, 7, 19));
+                var AAPLOption = Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 215m, new DateTime(2024, 7, 19));
                 yield return new TestCaseData(new LimitOrderTestParameters(AAPLOption, 15.85m, 14.85m)).SetCategory("Option").SetName("AAPL Option Limit");
                 yield return new TestCaseData(new StopMarketOrderTestParameters(AAPLOption, 15.1m, 15.1m)).SetCategory("Option").SetName("AAPL Option StopMarket");
                 yield return new TestCaseData(new StopLimitOrderTestParameters(AAPLOption, 15.1m, 15.1m)).SetCategory("Option").SetName("AAPL Option StopLimit");
@@ -215,56 +215,6 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             }
         }
 
-        private OrderTestParameters GetLastPriceForShortOrder(OrderTestParameters orderTestParameters)
-        {
-            var orderType = orderTestParameters switch
-            {
-                LimitOrderTestParameters => OrderType.Limit,
-                StopMarketOrderTestParameters => OrderType.StopMarket,
-                StopLimitOrderTestParameters => OrderType.StopLimit,
-                _ => throw new NotImplementedException($"The order type '{orderTestParameters.GetType().Name}' is not implemented.")
-            };
-
-            return GetLastPriceForShortOrder(orderTestParameters.Symbol, orderType);
-        }
-
-        private OrderTestParameters GetLastPriceForShortOrder(Symbol symbol, OrderType orderType)
-        {
-            var lastPrice = _brokerage.GetLastPrice(symbol);
-            return orderType switch
-            {
-                OrderType.Limit => new LimitOrderTestParameters(symbol, Math.Round(lastPrice + 0.5m, 2, MidpointRounding.ToEven), Math.Round(lastPrice - 0.5m, 2, MidpointRounding.ToEven)),
-                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, Math.Round(lastPrice - 0.5m, 2, MidpointRounding.ToEven), Math.Round(lastPrice - 1m, 2, MidpointRounding.ToEven)),
-                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, Math.Round(lastPrice - 0.5m, 2, MidpointRounding.ToEven), Math.Round(lastPrice - 0.5m, 2, MidpointRounding.ToEven)),
-                _ => throw new NotImplementedException("Not supported type of order")
-            };
-        }
-
-        private OrderTestParameters GetLastPriceForLongOrder(OrderTestParameters orderTestParameters)
-        {
-            var orderType = orderTestParameters switch
-            {
-                LimitOrderTestParameters => OrderType.Limit,
-                StopMarketOrderTestParameters => OrderType.StopMarket,
-                StopLimitOrderTestParameters => OrderType.StopLimit,
-                _ => throw new NotImplementedException($"The order type '{orderTestParameters.GetType().Name}' is not implemented.")
-            };
-
-            return GetLastPriceForLongOrder(orderTestParameters.Symbol, orderType);
-        }
-
-        private OrderTestParameters GetLastPriceForLongOrder(Symbol symbol, OrderType orderType)
-        {
-            var lastPrice = _brokerage.GetLastPrice(symbol);
-            return orderType switch
-            {
-                OrderType.Limit => new LimitOrderTestParameters(symbol, Math.Round(lastPrice + 0.5m, 2, MidpointRounding.ToEven), Math.Round(lastPrice - 0.5m, 2, MidpointRounding.ToEven)),
-                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, Math.Round(lastPrice + 0.5m, 2, MidpointRounding.ToEven), Math.Round(lastPrice + 0.6m, 2, MidpointRounding.ToEven)),
-                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, Math.Round(lastPrice + 0.5m, 2, MidpointRounding.ToEven), Math.Round(lastPrice + 0.6m, 2, MidpointRounding.ToEven)),
-                _ => throw new NotImplementedException("Not supported type of order")
-            };
-        }
-
         [Test, TestCaseSource(nameof(SymbolOrderTypeParameters))]
         public virtual void LongFromLong(Symbol symbol, OrderType orderType)
         {
@@ -333,6 +283,97 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.IsNotNull(order);
             Assert.Greater(order.BrokerId.Count, 0);
             CollectionAssert.AreEquivalent(expectedOrderStatusChangedOrdering, actualCrossZeroOrderStatusOrdering);
+        }
+
+        /// <summary>
+        /// Retrieves the last price for a short order based on the provided order test parameters.
+        /// </summary>
+        /// <param name="orderTestParameters">The order test parameters.</param>
+        /// <returns>An instance of <see cref="OrderTestParameters"/> with the last price for a short order.</returns>
+        private OrderTestParameters GetLastPriceForShortOrder(OrderTestParameters orderTestParameters)
+        {
+            var orderType = GetOrderTypeByOrderTestParameters(orderTestParameters);
+            return GetLastPriceForShortOrder(orderTestParameters.Symbol, orderType);
+        }
+
+        /// <summary>
+        /// Retrieves the last price for a long order based on the provided order test parameters.
+        /// </summary>
+        /// <param name="orderTestParameters">The order test parameters.</param>
+        /// <returns>An instance of <see cref="OrderTestParameters"/> with the last price for a long order.</returns>
+        private OrderTestParameters GetLastPriceForLongOrder(OrderTestParameters orderTestParameters)
+        {
+            var orderType = GetOrderTypeByOrderTestParameters(orderTestParameters);
+            return GetLastPriceForLongOrder(orderTestParameters.Symbol, orderType);
+        }
+
+        /// <summary>
+        /// Determines the order type based on the provided order test parameters.
+        /// </summary>
+        /// <param name="orderTestParameters">The order test parameters.</param>
+        /// <returns>The determined <see cref="OrderType"/>.</returns>
+        /// <exception cref="NotImplementedException">Thrown when the order type is not implemented.</exception>
+        private static OrderType GetOrderTypeByOrderTestParameters(OrderTestParameters orderTestParameters) => orderTestParameters switch
+        {
+            LimitOrderTestParameters => OrderType.Limit,
+            StopMarketOrderTestParameters => OrderType.StopMarket,
+            StopLimitOrderTestParameters => OrderType.StopLimit,
+            _ => throw new NotImplementedException($"The order type '{orderTestParameters.GetType().Name}' is not implemented.")
+        };
+
+        /// <summary>
+        /// Retrieves the last price for a short order based on the symbol and order type.
+        /// </summary>
+        /// <param name="symbol">The symbol for the order.</param>
+        /// <param name="orderType">The type of the order.</param>
+        /// <returns>An instance of <see cref="OrderTestParameters"/> with the last price for a short order.</returns>
+        /// <exception cref="NotImplementedException">Thrown when the order type is not supported.</exception>
+        private OrderTestParameters GetLastPriceForShortOrder(Symbol symbol, OrderType orderType)
+        {
+            var lastPrice = _brokerage.GetLastPrice(symbol);
+            return orderType switch
+            {
+                OrderType.Limit => new LimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.3m), SubtractAndRound(lastPrice, 0.3m)),
+                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, SubtractAndRound(lastPrice, 0.3m), SubtractAndRound(lastPrice, 0.6m)),
+                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, SubtractAndRound(lastPrice, 0.3m), SubtractAndRound(lastPrice, 0.3m)),
+                _ => throw new NotImplementedException("Not supported type of order")
+            };
+        }
+
+        /// <summary>
+        /// Retrieves the last price for a long order based on the symbol and order type.
+        /// </summary>
+        /// <param name="symbol">The symbol for the order.</param>
+        /// <param name="orderType">The type of the order.</param>
+        /// <returns>An instance of <see cref="OrderTestParameters"/> with the last price for a long order.</returns>
+        /// <exception cref="NotImplementedException">Thrown when the order type is not supported.</exception>
+        private OrderTestParameters GetLastPriceForLongOrder(Symbol symbol, OrderType orderType)
+        {
+            var lastPrice = _brokerage.GetLastPrice(symbol);
+            return orderType switch
+            {
+                OrderType.Limit => new LimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.2m), SubtractAndRound(lastPrice, 0.2m)),
+                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, AddAndRound(lastPrice, 0.2m), AddAndRound(lastPrice, 0.3m)),
+                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.2m), AddAndRound(lastPrice, 0.3m)),
+                _ => throw new NotImplementedException("Not supported type of order")
+            };
+        }
+
+        public static decimal AddAndRound(decimal number, decimal valueToAdd)
+        {
+            decimal result = number + valueToAdd;
+            return RoundToNearestFiveCents(result);
+        }
+
+        public static decimal SubtractAndRound(decimal number, decimal valueToSubtract)
+        {
+            decimal result = number - valueToSubtract;
+            return RoundToNearestFiveCents(result);
+        }
+
+        private static decimal RoundToNearestFiveCents(decimal number)
+        {
+            return Math.Round(number * 20, MidpointRounding.AwayFromZero) / 20;
         }
 
         public class TradeStationBrokerageTest : TradeStationBrokerage

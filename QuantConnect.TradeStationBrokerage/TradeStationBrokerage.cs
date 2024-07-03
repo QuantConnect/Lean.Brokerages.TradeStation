@@ -570,28 +570,17 @@ public class TradeStationBrokerage : Brokerage
             }
 
             var leg = brokerageOrder.Legs.First();
-            var securityType = leg.AssetType.ConvertAssetTypeToSecurityType();
-            var brokerageSymbol = leg.Underlying ?? leg.Symbol;
-            if (leanOrderStatus == OrderStatus.Invalid && securityType == SecurityType.Option)
-            {
-                brokerageSymbol = _symbolMapper.ParsePositionOptionSymbol(brokerageSymbol).symbol;
-            }
-
-            // TODO: Where may we take Market ?
-            var leanSymbol = _symbolMapper.GetLeanSymbol(brokerageSymbol, securityType, Market.USA,
-                leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
 
             var orderEvent = new OrderEvent(
-                leanOrder.Id,
-                leanSymbol,
-                brokerageOrder.OpenedDateTime,
-                leanOrder.Status,
-                leg.BuyOrSell.IsShort() ? OrderDirection.Sell : OrderDirection.Buy,
-                leg.ExecutionPrice,
-                leg.BuyOrSell.IsShort() ? decimal.Negate(leg.ExecQuantity) : leg.ExecQuantity,
+                leanOrder,
+                DateTime.UtcNow,
                 new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD)),
-                message: brokerageOrder.RejectReason)
-            { Status = leanOrderStatus };
+                brokerageOrder.RejectReason)
+            {
+                Status = leanOrderStatus,
+                FillPrice = leg.ExecutionPrice,
+                FillQuantity = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.ExecQuantity) : leg.ExecQuantity
+            };
 
             // if we filled the order and have another contingent order waiting, submit it
             if (!TryHandleRemainingCrossZeroOrder(leanOrder, orderEvent))
