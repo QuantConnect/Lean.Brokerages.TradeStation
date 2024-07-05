@@ -96,17 +96,35 @@ public class TradeStationBrokerage : Brokerage
     /// <param name="apiKeySecret">The API key secret for authentication.</param>
     /// <param name="restApiUrl">The URL of the REST API.</param>
     /// <param name="redirectUrl">The redirect URL to generate great link to get right "authorizationCodeFromUrl"</param>
-    /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL.</param>
+    /// <param name="authorizationCode">The authorization code obtained from the URL.</param>
     /// <param name="accountType">The type of TradeStation account for the current session.
     /// For <see cref="TradeStationAccountType.Cash"/> or <seealso cref="TradeStationAccountType.Margin"/> accounts,
     /// it is used for trading <seealso cref="SecurityType.Equity"/> and <seealso cref="SecurityType.Option"/>.
     /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
     /// <param name="algorithm">The algorithm instance is required to retrieve account type</param>
-    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl, string authorizationCodeFromUrl,
+    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl, string authorizationCode,
         string accountType, IAlgorithm algorithm)
-        : this(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCodeFromUrl, accountType, algorithm?.Portfolio?.Transactions, algorithm?.Portfolio)
-    {
-    }
+        : this(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, string.Empty, accountType, algorithm?.Portfolio?.Transactions, algorithm?.Portfolio)
+    { }
+
+    /// <summary>
+    /// Constructor for the TradeStation brokerage.
+    /// </summary>
+    /// <remarks>
+    /// This constructor initializes a new instance of the TradeStationBrokerage class with the provided parameters.
+    /// </remarks>
+    /// <param name="apiKey">The API key for authentication.</param>
+    /// <param name="apiKeySecret">The API key secret for authentication.</param>
+    /// <param name="restApiUrl">The URL of the REST API.</param>
+    /// <param name="refreshToken">The refresh token used to obtain new access tokens for authentication.</param>
+    /// <param name="accountType">The type of TradeStation account for the current session.
+    /// For <see cref="TradeStationAccountType.Cash"/> or <seealso cref="TradeStationAccountType.Margin"/> accounts,
+    /// it is used for trading <seealso cref="SecurityType.Equity"/> and <seealso cref="SecurityType.Option"/>.
+    /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
+    /// <param name="algorithm">The algorithm instance is required to retrieve account type</param>
+    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string refreshToken, string accountType, IAlgorithm algorithm)
+        : this(apiKey, apiKeySecret, restApiUrl, string.Empty, string.Empty, refreshToken, accountType, algorithm?.Portfolio?.Transactions, algorithm?.Portfolio)
+    { }
 
     /// <summary>
     /// Constructor for the TradeStation brokerage.
@@ -118,20 +136,21 @@ public class TradeStationBrokerage : Brokerage
     /// <param name="apiKeySecret">The API key secret for authentication.</param>
     /// <param name="restApiUrl">The URL of the REST API.</param>
     /// <param name="redirectUrl">The redirect URL to generate great link to get right "authorizationCodeFromUrl"</param>
-    /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL.</param>
+    /// <param name="authorizationCode">The authorization code obtained from the URL.</param>
+    /// <param name="refreshToken">The refresh token used to obtain new access tokens for authentication.</param>
     /// <param name="accountType">The type of TradeStation account for the current session.
     /// For <see cref="TradeStationAccountType.Cash"/> or <seealso cref="TradeStationAccountType.Margin"/> accounts, it is used for trading <seealso cref="SecurityType.Equity"/> and <seealso cref="SecurityType.Option"/>.
     /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
     /// <param name="orderProvider">The order provider.</param>
     public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl,
-        string authorizationCodeFromUrl, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
+        string authorizationCode, string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
         : base("TradeStation")
     {
         _securityProvider = securityProvider;
         OrderProvider = orderProvider;
         _symbolMapper = new TradeStationSymbolMapper();
-        _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl, redirectUrl,
-            TradeStationExtensions.ParseAccountType(accountType), authorizationCodeFromUrl);
+        _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl,
+            TradeStationExtensions.ParseAccountType(accountType), refreshToken, redirectUrl, authorizationCode);
         _messageHandler = new(HandleTradeStationMessage);
         ValidateSubscription();
     }
@@ -268,11 +287,14 @@ public class TradeStationBrokerage : Brokerage
             if (isPlaceCrossOrder == null)
             {
                 var response = PlaceTradeStationOrder(order, holdingQuantity);
-                if (response == null)
+                if (response != null)
                 {
-                    result = false;
+                    foreach (var brokerageOrder in response.Value.Orders)
+                    {
+                        order.BrokerId.Add(brokerageOrder.OrderID);
+                    }
+                    result = true;
                 }
-                result = true;
             }
             else
             {
@@ -307,16 +329,22 @@ public class TradeStationBrokerage : Brokerage
         var symbol = _symbolMapper.GetBrokerageSymbol(crossZeroOrderRequest.LeanOrder.Symbol);
         var tradeAction = crossZeroOrderRequest.OrderPosition.ConvertDirection(crossZeroOrderRequest.LeanOrder.SecurityType).ToStringInvariant().ToUpperInvariant();
 
-        var response = PlaceOrderCommon(crossZeroOrderRequest.LeanOrder, crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
-            crossZeroOrderRequest.AbsoluteOrderQuantity, tradeAction, symbol, crossZeroOrderRequest.LeanOrder.GetLimitPrice(), crossZeroOrderRequest.LeanOrder.GetStopPrice(), isPlaceOrderWithLeanEvent);
-
-        if (response == null || !response.Value.Orders.Any())
+        var crossZeroOrderResponse = default(CrossZeroOrderResponse);
+        _messageHandler.WithLockedStream(() =>
         {
-            return new CrossZeroOrderResponse(string.Empty, false);
-        }
+            var response = PlaceOrderCommon(crossZeroOrderRequest.LeanOrder, crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
+                crossZeroOrderRequest.AbsoluteOrderQuantity, tradeAction, symbol, crossZeroOrderRequest.LeanOrder.GetLimitPrice(), crossZeroOrderRequest.LeanOrder.GetStopPrice(), isPlaceOrderWithLeanEvent);
 
-        var brokerageId = response.Value.Orders.Single().OrderID;
-        return new CrossZeroOrderResponse(brokerageId, true);
+            if (response == null || !response.Value.Orders.Any())
+            {
+                crossZeroOrderResponse = new CrossZeroOrderResponse(string.Empty, false);
+                return;
+            }
+
+            var brokerageId = response.Value.Orders.Single().OrderID;
+            crossZeroOrderResponse = new CrossZeroOrderResponse(brokerageId, true);
+        });
+        return crossZeroOrderResponse;
     }
 
     /// <summary>
@@ -338,8 +366,6 @@ public class TradeStationBrokerage : Brokerage
 
         foreach (var brokerageOrder in response.Orders)
         {
-            order.BrokerId.Add(brokerageOrder.OrderID);
-
             // Check if the order failed due to an existing position. Reason: [EC601,EC602,EC701,EC702]: You are long/short N shares.
             if (brokerageOrder.Message.Contains("Order failed", StringComparison.InvariantCultureIgnoreCase))
             {
@@ -551,21 +577,17 @@ public class TradeStationBrokerage : Brokerage
             }
 
             var leg = brokerageOrder.Legs.First();
-            // TODO: Where may we take Market ?
-            var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
-                leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
 
             var orderEvent = new OrderEvent(
-                leanOrder.Id,
-                leanSymbol,
-                brokerageOrder.OpenedDateTime,
-                leanOrder.Status,
-                leg.BuyOrSell.IsShort() ? OrderDirection.Sell : OrderDirection.Buy,
-                leg.ExecutionPrice,
-                leg.BuyOrSell.IsShort() ? decimal.Negate(leg.ExecQuantity) : leg.ExecQuantity,
+                leanOrder,
+                DateTime.UtcNow,
                 new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD)),
-                message: brokerageOrder.RejectReason)
-            { Status = leanOrderStatus };
+                brokerageOrder.RejectReason)
+            {
+                Status = leanOrderStatus,
+                FillPrice = leg.ExecutionPrice,
+                FillQuantity = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.ExecQuantity) : leg.ExecQuantity
+            };
 
             // if we filled the order and have another contingent order waiting, submit it
             if (!TryHandleRemainingCrossZeroOrder(leanOrder, orderEvent))

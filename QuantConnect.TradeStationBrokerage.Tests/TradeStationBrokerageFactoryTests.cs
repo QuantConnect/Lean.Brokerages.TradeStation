@@ -14,6 +14,7 @@
 */
 
 using Moq;
+using System;
 using NUnit.Framework;
 using QuantConnect.Util;
 using QuantConnect.Packets;
@@ -24,16 +25,34 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
     [TestFixture]
     public class TradeStationBrokerageFactoryTests
     {
-        [Test]
-        public void InitializesFactoryFromComposer()
+        [TestCase("", "http://localhost", "123", false)]
+        [TestCase("123", "", "", false)]
+        [TestCase("123", "http://localhost", "123", false)]
+        [TestCase("", "http://localhost", "", true)]
+        [TestCase("", "", "123", true)]
+        [TestCase("", "", "", true)]
+        public void InitializesFactoryFromComposer(string refreshToken, string redirectUrl, string authorizationCode, bool shouldThrowException)
         {
             using var factory = Composer.Instance.Single<IBrokerageFactory>(instance => instance.BrokerageType == typeof(TradeStationBrokerage));
 
-            var liveNodePacket = new LiveNodePacket() { BrokerageData = factory.BrokerageData };
+            var newBrokerageData = factory.BrokerageData;
 
-            using var brokerageInstance = factory.CreateBrokerage(liveNodePacket, new Mock<IAlgorithm>().Object);
-            Assert.IsNotNull(factory);
-            Assert.IsNotNull(brokerageInstance);
+            newBrokerageData["trade-station-refresh-token"] = refreshToken;
+            newBrokerageData["trade-station-redirect-url"] = redirectUrl;
+            newBrokerageData["trade-station-authorization-code"] = authorizationCode;
+
+            var liveNodePacket = new LiveNodePacket() { BrokerageData = newBrokerageData };
+
+            if (shouldThrowException)
+            {
+                Assert.Throws<ArgumentException>(() => factory.CreateBrokerage(liveNodePacket, new Mock<IAlgorithm>().Object));
+            }
+            else
+            {
+                using var brokerageInstance = factory.CreateBrokerage(liveNodePacket, new Mock<IAlgorithm>().Object);
+                Assert.IsNotNull(factory);
+                Assert.IsNotNull(brokerageInstance);
+            }
         }
     }
 }

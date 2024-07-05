@@ -17,6 +17,7 @@ using Moq;
 using System;
 using System.Linq;
 using NUnit.Framework;
+using System.Threading;
 using QuantConnect.Tests;
 using QuantConnect.Orders;
 using QuantConnect.Logging;
@@ -45,18 +46,32 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var algorithm = new Mock<IAlgorithm>();
 
             var apiKey = Config.Get("trade-station-api-key");
-            var apiSecret = Config.Get("trade-station-api-secret");
-            var apiUrl = Config.Get("trade-station-api-url");
-            var authorizationCodeFromUrl = Config.Get("trade-station-code-from-url");
+            var apiKeySecret = Config.Get("trade-station-api-secret");
+            var restApiUrl = Config.Get("trade-station-api-url");
             var accountType = Config.Get("trade-station-account-type");
-            var redirectUrl = Config.Get("trade-station-redirect-url");
 
-            if (new string[] { apiKey, apiSecret, apiUrl }.Any(string.IsNullOrEmpty))
+            if (new string[] { apiKey, apiKeySecret, restApiUrl, accountType }.Any(string.IsNullOrEmpty))
             {
                 throw new ArgumentException("API key, secret, and URL cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
             }
 
-            return new TradeStationBrokerageTest(apiKey, apiSecret, apiUrl, redirectUrl, authorizationCodeFromUrl, accountType, orderProvider, securityProvider);
+            var refreshToken = Config.Get("trade-station-refresh-token");
+
+            if (string.IsNullOrEmpty(refreshToken))
+            {
+                var redirectUrl = Config.Get("trade-station-redirect-url");
+                var authorizationCode = Config.Get("trade-station-authorization-code");
+
+                if (new string[] { redirectUrl, authorizationCode }.Any(string.IsNullOrEmpty))
+                {
+                    throw new ArgumentException("RedirectUrl or AuthorizationCode cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
+                }
+
+                return new TradeStationBrokerageTest(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, string.Empty,
+                    accountType, orderProvider, securityProvider);
+            }
+
+            return new TradeStationBrokerageTest(apiKey, apiKeySecret, restApiUrl, string.Empty, string.Empty, refreshToken, accountType, orderProvider, securityProvider);
         }
         protected override bool IsAsync()
         {
@@ -81,10 +96,10 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             if (IsLongOrder)
             {
-                return Math.Round(_brokerage.GetLastPrice(symbol) + 0.1m, 2);
+                return Math.Round(_brokerage.GetLastPrice(symbol) + 0.11m, 2, MidpointRounding.ToEven);
             }
 
-            return Math.Round(_brokerage.GetLastPrice(symbol) - 0.1m, 2);
+            return Math.Round(_brokerage.GetLastPrice(symbol) - 0.11m, 2, MidpointRounding.ToEven);
         }
 
         /// <summary>
@@ -97,7 +112,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 var INTL = Symbol.Create("INTL", SecurityType.Equity, Market.USA);
                 yield return new TestCaseData(new LimitOrderTestParameters(INTL, 23m, 22m));
                 yield return new TestCaseData(new StopMarketOrderTestParameters(INTL, 22.61m, 23m));
-                yield return new TestCaseData(new StopLimitOrderTestParameters(INTL, 22.61m, 28.65m));
+                yield return new TestCaseData(new StopLimitOrderTestParameters(INTL, 22.61m, 22.65m));
             }
         }
 
@@ -105,10 +120,10 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             get
             {
-                var AAPLOption = Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 205m, new DateTime(2024, 6, 28));
-                yield return new TestCaseData(new LimitOrderTestParameters(AAPLOption, 9m, 7.9m)).SetCategory("Option").SetName("AAPL Option Limit");
-                yield return new TestCaseData(new StopMarketOrderTestParameters(AAPLOption, 8.0m, 8.0m)).SetCategory("Option").SetName("AAPL Option StopMarket");
-                yield return new TestCaseData(new StopLimitOrderTestParameters(AAPLOption, 8.05m, 8.05m)).SetCategory("Option").SetName("AAPL Option StopLimit");
+                var AAPLOption = Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 215m, new DateTime(2024, 7, 19));
+                yield return new TestCaseData(new LimitOrderTestParameters(AAPLOption, 15.85m, 14.85m)).SetCategory("Option").SetName("AAPL Option Limit");
+                yield return new TestCaseData(new StopMarketOrderTestParameters(AAPLOption, 15.1m, 15.1m)).SetCategory("Option").SetName("AAPL Option StopMarket");
+                yield return new TestCaseData(new StopLimitOrderTestParameters(AAPLOption, 15.1m, 15.1m)).SetCategory("Option").SetName("AAPL Option StopLimit");
 
                 var INTL = Symbol.Create("INTL", SecurityType.Equity, Market.USA);
                 yield return new TestCaseData(new LimitOrderTestParameters(INTL, 23m, 22m)).SetCategory("Equity").SetName("INTL Limit");
@@ -118,7 +133,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 var COTTON = Symbol.CreateFuture(Futures.Softs.Cotton2, Market.USA, new DateTime(2024, 7, 1));
                 yield return new TestCaseData(new LimitOrderTestParameters(COTTON, 72m, 70m)).SetCategory("Future").SetName("COTTON Future Limit").Explicit("At the first, setup specific `trade-station-account-type` in config file.");
                 yield return new TestCaseData(new StopMarketOrderTestParameters(COTTON, 72m, 70m)).SetCategory("Future").SetName("COTTON Future StopMarket").Explicit("At the first, setup specific `trade-station-account-type` in config file.");
-                yield return new TestCaseData(new StopLimitOrderTestParameters(COTTON, 72m, 70m)).SetCategory("Future").SetName("COTTON Future StopLimit").Explicit("At the first, setup specific `trade-station-account-type` in config file.");
+                yield return new TestCaseData(new StopLimitOrderTestParameters(COTTON, 72m, 72m)).SetCategory("Future").SetName("COTTON Future StopLimit").Explicit("At the first, setup specific `trade-station-account-type` in config file.");
             }
         }
 
@@ -136,6 +151,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         [Test, TestCaseSource(nameof(OrderSimpleParameters))]
         public override void CancelOrders(OrderTestParameters parameters)
         {
+            parameters = GetLastPriceForLongOrder(parameters);
             base.CancelOrders(parameters);
         }
 
@@ -167,6 +183,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         public override void ShortFromLong(OrderTestParameters parameters)
         {
             IsLongOrder = false;
+            parameters = GetLastPriceForShortOrder(parameters);
             base.ShortFromLong(parameters);
         }
 
@@ -174,6 +191,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         public override void LongFromShort(OrderTestParameters parameters)
         {
             IsLongOrder = true;
+            parameters = GetLastPriceForLongOrder(parameters);
             base.LongFromShort(parameters);
         }
 
@@ -181,14 +199,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         public void ShortFromShort(Symbol symbol, OrderType orderType)
         {
             IsLongOrder = false;
-            var lastPrice = _brokerage.GetLastPrice(symbol);
-            OrderTestParameters parameters = orderType switch
-            {
-                OrderType.Limit => new LimitOrderTestParameters(symbol, Math.Round(lastPrice + 0.5m, 2), Math.Round(lastPrice - 0.5m)),
-                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, Math.Round(lastPrice - 0.2m, 2), Math.Round(lastPrice - 0.4m, 2)),
-                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, Math.Round(lastPrice - 0.05m, 2), Math.Round(lastPrice - 0.02m, 2)),
-                _ => throw new NotImplementedException("Not supported type of order")
-            };
+            var parameters = GetLastPriceForShortOrder(symbol, orderType);
 
             Log.Trace("");
             Log.Trace("SHORT FROM SHORT");
@@ -209,14 +220,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         public virtual void LongFromLong(Symbol symbol, OrderType orderType)
         {
             IsLongOrder = true;
-            var lastPrice = _brokerage.GetLastPrice(symbol);
-            OrderTestParameters parameters = orderType switch
-            {
-                OrderType.Limit => new LimitOrderTestParameters(symbol, Math.Round(lastPrice + 0.5m, 2), Math.Round(lastPrice - 0.5m)),
-                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, Math.Round(lastPrice + 0.5m, 2), Math.Round(lastPrice + 0.6m, 2)),
-                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, Math.Round(lastPrice + 0.5m, 2), Math.Round(lastPrice + 0.6m, 2)),
-                _ => throw new NotImplementedException("Not supported type of order")
-            };
+            OrderTestParameters parameters = GetLastPriceForLongOrder(symbol, orderType);
 
             Log.Trace("");
             Log.Trace("LONG FROM LONG");
@@ -282,6 +286,169 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             CollectionAssert.AreEquivalent(expectedOrderStatusChangedOrdering, actualCrossZeroOrderStatusOrdering);
         }
 
+        [Test]
+        public void PlaceLimitOrderAndUpdate()
+        {
+            Log.Trace("PLACE LIMIT ORDER AND UPDATE");
+            var symbol = Symbols.AAPL;
+            var lastPrice = _brokerage.GetLastPrice(symbol);
+            var limitPrice = SubtractAndRound(lastPrice, 0.5m);
+            var limitOrder = new LimitOrder(Symbols.AAPL, 1, limitPrice, DateTime.UtcNow);
+
+            var submittedResetEvent = new AutoResetEvent(false);
+            var updateSubmittedResetEvent = new AutoResetEvent(false);
+            var filledResetEvent = new AutoResetEvent(false);
+
+            Brokerage.OrdersStatusChanged += (_, orderEvents) =>
+            {
+                var orderEvent = orderEvents[0];
+
+                Log.Trace("");
+                Log.Trace($"{nameof(PlaceLimitOrderAndUpdate)}.OrderEvent.Status: {orderEvent.Status}");
+                Log.Trace("");
+
+                if (orderEvent.Status == OrderStatus.Submitted)
+                {
+                    submittedResetEvent.Set();
+                }
+
+                if (orderEvent.Status == OrderStatus.UpdateSubmitted)
+                {
+                    updateSubmittedResetEvent.Set();
+                }
+
+                if (orderEvent.Status == OrderStatus.Filled)
+                {
+                    filledResetEvent.Set();
+                }
+            };
+
+            OrderProvider.Add(limitOrder);
+
+            if (!Brokerage.PlaceOrder(limitOrder))
+            {
+                Assert.Fail("Brokerage failed to place the order: " + limitOrder);
+            }
+
+            if (!submittedResetEvent.WaitOne(TimeSpan.FromSeconds(5)))
+            {
+                Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage doesn't return {OrderStatus.Submitted}");
+            }
+
+            var order = OrderProvider.GetOrderById(1);
+
+            var newLastPrice = _brokerage.GetLastPrice(symbol);
+            var newLimitPrice = AddAndRound(newLastPrice, 0.4m);
+
+            order.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, order.Id, new() { LimitPrice = newLimitPrice }));
+
+            if (!Brokerage.UpdateOrder(order))
+            {
+                Assert.Fail("Brokerage failed to update the order: " + order);
+            }
+
+            if (!updateSubmittedResetEvent.WaitOne(TimeSpan.FromSeconds(10)))
+            {
+                Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage doesn't return {OrderStatus.UpdateSubmitted}");
+            }
+
+            if (!filledResetEvent.WaitOne(TimeSpan.FromSeconds(10)))
+            {
+                Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage doesn't return {OrderStatus.Filled}");
+            }
+        }
+
+        /// <summary>
+        /// Retrieves the last price for a short order based on the provided order test parameters.
+        /// </summary>
+        /// <param name="orderTestParameters">The order test parameters.</param>
+        /// <returns>An instance of <see cref="OrderTestParameters"/> with the last price for a short order.</returns>
+        private OrderTestParameters GetLastPriceForShortOrder(OrderTestParameters orderTestParameters)
+        {
+            var orderType = GetOrderTypeByOrderTestParameters(orderTestParameters);
+            return GetLastPriceForShortOrder(orderTestParameters.Symbol, orderType);
+        }
+
+        /// <summary>
+        /// Retrieves the last price for a long order based on the provided order test parameters.
+        /// </summary>
+        /// <param name="orderTestParameters">The order test parameters.</param>
+        /// <returns>An instance of <see cref="OrderTestParameters"/> with the last price for a long order.</returns>
+        private OrderTestParameters GetLastPriceForLongOrder(OrderTestParameters orderTestParameters)
+        {
+            var orderType = GetOrderTypeByOrderTestParameters(orderTestParameters);
+            return GetLastPriceForLongOrder(orderTestParameters.Symbol, orderType);
+        }
+
+        /// <summary>
+        /// Determines the order type based on the provided order test parameters.
+        /// </summary>
+        /// <param name="orderTestParameters">The order test parameters.</param>
+        /// <returns>The determined <see cref="OrderType"/>.</returns>
+        /// <exception cref="NotImplementedException">Thrown when the order type is not implemented.</exception>
+        private static OrderType GetOrderTypeByOrderTestParameters(OrderTestParameters orderTestParameters) => orderTestParameters switch
+        {
+            LimitOrderTestParameters => OrderType.Limit,
+            StopMarketOrderTestParameters => OrderType.StopMarket,
+            StopLimitOrderTestParameters => OrderType.StopLimit,
+            _ => throw new NotImplementedException($"The order type '{orderTestParameters.GetType().Name}' is not implemented.")
+        };
+
+        /// <summary>
+        /// Retrieves the last price for a short order based on the symbol and order type.
+        /// </summary>
+        /// <param name="symbol">The symbol for the order.</param>
+        /// <param name="orderType">The type of the order.</param>
+        /// <returns>An instance of <see cref="OrderTestParameters"/> with the last price for a short order.</returns>
+        /// <exception cref="NotImplementedException">Thrown when the order type is not supported.</exception>
+        private OrderTestParameters GetLastPriceForShortOrder(Symbol symbol, OrderType orderType)
+        {
+            var lastPrice = _brokerage.GetLastPrice(symbol);
+            return orderType switch
+            {
+                OrderType.Limit => new LimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.3m), SubtractAndRound(lastPrice, 0.3m)),
+                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, SubtractAndRound(lastPrice, 0.3m), SubtractAndRound(lastPrice, 0.6m)),
+                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, SubtractAndRound(lastPrice, 0.3m), SubtractAndRound(lastPrice, 0.3m)),
+                _ => throw new NotImplementedException("Not supported type of order")
+            };
+        }
+
+        /// <summary>
+        /// Retrieves the last price for a long order based on the symbol and order type.
+        /// </summary>
+        /// <param name="symbol">The symbol for the order.</param>
+        /// <param name="orderType">The type of the order.</param>
+        /// <returns>An instance of <see cref="OrderTestParameters"/> with the last price for a long order.</returns>
+        /// <exception cref="NotImplementedException">Thrown when the order type is not supported.</exception>
+        private OrderTestParameters GetLastPriceForLongOrder(Symbol symbol, OrderType orderType)
+        {
+            var lastPrice = _brokerage.GetLastPrice(symbol);
+            return orderType switch
+            {
+                OrderType.Limit => new LimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.2m), SubtractAndRound(lastPrice, 0.2m)),
+                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, AddAndRound(lastPrice, 0.2m), AddAndRound(lastPrice, 0.3m)),
+                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.2m), AddAndRound(lastPrice, 0.3m)),
+                _ => throw new NotImplementedException("Not supported type of order")
+            };
+        }
+
+        public static decimal AddAndRound(decimal number, decimal valueToAdd)
+        {
+            decimal result = number + valueToAdd;
+            return RoundToNearestFiveCents(result);
+        }
+
+        public static decimal SubtractAndRound(decimal number, decimal valueToSubtract)
+        {
+            decimal result = number - valueToSubtract;
+            return RoundToNearestFiveCents(result);
+        }
+
+        private static decimal RoundToNearestFiveCents(decimal number)
+        {
+            return Math.Round(number * 20, MidpointRounding.AwayFromZero) / 20;
+        }
+
         public class TradeStationBrokerageTest : TradeStationBrokerage
         {
             /// <summary>
@@ -294,14 +461,15 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             /// <param name="apiKeySecret">The API key secret for authentication.</param>
             /// <param name="restApiUrl">The URL of the REST API.</param>
             /// <param name="redirectUrl">The redirect URL to generate great link to get right "authorizationCodeFromUrl"</param>
-            /// <param name="authorizationCodeFromUrl">The authorization code obtained from the URL.</param>
+            /// <param name="authorizationCode">The authorization code obtained from the URL.</param>
+            /// <param name="refreshToken">The refresh token used to obtain new access tokens for authentication.</param>
             /// <param name="accountType">The type of TradeStation account for the current session.
             /// For <see cref="TradeStationAccountType.Cash"/> or <seealso cref="TradeStationAccountType.Margin"/> accounts, it is used for trading <seealso cref="SecurityType.Equity"/> and <seealso cref="SecurityType.Option"/>.
             /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
             /// <param name="orderProvider">The order provider.</param>
             public TradeStationBrokerageTest(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl,
-                string authorizationCodeFromUrl, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
-                : base(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCodeFromUrl, accountType, orderProvider, securityProvider)
+                string authorizationCode, string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
+                : base(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider)
             { }
 
             /// <summary>
