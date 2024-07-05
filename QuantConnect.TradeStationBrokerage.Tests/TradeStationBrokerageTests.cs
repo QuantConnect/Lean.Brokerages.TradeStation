@@ -17,6 +17,7 @@ using Moq;
 using System;
 using System.Linq;
 using NUnit.Framework;
+using System.Threading;
 using QuantConnect.Tests;
 using QuantConnect.Orders;
 using QuantConnect.Logging;
@@ -283,6 +284,78 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.IsNotNull(order);
             Assert.Greater(order.BrokerId.Count, 0);
             CollectionAssert.AreEquivalent(expectedOrderStatusChangedOrdering, actualCrossZeroOrderStatusOrdering);
+        }
+
+        [Test]
+        public void PlaceLimitOrderAndUpdate()
+        {
+            Log.Trace("PLACE LIMIT ORDER AND UPDATE");
+            var symbol = Symbols.AAPL;
+            var lastPrice = _brokerage.GetLastPrice(symbol);
+            var limitPrice = SubtractAndRound(lastPrice, 0.5m);
+            var limitOrder = new LimitOrder(Symbols.AAPL, 1, limitPrice, DateTime.UtcNow);
+
+            var submittedResetEvent = new AutoResetEvent(false);
+            var updateSubmittedResetEvent = new AutoResetEvent(false);
+            var filledResetEvent = new AutoResetEvent(false);
+
+            Brokerage.OrdersStatusChanged += (_, orderEvents) =>
+            {
+                var orderEvent = orderEvents[0];
+
+                Log.Trace("");
+                Log.Trace($"{nameof(PlaceLimitOrderAndUpdate)}.OrderEvent.Status: {orderEvent.Status}");
+                Log.Trace("");
+
+                if (orderEvent.Status == OrderStatus.Submitted)
+                {
+                    submittedResetEvent.Set();
+                }
+
+                if (orderEvent.Status == OrderStatus.UpdateSubmitted)
+                {
+                    updateSubmittedResetEvent.Set();
+                }
+
+                if (orderEvent.Status == OrderStatus.Filled)
+                {
+                    filledResetEvent.Set();
+                }
+            };
+
+            OrderProvider.Add(limitOrder);
+
+            if (!Brokerage.PlaceOrder(limitOrder))
+            {
+                Assert.Fail("Brokerage failed to place the order: " + limitOrder);
+            }
+
+            if (!submittedResetEvent.WaitOne(TimeSpan.FromSeconds(5)))
+            {
+                Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage doesn't return {OrderStatus.Submitted}");
+            }
+
+            var order = OrderProvider.GetOrderById(1);
+
+            var newLastPrice = _brokerage.GetLastPrice(symbol);
+            var newLimitPrice = AddAndRound(newLastPrice, 0.4m);
+
+            order.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, order.Id, new() { LimitPrice = newLimitPrice }));
+
+            if (!Brokerage.UpdateOrder(order))
+            {
+                Assert.Fail("Brokerage failed to update the order: " + order);
+            }
+
+            if (!updateSubmittedResetEvent.WaitOne(TimeSpan.FromSeconds(10)))
+            {
+                Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage doesn't return {OrderStatus.UpdateSubmitted}");
+            }
+
+            if (!filledResetEvent.WaitOne(TimeSpan.FromSeconds(10)))
+            {
+                Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage doesn't return {OrderStatus.Filled}");
+            }
         }
 
         /// <summary>
