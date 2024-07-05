@@ -334,16 +334,21 @@ public class TradeStationBrokerage : Brokerage
         var symbol = _symbolMapper.GetBrokerageSymbol(crossZeroOrderRequest.LeanOrder.Symbol);
         var tradeAction = crossZeroOrderRequest.OrderPosition.ConvertDirection(crossZeroOrderRequest.LeanOrder.SecurityType).ToStringInvariant().ToUpperInvariant();
 
-        var response = PlaceOrderCommon(crossZeroOrderRequest.LeanOrder, crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
-            crossZeroOrderRequest.AbsoluteOrderQuantity, tradeAction, symbol, crossZeroOrderRequest.LeanOrder.GetLimitPrice(), crossZeroOrderRequest.LeanOrder.GetStopPrice(), isPlaceOrderWithLeanEvent);
-
-        if (response == null || !response.Value.Orders.Any())
+        var crossZeroOrderResponse = default(CrossZeroOrderResponse);
+        _messageHandler.WithLockedStream(() =>
         {
-            return new CrossZeroOrderResponse(string.Empty, false);
-        }
+            var response = PlaceOrderCommon(crossZeroOrderRequest.LeanOrder, crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
+                crossZeroOrderRequest.AbsoluteOrderQuantity, tradeAction, symbol, crossZeroOrderRequest.LeanOrder.GetLimitPrice(), crossZeroOrderRequest.LeanOrder.GetStopPrice(), isPlaceOrderWithLeanEvent);
 
-        var brokerageId = response.Value.Orders.Single().OrderID;
-        return new CrossZeroOrderResponse(brokerageId, true);
+            if (response == null || !response.Value.Orders.Any())
+            {
+                crossZeroOrderResponse = new CrossZeroOrderResponse(string.Empty, false);
+            }
+
+            var brokerageId = response.Value.Orders.Single().OrderID;
+            crossZeroOrderResponse = new CrossZeroOrderResponse(brokerageId, true);
+        });
+        return crossZeroOrderResponse;
     }
 
     /// <summary>
