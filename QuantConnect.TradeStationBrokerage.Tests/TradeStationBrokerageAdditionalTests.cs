@@ -87,26 +87,37 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         [Test]
         public async Task GetOrders()
         {
+            var ticker = "INTL";
+            var orderDirection = TradeStationTradeActionType.Buy.ToString().ToUpper();
+            var orderQuantity = 1m;
             var tradeStationApiClient = CreateTradeStationApiClient();
+
+            var quoteLastPrice = (await tradeStationApiClient.GetQuoteSnapshot(ticker)).Quotes.Single().Last;
+
+            var orderResponse = await tradeStationApiClient.PlaceOrder(
+                Orders.OrderType.Limit,
+                Orders.TimeInForce.GoodTilCanceled,
+                orderQuantity,
+                orderDirection,
+                ticker,
+                Math.Round(quoteLastPrice - 0.5m, 2));
+
+            Assert.IsNotNull(orderResponse);
+            Assert.IsNull(orderResponse.Errors);
+            Assert.IsNotEmpty(orderResponse.Orders.First().OrderID);
 
             var orders = await tradeStationApiClient.GetOrders();
 
             Assert.IsNotNull(orders);
+            var order = orders.Orders.First();
+            Assert.IsInstanceOf<TradeStationOrderStatusType>(order.Status);
+            Assert.IsInstanceOf<TradeStationOrderType>(order.OrderType);
+            Assert.IsInstanceOf<TradeStationAssetType>(order.Legs.First().AssetType);
+            Assert.IsInstanceOf<TradeStationOptionType>(order.Legs.First().OptionType);
+            Assert.That(order.OpenedDateTime, Is.Not.EqualTo(default(DateTime)));
 
-            if (orders.Orders.Any())
-            {
-                var order = orders.Orders.First();
-
-                Assert.IsInstanceOf<TradeStationOrderStatusType>(order.Status);
-                Assert.IsInstanceOf<TradeStationOrderType>(order.OrderType);
-                Assert.IsInstanceOf<TradeStationAssetType>(order.Legs.First().AssetType);
-                Assert.IsInstanceOf<TradeStationOptionType>(order.Legs.First().OptionType);
-                Assert.That(order.OpenedDateTime, Is.Not.EqualTo(default(DateTime)));
-            }
-            else
-            {
-                Assert.Pass("No orders are currently available in TradeStation.");
-            }
+            var cancelResponse = await tradeStationApiClient.CancelOrder(orderResponse.Orders.First().OrderID);
+            Assert.IsTrue(cancelResponse);
         }
 
         [Test]
