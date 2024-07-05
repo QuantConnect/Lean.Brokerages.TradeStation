@@ -287,17 +287,12 @@ public class TradeStationBrokerage : Brokerage
             if (isPlaceCrossOrder == null)
             {
                 var response = PlaceTradeStationOrder(order, holdingQuantity);
-                if (response == null)
-                {
-                    result = false;
-                }
-                else
+                if (response != null)
                 {
                     foreach (var brokerageOrder in response.Value.Orders)
                     {
                         order.BrokerId.Add(brokerageOrder.OrderID);
                     }
-
                     result = true;
                 }
             }
