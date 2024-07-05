@@ -291,7 +291,15 @@ public class TradeStationBrokerage : Brokerage
                 {
                     result = false;
                 }
-                result = true;
+                else
+                {
+                    foreach (var brokerageOrder in response.Value.Orders)
+                    {
+                        order.BrokerId.Add(brokerageOrder.OrderID);
+                    }
+
+                    result = true;
+                }
             }
             else
             {
@@ -357,8 +365,6 @@ public class TradeStationBrokerage : Brokerage
 
         foreach (var brokerageOrder in response.Orders)
         {
-            order.BrokerId.Add(brokerageOrder.OrderID);
-
             // Check if the order failed due to an existing position. Reason: [EC601,EC602,EC701,EC702]: You are long/short N shares.
             if (brokerageOrder.Message.Contains("Order failed", StringComparison.InvariantCultureIgnoreCase))
             {
