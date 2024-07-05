@@ -343,6 +343,7 @@ public class TradeStationBrokerage : Brokerage
             if (response == null || !response.Value.Orders.Any())
             {
                 crossZeroOrderResponse = new CrossZeroOrderResponse(string.Empty, false);
+                return;
             }
 
             var brokerageId = response.Value.Orders.Single().OrderID;
