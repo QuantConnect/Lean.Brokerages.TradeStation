@@ -553,7 +553,9 @@ public class TradeStationBrokerage : Brokerage
             var leanOrderStatus = default(OrderStatus);
             switch (brokerageOrder.Status)
             {
-                case TradeStationOrderStatusType.Fll:
+                // Sometimes, a filled event is received without the ClosedDateTime property set. 
+                // Subsequently, another event is received with the ClosedDateTime property correctly populated.
+                case TradeStationOrderStatusType.Fll when brokerageOrder.ClosedDateTime != default:
                 case TradeStationOrderStatusType.Brf:
                     leanOrderStatus = OrderStatus.Filled;
                     break;
