@@ -65,6 +65,11 @@ public class TradeStationBrokerage : Brokerage
     private readonly AutoResetEvent _autoResetEvent = new(false);
 
     /// <summary>
+    /// A manual reset event that is used to signal the completion of an order update operation.
+    /// </summary>
+    private readonly ManualResetEvent _orderUpdateEndManualResetEvent = new(false);
+
+    /// <summary>
     /// Collection of pre-defined option rights.
     /// Initialized for performance optimization as the API only returns strike price without indicating the right.
     /// </summary>
@@ -455,6 +460,10 @@ public class TradeStationBrokerage : Brokerage
     public override void Disconnect()
     {
         _cancellationTokenSource.Cancel();
+        if (!_orderUpdateEndManualResetEvent.WaitOne(TimeSpan.FromMilliseconds(500)))
+        {
+            Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(Disconnect)}: TimeOut waiting for stream order task to end.");
+        }
     }
 
     #endregion
@@ -508,6 +517,7 @@ public class TradeStationBrokerage : Brokerage
         {
             while (!_cancellationTokenSource.IsCancellationRequested)
             {
+                _isSubscribeOnStreamOrderUpdate = false;
                 Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}: Starting to listen for order updates...");
                 try
                 {
@@ -520,13 +530,10 @@ public class TradeStationBrokerage : Brokerage
                 {
                     Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}.Exception: {ex}");
                 }
-                finally
-                {
-                    _isSubscribeOnStreamOrderUpdate = false;
-                }
                 Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}: Connection lost. Reconnecting in 10 seconds...");
                 _cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(10));
             }
+            _orderUpdateEndManualResetEvent.Set();
         }, _cancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
         return _autoResetEvent.WaitOne(TimeSpan.FromSeconds(30), _cancellationTokenSource.Token);
@@ -607,9 +614,6 @@ public class TradeStationBrokerage : Brokerage
                 case "EndSnapshot":
                     _isSubscribeOnStreamOrderUpdate = true;
                     _autoResetEvent.Set();
-                    break;
-                case "GoAway": // Before stream is terminated by server GoAway status is sent indicating that client must restart the stream
-                    _isSubscribeOnStreamOrderUpdate = false;
                     break;
                 default:
                     Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}.TradeStationStreamStatus: {json}");
