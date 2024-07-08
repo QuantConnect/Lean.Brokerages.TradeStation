@@ -520,6 +520,10 @@ public class TradeStationBrokerage : Brokerage
                 {
                     Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}.Exception: {ex}");
                 }
+                finally
+                {
+                    _isSubscribeOnStreamOrderUpdate = false;
+                }
                 Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}: Connection lost. Reconnecting in 10 seconds...");
                 _cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(10));
             }
