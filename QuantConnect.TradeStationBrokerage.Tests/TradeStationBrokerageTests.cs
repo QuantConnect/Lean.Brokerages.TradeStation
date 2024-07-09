@@ -338,7 +338,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var order = OrderProvider.GetOrderById(1);
 
             var subtractor = 0.1m;
-            var subtraction = 0.5m;
+            var subtraction = 0.3m;
             do
             {
                 subtraction -= subtractor;
@@ -356,7 +356,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 {
                     Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage doesn't return {OrderStatus.UpdateSubmitted}");
                 }
-            } while (subtraction != 0);
+            } while (subtraction > -subtractor);
 
             if (!filledResetEvent.WaitOne(TimeSpan.FromSeconds(10)))
             {
@@ -432,8 +432,8 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             return orderType switch
             {
                 OrderType.Limit => new LimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.2m), SubtractAndRound(lastPrice, 0.2m)),
-                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, AddAndRound(lastPrice, 0.2m), AddAndRound(lastPrice, 0.3m)),
-                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.2m), AddAndRound(lastPrice, 0.3m)),
+                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, AddAndRound(lastPrice, 0.4m), AddAndRound(lastPrice, 0.6m)),
+                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.4m), AddAndRound(lastPrice, 0.6m)),
                 _ => throw new NotImplementedException("Not supported type of order")
             };
         }
