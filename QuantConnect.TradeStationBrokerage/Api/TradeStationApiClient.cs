@@ -253,10 +253,10 @@ public class TradeStationApiClient
                     using (StreamReader reader = new StreamReader(stream))
                     {
                         Log.Trace($"{nameof(TradeStationApiClient)}.{nameof(StreamOrders)}: We are now starting to read the order stream.");
-                        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+                        while (!reader.EndOfStream)
                         {
-                            var jsonLine = await reader.ReadLineAsync();
-                            if (jsonLine == null) break;
+                            var jsonLine = await reader.ReadLineAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
+                            if (jsonLine == null || cancellationToken.IsCancellationRequested) break;
                             yield return jsonLine;
                         }
                         Log.Trace($"{nameof(TradeStationApiClient)}.{nameof(StreamOrders)}: We have completed reading the order stream.");
