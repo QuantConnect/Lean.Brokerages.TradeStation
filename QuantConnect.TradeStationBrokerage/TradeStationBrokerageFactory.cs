@@ -37,7 +37,9 @@ public class TradeStationBrokerageFactory : BrokerageFactory
     public override Dictionary<string, string> BrokerageData => new()
     {
         { "trade-station-api-key", Config.Get("trade-station-api-key") },
-        { "trade-station-api-secret", Config.Get("trade-station-api-secret") },
+        // Optional: The secret for the client application’s API Key. Required for standard Auth Code Flow. Not required for Auth Code Flow with PKCE.
+        // https://api.tradestation.com/docs/fundamentals/authentication/refresh-tokens
+        { "trade-station-api-secret", Config.Get("trade-station-api-secret", "") },
         // The URL to connect to brokerage environment:
         // Simulator(SIM): https://sim-api.tradestation.com/v3
         // LIVE: https://api.tradestation.com/v3
