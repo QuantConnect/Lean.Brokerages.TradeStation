@@ -33,6 +33,7 @@ using QuantConnect.Securities;
 using QuantConnect.Orders.Fees;
 using System.Collections.Generic;
 using System.Security.Cryptography;
+using System.Collections.Concurrent;
 using System.Net.NetworkInformation;
 using QuantConnect.Brokerages.CrossZero;
 using QuantConnect.Brokerages.TradeStation.Api;
@@ -65,10 +66,19 @@ public class TradeStationBrokerage : Brokerage
     private readonly AutoResetEvent _autoResetEvent = new(false);
 
     /// <summary>
-    /// Collection of pre-defined option rights.
-    /// Initialized for performance optimization as the API only returns strike price without indicating the right.
+    /// A manual reset event that is used to signal the completion of an order update operation.
     /// </summary>
-    private readonly IEnumerable<OptionRight> _optionRights = new[] { OptionRight.Call, OptionRight.Put };
+    private readonly ManualResetEvent _orderUpdateEndManualResetEvent = new(false);
+
+    /// <summary>
+    /// A thread-safe dictionary to track the response result submission status by brokerage ID.
+    /// </summary>
+    /// <remarks>
+    /// This dictionary uses brokerage IDs as keys (of type <see cref="string"/>) 
+    /// and a boolean value as the value to indicate whether the response result has been 
+    /// submitted (<see langword="true"/>) or not (<see langword="false"/>).
+    /// </remarks>
+    private ConcurrentDictionary<string, bool> _updateSubmittedResponseResultByBrokerageID = new();
 
     /// <inheritdoc cref="ISecurityProvider"/>
     private ISecurityProvider _securityProvider { get; }
@@ -409,6 +419,7 @@ public class TradeStationBrokerage : Brokerage
                     Status = OrderStatus.UpdateSubmitted
                 });
                 response = true;
+                _updateSubmittedResponseResultByBrokerageID[order.BrokerId.Last()] = true;
             }
             catch (Exception exception)
             {
@@ -455,6 +466,10 @@ public class TradeStationBrokerage : Brokerage
     public override void Disconnect()
     {
         _cancellationTokenSource.Cancel();
+        if (!_orderUpdateEndManualResetEvent.WaitOne(TimeSpan.FromSeconds(5)))
+        {
+            Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(Disconnect)}: TimeOut waiting for stream order task to end.");
+        }
     }
 
     #endregion
@@ -508,6 +523,7 @@ public class TradeStationBrokerage : Brokerage
         {
             while (!_cancellationTokenSource.IsCancellationRequested)
             {
+                _isSubscribeOnStreamOrderUpdate = false;
                 Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}: Starting to listen for order updates...");
                 try
                 {
@@ -523,6 +539,7 @@ public class TradeStationBrokerage : Brokerage
                 Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}: Connection lost. Reconnecting in 10 seconds...");
                 _cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(10));
             }
+            _orderUpdateEndManualResetEvent.Set();
         }, _cancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
         return _autoResetEvent.WaitOne(TimeSpan.FromSeconds(30), _cancellationTokenSource.Token);
@@ -542,7 +559,13 @@ public class TradeStationBrokerage : Brokerage
             var leanOrderStatus = default(OrderStatus);
             switch (brokerageOrder.Status)
             {
-                case TradeStationOrderStatusType.Fll:
+                case TradeStationOrderStatusType.Ack:
+                    // Remove the order entry when the order is acknowledged (indicating successful submission)
+                    _updateSubmittedResponseResultByBrokerageID.TryRemove(new(brokerageOrder.OrderID, true));
+                    return;
+                // Sometimes, a filled event is received without the ClosedDateTime property set. 
+                // Subsequently, another event is received with the ClosedDateTime property correctly populated.
+                case TradeStationOrderStatusType.Fll when brokerageOrder.ClosedDateTime != default:
                 case TradeStationOrderStatusType.Brf:
                     leanOrderStatus = OrderStatus.Filled;
                     break;
@@ -555,7 +578,15 @@ public class TradeStationBrokerage : Brokerage
                 case TradeStationOrderStatusType.Bro:
                     leanOrderStatus = OrderStatus.Invalid;
                     break;
-                case TradeStationOrderStatusType.Out:
+                // Sometimes, a Out event is received without the ClosedDateTime property set. 
+                // Subsequently, another event is received with the ClosedDateTime property correctly populated.
+                case TradeStationOrderStatusType.Out when brokerageOrder.ClosedDateTime != default:
+                    // Remove the order entry if it was marked as submitted but is now out
+                    // Sometimes, the order receives an "Out" status on every even occurrence
+                    if (_updateSubmittedResponseResultByBrokerageID.TryRemove(new(brokerageOrder.OrderID, true)))
+                    {
+                        return;
+                    }
                     leanOrderStatus = OrderStatus.Canceled;
                     break;
                 default:
@@ -603,9 +634,6 @@ public class TradeStationBrokerage : Brokerage
                 case "EndSnapshot":
                     _isSubscribeOnStreamOrderUpdate = true;
                     _autoResetEvent.Set();
-                    break;
-                case "GoAway": // Before stream is terminated by server GoAway status is sent indicating that client must restart the stream
-                    _isSubscribeOnStreamOrderUpdate = false;
                     break;
                 default:
                     Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}.TradeStationStreamStatus: {json}");

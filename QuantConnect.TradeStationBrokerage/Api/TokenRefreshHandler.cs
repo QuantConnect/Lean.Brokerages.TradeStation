@@ -205,9 +205,15 @@ public class TokenRefreshHandler : DelegatingHandler
         {
             { "grant_type", "refresh_token" },
             { "client_id", _apiKey },
-            { "client_secret", _apiKeySecret},
             { "refresh_token", refreshToken }
         };
+
+        // The secret for the client application’s API Key. Required for standard Auth Code Flow. Not required for Auth Code Flow with PKCE.
+        // https://api.tradestation.com/docs/fundamentals/authentication/refresh-tokens
+        if (!string.IsNullOrEmpty(_apiKeySecret))
+        {
+            parameters["client_secret"] = _apiKeySecret;
+        }
 
         var response = await SendSignInAsync(new FormUrlEncodedContent(parameters), cancellationToken);
 

@@ -141,7 +141,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             get
             {
-                var INTL = Symbol.Create("INTL", SecurityType.Equity, Market.USA);
+                var INTL = Symbol.Create("AAPL", SecurityType.Equity, Market.USA);
                 yield return new TestCaseData(INTL, OrderType.Limit);
                 yield return new TestCaseData(INTL, OrderType.StopMarket);
                 yield return new TestCaseData(INTL, OrderType.StopLimit);
@@ -337,20 +337,26 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
             var order = OrderProvider.GetOrderById(1);
 
-            var newLastPrice = _brokerage.GetLastPrice(symbol);
-            var newLimitPrice = AddAndRound(newLastPrice, 0.4m);
-
-            order.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, order.Id, new() { LimitPrice = newLimitPrice }));
-
-            if (!Brokerage.UpdateOrder(order))
+            var subtractor = 0.1m;
+            var subtraction = 0.3m;
+            do
             {
-                Assert.Fail("Brokerage failed to update the order: " + order);
-            }
+                subtraction -= subtractor;
+                var newLastPrice = _brokerage.GetLastPrice(symbol);
+                var newLimitPrice = Math.Round(newLastPrice - subtraction, 2);
 
-            if (!updateSubmittedResetEvent.WaitOne(TimeSpan.FromSeconds(10)))
-            {
-                Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage doesn't return {OrderStatus.UpdateSubmitted}");
-            }
+                order.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, order.Id, new() { LimitPrice = newLimitPrice }));
+
+                if (!Brokerage.UpdateOrder(order))
+                {
+                    Assert.Fail("Brokerage failed to update the order: " + order);
+                }
+
+                if (!updateSubmittedResetEvent.WaitOne(TimeSpan.FromSeconds(10)))
+                {
+                    Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage doesn't return {OrderStatus.UpdateSubmitted}");
+                }
+            } while (subtraction > -subtractor);
 
             if (!filledResetEvent.WaitOne(TimeSpan.FromSeconds(10)))
             {
@@ -426,8 +432,8 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             return orderType switch
             {
                 OrderType.Limit => new LimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.2m), SubtractAndRound(lastPrice, 0.2m)),
-                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, AddAndRound(lastPrice, 0.2m), AddAndRound(lastPrice, 0.3m)),
-                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.2m), AddAndRound(lastPrice, 0.3m)),
+                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, AddAndRound(lastPrice, 0.4m), AddAndRound(lastPrice, 0.6m)),
+                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.4m), AddAndRound(lastPrice, 0.6m)),
                 _ => throw new NotImplementedException("Not supported type of order")
             };
         }
