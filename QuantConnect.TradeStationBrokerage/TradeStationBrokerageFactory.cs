@@ -79,7 +79,13 @@ public class TradeStationBrokerageFactory : BrokerageFactory
         var errors = new List<string>();
 
         var apiKey = Read<string>(job.BrokerageData, "trade-station-api-key", errors);
-        var apiSecret = Read<string>(job.BrokerageData, "trade-station-api-secret", errors);
+
+        var apiSecret = default(string);
+        if (job.BrokerageData.ContainsKey("trade-station-api-secret"))
+        {
+            apiSecret = Read<string>(job.BrokerageData, "trade-station-api-secret", errors);
+        }
+
         var apiUrl = Read<string>(job.BrokerageData, "trade-station-api-url", errors);
         var accountType = Read<string>(job.BrokerageData, "trade-station-account-type", errors);
 
