@@ -466,7 +466,7 @@ public class TradeStationBrokerage : Brokerage
     public override void Disconnect()
     {
         _cancellationTokenSource.Cancel();
-        if (!_orderUpdateEndManualResetEvent.WaitOne(TimeSpan.FromSeconds(3)))
+        if (!_orderUpdateEndManualResetEvent.WaitOne(TimeSpan.FromSeconds(5)))
         {
             Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(Disconnect)}: TimeOut waiting for stream order task to end.");
         }
@@ -578,6 +578,8 @@ public class TradeStationBrokerage : Brokerage
                 case TradeStationOrderStatusType.Bro:
                     leanOrderStatus = OrderStatus.Invalid;
                     break;
+                // Sometimes, a Out event is received without the ClosedDateTime property set. 
+                // Subsequently, another event is received with the ClosedDateTime property correctly populated.
                 case TradeStationOrderStatusType.Out when brokerageOrder.ClosedDateTime != default:
                     // Remove the order entry if it was marked as submitted but is now out
                     // Sometimes, the order receives an "Out" status on every even occurrence
