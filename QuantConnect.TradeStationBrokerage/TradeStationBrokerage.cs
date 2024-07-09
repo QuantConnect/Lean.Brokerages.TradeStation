@@ -578,7 +578,7 @@ public class TradeStationBrokerage : Brokerage
                 case TradeStationOrderStatusType.Bro:
                     leanOrderStatus = OrderStatus.Invalid;
                     break;
-                case TradeStationOrderStatusType.Out:
+                case TradeStationOrderStatusType.Out when brokerageOrder.ClosedDateTime != default:
                     // Remove the order entry if it was marked as submitted but is now out
                     // Sometimes, the order receives an "Out" status on every even occurrence
                     if (_updateSubmittedResponseResultByBrokerageID.TryRemove(new(brokerageOrder.OrderID, true)))
