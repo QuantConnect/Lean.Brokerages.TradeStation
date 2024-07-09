@@ -466,7 +466,7 @@ public class TradeStationBrokerage : Brokerage
     public override void Disconnect()
     {
         _cancellationTokenSource.Cancel();
-        if (!_orderUpdateEndManualResetEvent.WaitOne(TimeSpan.FromMilliseconds(1000)))
+        if (!_orderUpdateEndManualResetEvent.WaitOne(TimeSpan.FromMilliseconds(5000)))
         {
             Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(Disconnect)}: TimeOut waiting for stream order task to end.");
         }
