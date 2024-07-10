@@ -94,12 +94,18 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// <returns>The ask price for the specified symbol.</returns>
         protected override decimal GetAskPrice(Symbol symbol)
         {
+            var value = symbol.SecurityType switch
+            {
+                SecurityType.Option => 0.05m,
+                _ => 0.01m
+            };
+
             var lastPrice = _brokerage.GetPrice(symbol);
             if (IsLongOrder)
             {
-                return AddAndRound(lastPrice.Bid, 0m);
+                return AddAndRound(lastPrice.Bid, value);
             }
-            return SubtractAndRound(lastPrice.Ask, 0m);
+            return SubtractAndRound(lastPrice.Ask, value);
         }
 
         private static IEnumerable<TestCaseData> OrderTestParameters
