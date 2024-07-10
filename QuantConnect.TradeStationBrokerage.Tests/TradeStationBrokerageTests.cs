@@ -94,12 +94,12 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// <returns>The ask price for the specified symbol.</returns>
         protected override decimal GetAskPrice(Symbol symbol)
         {
+            var lastPrice = _brokerage.GetLastPrice(symbol);
             if (IsLongOrder)
             {
-                return Math.Round(_brokerage.GetLastPrice(symbol) + 0.11m, 2, MidpointRounding.ToEven);
+                return AddAndRound(lastPrice, 2m);
             }
-
-            return Math.Round(_brokerage.GetLastPrice(symbol) - 0.11m, 2, MidpointRounding.ToEven);
+            return SubtractAndRound(lastPrice, 2m);
         }
 
         private static IEnumerable<TestCaseData> OrderTestParameters
