@@ -94,12 +94,12 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// <returns>The ask price for the specified symbol.</returns>
         protected override decimal GetAskPrice(Symbol symbol)
         {
-            var lastPrice = _brokerage.GetLastPrice(symbol);
+            var lastPrice = _brokerage.GetPrice(symbol);
             if (IsLongOrder)
             {
-                return AddAndRound(lastPrice, 2m);
+                return AddAndRound(lastPrice.Bid, 0m);
             }
-            return SubtractAndRound(lastPrice, 2m);
+            return SubtractAndRound(lastPrice.Ask, 0m);
         }
 
         private static IEnumerable<TestCaseData> OrderTestParameters
@@ -272,7 +272,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             Log.Trace("PLACE LIMIT ORDER AND UPDATE");
             var symbol = Symbols.AAPL;
-            var lastPrice = _brokerage.GetLastPrice(symbol);
+            var lastPrice = _brokerage.GetPrice(symbol).Last;
             var limitPrice = SubtractAndRound(lastPrice, 0.5m);
             var limitOrder = new LimitOrder(Symbols.AAPL, 1, limitPrice, DateTime.UtcNow);
 
@@ -323,7 +323,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             do
             {
                 subtraction -= subtractor;
-                var newLastPrice = _brokerage.GetLastPrice(symbol);
+                var newLastPrice = _brokerage.GetPrice(symbol).Last;
                 var newLimitPrice = Math.Round(newLastPrice - subtraction, 2);
 
                 order.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, order.Id, new() { LimitPrice = newLimitPrice }));
@@ -395,7 +395,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// <exception cref="NotImplementedException">Thrown when the order type is not supported.</exception>
         private OrderTestParameters GetLastPriceForShortOrder(Symbol symbol, OrderType orderType)
         {
-            var lastPrice = _brokerage.GetLastPrice(symbol);
+            var lastPrice = _brokerage.GetPrice(symbol).Last;
             return orderType switch
             {
                 OrderType.Limit => new LimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.3m), SubtractAndRound(lastPrice, 0.3m)),
@@ -414,7 +414,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// <exception cref="NotImplementedException">Thrown when the order type is not supported.</exception>
         private OrderTestParameters GetLastPriceForLongOrder(Symbol symbol, OrderType orderType)
         {
-            var lastPrice = _brokerage.GetLastPrice(symbol);
+            var lastPrice = _brokerage.GetPrice(symbol).Last;
             return orderType switch
             {
                 OrderType.Limit => new LimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.2m), SubtractAndRound(lastPrice, 0.2m)),
@@ -469,9 +469,9 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             /// </summary>
             /// <param name="symbol">The symbol for which to retrieve the last price.</param>
             /// <returns>The last price of the specified symbol as a decimal.</returns>
-            public decimal GetLastPrice(Symbol symbol)
+            public Models.Quote GetPrice(Symbol symbol)
             {
-                return GetQuote(symbol).Quotes.Single().Last;
+                return GetQuote(symbol).Quotes.Single();
             }
         }
     }
