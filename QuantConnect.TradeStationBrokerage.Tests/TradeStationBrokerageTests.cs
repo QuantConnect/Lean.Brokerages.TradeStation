@@ -102,84 +102,65 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             return Math.Round(_brokerage.GetLastPrice(symbol) - 0.11m, 2, MidpointRounding.ToEven);
         }
 
-        /// <summary>
-        /// Provides the data required to test each order type in various cases
-        /// </summary>
-        private static IEnumerable<TestCaseData> OrderMoreRealToLiveParameters
+        private static IEnumerable<TestCaseData> OrderTestParameters
         {
             get
             {
                 var INTL = Symbol.Create("INTL", SecurityType.Equity, Market.USA);
-                yield return new TestCaseData(new LimitOrderTestParameters(INTL, 23m, 22m));
-                yield return new TestCaseData(new StopMarketOrderTestParameters(INTL, 22.61m, 23m));
-                yield return new TestCaseData(new StopLimitOrderTestParameters(INTL, 22.61m, 22.65m));
-            }
-        }
+                yield return new TestCaseData(new LimitOrderTestParameters(INTL, 23m, 22m)).SetCategory("Equity").SetName("INTL|EQUITY|LIMIT");
+                yield return new TestCaseData(new StopMarketOrderTestParameters(INTL, 23m, 22m)).SetCategory("Equity").SetName("INTL|EQUITY|STOPMARKET");
+                yield return new TestCaseData(new StopLimitOrderTestParameters(INTL, 23m, 23m)).SetCategory("Equity").SetName("INTL|EQUITY|STOPLIMIT");
 
-        private static IEnumerable<TestCaseData> OrderSimpleParameters
-        {
-            get
-            {
                 var AAPLOption = Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 215m, new DateTime(2024, 7, 19));
-                yield return new TestCaseData(new LimitOrderTestParameters(AAPLOption, 15.85m, 14.85m)).SetCategory("Option").SetName("AAPL Option Limit");
-                yield return new TestCaseData(new StopMarketOrderTestParameters(AAPLOption, 15.1m, 15.1m)).SetCategory("Option").SetName("AAPL Option StopMarket");
-                yield return new TestCaseData(new StopLimitOrderTestParameters(AAPLOption, 15.1m, 15.1m)).SetCategory("Option").SetName("AAPL Option StopLimit");
-
-                var INTL = Symbol.Create("INTL", SecurityType.Equity, Market.USA);
-                yield return new TestCaseData(new LimitOrderTestParameters(INTL, 23m, 22m)).SetCategory("Equity").SetName("INTL Limit");
-                yield return new TestCaseData(new StopMarketOrderTestParameters(INTL, 23m, 22m)).SetCategory("Equity").SetName("INTL StopMarket");
-                yield return new TestCaseData(new StopLimitOrderTestParameters(INTL, 23m, 23m)).SetCategory("Equity").SetName("INTL StopLimit");
+                yield return new TestCaseData(new LimitOrderTestParameters(AAPLOption, 15.85m, 14.85m)).SetCategory("Option").SetName("AAPL|OPTION|LIMIT");
+                yield return new TestCaseData(new StopMarketOrderTestParameters(AAPLOption, 15.1m, 15.1m)).SetCategory("Option").SetName("AAPL|OPTION|STOPMARKET");
+                yield return new TestCaseData(new StopLimitOrderTestParameters(AAPLOption, 15.1m, 15.1m)).SetCategory("Option").SetName("AAPL|OPTION|STOPLIMIT");
 
                 var COTTON = Symbol.CreateFuture(Futures.Softs.Cotton2, Market.USA, new DateTime(2024, 7, 1));
-                yield return new TestCaseData(new LimitOrderTestParameters(COTTON, 72m, 70m)).SetCategory("Future").SetName("COTTON Future Limit").Explicit("At the first, setup specific `trade-station-account-type` in config file.");
-                yield return new TestCaseData(new StopMarketOrderTestParameters(COTTON, 72m, 70m)).SetCategory("Future").SetName("COTTON Future StopMarket").Explicit("At the first, setup specific `trade-station-account-type` in config file.");
-                yield return new TestCaseData(new StopLimitOrderTestParameters(COTTON, 72m, 72m)).SetCategory("Future").SetName("COTTON Future StopLimit").Explicit("At the first, setup specific `trade-station-account-type` in config file.");
+                yield return new TestCaseData(new LimitOrderTestParameters(COTTON, 72m, 70m)).SetCategory("Future").SetName("COTTON|FUTURE|LIMIT").Explicit("At the first, setup specific `trade-station-account-type` in config file.");
+                yield return new TestCaseData(new StopMarketOrderTestParameters(COTTON, 72m, 70m)).SetCategory("Future").SetName("COTTON|FUTURE|STOPMARKET").Explicit("At the first, setup specific `trade-station-account-type` in config file.");
+                yield return new TestCaseData(new StopLimitOrderTestParameters(COTTON, 72m, 72m)).SetCategory("Future").SetName("COTTON|FUTURE|STOPLIMIT").Explicit("At the first, setup specific `trade-station-account-type` in config file.");
             }
         }
 
-        private static IEnumerable<TestCaseData> SymbolOrderTypeParameters
-        {
-            get
-            {
-                var INTL = Symbol.Create("AAPL", SecurityType.Equity, Market.USA);
-                yield return new TestCaseData(INTL, OrderType.Limit);
-                yield return new TestCaseData(INTL, OrderType.StopMarket);
-                yield return new TestCaseData(INTL, OrderType.StopLimit);
-            }
-        }
-
-        [Test, TestCaseSource(nameof(OrderSimpleParameters))]
+        [TestCaseSource(nameof(OrderTestParameters))]
         public override void CancelOrders(OrderTestParameters parameters)
         {
             parameters = GetLastPriceForLongOrder(parameters);
             base.CancelOrders(parameters);
         }
 
-        [Test, TestCaseSource(nameof(OrderMoreRealToLiveParameters))]
+        [Test, TestCaseSource(nameof(OrderTestParameters))]
         public override void LongFromZero(OrderTestParameters parameters)
         {
+            parameters = GetLastPriceForLongOrder(parameters);
             base.LongFromZero(parameters);
         }
 
-        [Test, TestCaseSource(nameof(OrderMoreRealToLiveParameters))]
+        [Test, TestCaseSource(nameof(OrderTestParameters))]
         public override void CloseFromLong(OrderTestParameters parameters)
         {
+            IsLongOrder = false;
+            parameters = GetLastPriceForShortOrder(parameters);
             base.CloseFromLong(parameters);
         }
 
-        [Test, TestCaseSource(nameof(OrderMoreRealToLiveParameters))]
+        [Test, TestCaseSource(nameof(OrderTestParameters))]
         public override void ShortFromZero(OrderTestParameters parameters)
         {
+            parameters = GetLastPriceForShortOrder(parameters);
             base.ShortFromZero(parameters);
         }
 
-        [Test, TestCaseSource(nameof(OrderMoreRealToLiveParameters))]
+        [Test, TestCaseSource(nameof(OrderTestParameters))]
         public override void CloseFromShort(OrderTestParameters parameters)
         {
+            IsLongOrder = true;
+            parameters = GetLastPriceForLongOrder(parameters);
             base.CloseFromShort(parameters);
         }
 
-        [Test, TestCaseSource(nameof(OrderMoreRealToLiveParameters))]
+        [Test, TestCaseSource(nameof(OrderTestParameters))]
         public override void ShortFromLong(OrderTestParameters parameters)
         {
             IsLongOrder = false;
@@ -187,7 +168,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             base.ShortFromLong(parameters);
         }
 
-        [Test, TestCaseSource(nameof(OrderSimpleParameters))]
+        [Test, TestCaseSource(nameof(OrderTestParameters))]
         public override void LongFromShort(OrderTestParameters parameters)
         {
             IsLongOrder = true;
@@ -195,11 +176,11 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             base.LongFromShort(parameters);
         }
 
-        [Test, TestCaseSource(nameof(SymbolOrderTypeParameters))]
-        public void ShortFromShort(Symbol symbol, OrderType orderType)
+        [Test, TestCaseSource(nameof(OrderTestParameters))]
+        public void ShortFromShort(OrderTestParameters parameters)
         {
             IsLongOrder = false;
-            var parameters = GetLastPriceForShortOrder(symbol, orderType);
+            parameters = GetLastPriceForShortOrder(parameters);
 
             Log.Trace("");
             Log.Trace("SHORT FROM SHORT");
@@ -216,11 +197,11 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             }
         }
 
-        [Test, TestCaseSource(nameof(SymbolOrderTypeParameters))]
-        public virtual void LongFromLong(Symbol symbol, OrderType orderType)
+        [Test, TestCaseSource(nameof(OrderTestParameters))]
+        public virtual void LongFromLong(OrderTestParameters parameters)
         {
             IsLongOrder = true;
-            OrderTestParameters parameters = GetLastPriceForLongOrder(symbol, orderType);
+            parameters = GetLastPriceForLongOrder(parameters);
 
             Log.Trace("");
             Log.Trace("LONG FROM LONG");
@@ -297,7 +278,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
             var submittedResetEvent = new AutoResetEvent(false);
             var updateSubmittedResetEvent = new AutoResetEvent(false);
-            var filledResetEvent = new AutoResetEvent(false);
+            var filledResetEvent = new ManualResetEvent(false);
 
             Brokerage.OrdersStatusChanged += (_, orderEvents) =>
             {
@@ -349,6 +330,11 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
                 if (!Brokerage.UpdateOrder(order))
                 {
+                    if (filledResetEvent.WaitOne(TimeSpan.FromSeconds(10)))
+                    {
+                        break;
+                    }
+
                     Assert.Fail("Brokerage failed to update the order: " + order);
                 }
 
@@ -368,7 +354,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// Retrieves the last price for a short order based on the provided order test parameters.
         /// </summary>
         /// <param name="orderTestParameters">The order test parameters.</param>
-        /// <returns>An instance of <see cref="OrderTestParameters"/> with the last price for a short order.</returns>
+        /// <returns>An instance of <see cref="QuantConnect.Tests.Brokerages.OrderTestParameters"/> with the last price for a short order.</returns>
         private OrderTestParameters GetLastPriceForShortOrder(OrderTestParameters orderTestParameters)
         {
             var orderType = GetOrderTypeByOrderTestParameters(orderTestParameters);
@@ -379,7 +365,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// Retrieves the last price for a long order based on the provided order test parameters.
         /// </summary>
         /// <param name="orderTestParameters">The order test parameters.</param>
-        /// <returns>An instance of <see cref="OrderTestParameters"/> with the last price for a long order.</returns>
+        /// <returns>An instance of <see cref="QuantConnect.Tests.Brokerages.OrderTestParameters"/> with the last price for a long order.</returns>
         private OrderTestParameters GetLastPriceForLongOrder(OrderTestParameters orderTestParameters)
         {
             var orderType = GetOrderTypeByOrderTestParameters(orderTestParameters);
@@ -405,7 +391,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// </summary>
         /// <param name="symbol">The symbol for the order.</param>
         /// <param name="orderType">The type of the order.</param>
-        /// <returns>An instance of <see cref="OrderTestParameters"/> with the last price for a short order.</returns>
+        /// <returns>An instance of <see cref="QuantConnect.Tests.Brokerages.OrderTestParameters"/> with the last price for a short order.</returns>
         /// <exception cref="NotImplementedException">Thrown when the order type is not supported.</exception>
         private OrderTestParameters GetLastPriceForShortOrder(Symbol symbol, OrderType orderType)
         {
@@ -424,7 +410,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// </summary>
         /// <param name="symbol">The symbol for the order.</param>
         /// <param name="orderType">The type of the order.</param>
-        /// <returns>An instance of <see cref="OrderTestParameters"/> with the last price for a long order.</returns>
+        /// <returns>An instance of <see cref="QuantConnect.Tests.Brokerages.OrderTestParameters"/> with the last price for a long order.</returns>
         /// <exception cref="NotImplementedException">Thrown when the order type is not supported.</exception>
         private OrderTestParameters GetLastPriceForLongOrder(Symbol symbol, OrderType orderType)
         {
