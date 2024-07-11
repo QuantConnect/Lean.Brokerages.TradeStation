@@ -170,6 +170,13 @@ public partial class TradeStationBrokerage : Brokerage
         _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl,
             TradeStationExtensions.ParseAccountType(accountType), refreshToken, redirectUrl, authorizationCode);
         _messageHandler = new(HandleTradeStationMessage);
+
+        SubscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager()
+        {
+            SubscribeImpl = (symbols, _) => Subscribe(symbols),
+            UnsubscribeImpl = (symbols, _) => UnSubscribe(symbols)
+        };
+
         ValidateSubscription();
     }
 
@@ -451,9 +458,9 @@ public partial class TradeStationBrokerage : Brokerage
         _messageHandler.WithLockedStream(() =>
         {
             if (_tradeStationApiClient.CancelOrder(brokerageOrderId).SynchronouslyAwaitTaskResult())
-        {
+            {
                 result = true;
-        }
+            }
         });
         return result;
     }
