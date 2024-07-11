@@ -438,13 +438,16 @@ public class TradeStationBrokerage : Brokerage
     public override bool CancelOrder(Order order)
     {
         var brokerageOrderId = order.BrokerId.Last();
-        if (_tradeStationApiClient.CancelOrder(brokerageOrderId).SynchronouslyAwaitTaskResult())
+
+        var result = default(bool);
+        _messageHandler.WithLockedStream(() =>
         {
-            OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, "CancelOrder")
-            { Status = OrderStatus.Canceled });
-            return true;
+            if (_tradeStationApiClient.CancelOrder(brokerageOrderId).SynchronouslyAwaitTaskResult())
+        {
+                result = true;
         }
-        return false;
+        });
+        return result;
     }
 
     /// <summary>
