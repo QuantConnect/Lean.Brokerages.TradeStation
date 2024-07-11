@@ -94,18 +94,12 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// <returns>The ask price for the specified symbol.</returns>
         protected override decimal GetAskPrice(Symbol symbol)
         {
-            var value = symbol.SecurityType switch
-            {
-                SecurityType.Option => 0.05m,
-                _ => 0.01m
-            };
-
-            var lastPrice = _brokerage.GetPrice(symbol);
+            var lastPrice = _brokerage.GetPrice(symbol).Last;
             if (IsLongOrder)
             {
-                return AddAndRound(lastPrice.Bid, value);
+                return AddAndRound(lastPrice, 0.01m);
             }
-            return SubtractAndRound(lastPrice.Ask, value);
+            return SubtractAndRound(lastPrice, 0.01m);
         }
 
         private static IEnumerable<TestCaseData> OrderTestParameters
@@ -117,7 +111,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 yield return new TestCaseData(new StopMarketOrderTestParameters(INTL, 23m, 22m)).SetCategory("Equity").SetName("INTL|EQUITY|STOPMARKET");
                 yield return new TestCaseData(new StopLimitOrderTestParameters(INTL, 23m, 23m)).SetCategory("Equity").SetName("INTL|EQUITY|STOPLIMIT");
 
-                var AAPLOption = Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 215m, new DateTime(2024, 7, 19));
+                var AAPLOption = Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 235m, new DateTime(2024, 7, 19));
                 yield return new TestCaseData(new LimitOrderTestParameters(AAPLOption, 15.85m, 14.85m)).SetCategory("Option").SetName("AAPL|OPTION|LIMIT");
                 yield return new TestCaseData(new StopMarketOrderTestParameters(AAPLOption, 15.1m, 15.1m)).SetCategory("Option").SetName("AAPL|OPTION|STOPMARKET");
                 yield return new TestCaseData(new StopLimitOrderTestParameters(AAPLOption, 15.1m, 15.1m)).SetCategory("Option").SetName("AAPL|OPTION|STOPLIMIT");
@@ -433,18 +427,13 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         public static decimal AddAndRound(decimal number, decimal valueToAdd)
         {
             decimal result = number + valueToAdd;
-            return RoundToNearestFiveCents(result);
+            return Math.Round(result, 2);
         }
 
         public static decimal SubtractAndRound(decimal number, decimal valueToSubtract)
         {
             decimal result = number - valueToSubtract;
-            return RoundToNearestFiveCents(result);
-        }
-
-        private static decimal RoundToNearestFiveCents(decimal number)
-        {
-            return Math.Round(number * 20, MidpointRounding.AwayFromZero) / 20;
+            return Math.Round(result, 2);
         }
 
         public class TradeStationBrokerageTest : TradeStationBrokerage

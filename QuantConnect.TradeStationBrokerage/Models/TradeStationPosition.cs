@@ -102,7 +102,7 @@ public readonly struct Position
     /// Currently only calculated for futures positions. 
     /// Other asset classes will have a 0 for this value.
     /// </summary>
-    public int DayTradeRequirement { get; }
+    public decimal DayTradeRequirement { get; }
 
     /// <summary>
     /// Only applies to future and option positions. 
@@ -203,7 +203,7 @@ public readonly struct Position
     /// <param name="markToMarketPrice">The MarkToMarketPrice value is the weighted average of the previous close price for the position quantity</param>
     [JsonConstructor]
     public Position(string accountID, decimal averagePrice, TradeStationAssetType assetType, decimal last, decimal bid, decimal ask, DateTime expirationDate,
-        int conversionRate, int dayTradeRequirement, string initialRequirement, string positionID, TradeStationPositionDirection longShort, int quantity,
+        int conversionRate, decimal dayTradeRequirement, string initialRequirement, string positionID, TradeStationPositionDirection longShort, int quantity,
         string symbol, DateTime timestamp, decimal totalCost, decimal marketValue, decimal unrealizedProfitLoss, decimal unrealizedProfitLossPercent,
         decimal unrealizedProfitLossQty, decimal todaysProfitLoss, decimal markToMarketPrice)
     {
