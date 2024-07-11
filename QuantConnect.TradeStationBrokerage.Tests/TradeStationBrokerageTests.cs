@@ -97,9 +97,9 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var lastPrice = _brokerage.GetPrice(symbol).Last;
             if (IsLongOrder)
             {
-                return AddAndRound(lastPrice, 0.01m);
+                return AddAndRound(lastPrice, 0.03m);
             }
-            return SubtractAndRound(lastPrice, 0.01m);
+            return SubtractAndRound(lastPrice, 0.03m);
         }
 
         private static IEnumerable<TestCaseData> OrderTestParameters
@@ -398,9 +398,9 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var lastPrice = _brokerage.GetPrice(symbol).Last;
             return orderType switch
             {
-                OrderType.Limit => new LimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.3m), SubtractAndRound(lastPrice, 0.3m)),
-                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, SubtractAndRound(lastPrice, 0.3m), SubtractAndRound(lastPrice, 0.6m)),
-                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, SubtractAndRound(lastPrice, 0.3m), SubtractAndRound(lastPrice, 0.3m)),
+                OrderType.Limit => new LimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.03m), SubtractAndRound(lastPrice, 0.03m)),
+                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, SubtractAndRound(lastPrice, 0.03m), SubtractAndRound(lastPrice, 0.06m)),
+                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, SubtractAndRound(lastPrice, 0.03m), SubtractAndRound(lastPrice, 0.03m)),
                 _ => throw new NotImplementedException("Not supported type of order")
             };
         }
@@ -417,9 +417,9 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var lastPrice = _brokerage.GetPrice(symbol).Last;
             return orderType switch
             {
-                OrderType.Limit => new LimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.2m), SubtractAndRound(lastPrice, 0.2m)),
-                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, AddAndRound(lastPrice, 0.4m), AddAndRound(lastPrice, 0.6m)),
-                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.4m), AddAndRound(lastPrice, 0.6m)),
+                OrderType.Limit => new LimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.02m), SubtractAndRound(lastPrice, 0.02m)),
+                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, AddAndRound(lastPrice, 0.04m), AddAndRound(lastPrice, 0.06m)),
+                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.04m), AddAndRound(lastPrice, 0.06m)),
                 _ => throw new NotImplementedException("Not supported type of order")
             };
         }
