@@ -264,6 +264,11 @@ public class TradeStationApiClient
     {
         await foreach (var response in StreamRequestAsyncEnumerable($"{_baseUrl}/v3/marketdata/stream/quotes/{string.Join(",", symbols)}", cancellationToken))
         {
+            // Skip processing the heartbeat response as it only indicates the stream is alive
+            if (response.Contains("Heartbeat", StringComparison.InvariantCultureIgnoreCase))
+            {
+                continue;
+            }
             yield return JsonConvert.DeserializeObject<Quote>(response);
         }
     }

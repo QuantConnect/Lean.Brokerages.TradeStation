@@ -37,7 +37,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// <summary>
         /// Gets the TradeStationBrokerageTest instance from the Brokerage.
         /// </summary>
-        private TradeStationBrokerageTest _brokerage => Brokerage as TradeStationBrokerageTest;
+        protected TradeStationBrokerageTest _brokerage => Brokerage as TradeStationBrokerageTest;
 
         protected override Symbol Symbol { get; } = Symbols.AAPL;
 
@@ -108,6 +108,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             get
             {
+                TestGlobals.Initialize();
                 var INTL = Symbol.Create("INTL", SecurityType.Equity, Market.USA);
                 yield return new TestCaseData(new LimitOrderTestParameters(INTL, 23m, 22m)).SetCategory("Equity").SetName("INTL|EQUITY|LIMIT");
                 yield return new TestCaseData(new StopMarketOrderTestParameters(INTL, 23m, 22m)).SetCategory("Equity").SetName("INTL|EQUITY|STOPMARKET");

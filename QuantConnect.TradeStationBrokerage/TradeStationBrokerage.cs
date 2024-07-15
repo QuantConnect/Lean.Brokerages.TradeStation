@@ -488,6 +488,7 @@ public partial class TradeStationBrokerage : Brokerage
         {
             Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(Disconnect)}: TimeOut waiting for stream order task to end.");
         }
+        StopQuoteStreamingTask(updateCancellationToken: false);
     }
 
     #endregion

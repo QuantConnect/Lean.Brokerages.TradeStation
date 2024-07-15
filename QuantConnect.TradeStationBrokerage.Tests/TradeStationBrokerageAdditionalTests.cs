@@ -21,7 +21,6 @@ using System.Threading;
 using QuantConnect.Logging;
 using System.Threading.Tasks;
 using QuantConnect.Configuration;
-using System.Collections.Generic;
 using QuantConnect.Brokerages.TradeStation.Api;
 using QuantConnect.Brokerages.TradeStation.Models;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
