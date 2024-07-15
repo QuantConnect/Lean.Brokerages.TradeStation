@@ -21,6 +21,7 @@ using System.Threading;
 using QuantConnect.Logging;
 using System.Threading.Tasks;
 using QuantConnect.Configuration;
+using QuantConnect.Algorithm.CSharp;
 using QuantConnect.Brokerages.TradeStation.Api;
 using QuantConnect.Brokerages.TradeStation.Models;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
@@ -190,6 +191,34 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Log.Debug($"{nameof(GetStreamMarketData)}.IsCancellationRequested: {cancellationTokenSource.IsCancellationRequested}");
 
             Assert.IsTrue(symbols.All((symbol) => symbol.Value > 0));
+        }
+
+        [TestCase(5, 1)]
+        [TestCase(5, 100)]
+        [TestCase(5, 200)]
+        public async Task GetStreamQuotesRichRateLimit(int subscriptionTryCounter, int takeSymbolBeforeSubscriptionAmount)
+        {
+            Log.Debug($"{nameof(GetStreamQuotesRichRateLimit)}: Starting...");
+
+            var locker = new object();
+            var tradeStationApiClient = CreateTradeStationApiClient();
+
+            var takeAmount = takeSymbolBeforeSubscriptionAmount;
+            do
+            {
+                var symbols = StressSymbols.StockSymbols.Take(takeAmount).ToDictionary(symbol => symbol, _ => 0);
+                takeAmount++;
+                Log.Debug($"{nameof(GetStreamQuotesRichRateLimit)}: increase takeAmount = {takeAmount}");
+
+                var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+                await foreach (var quote in tradeStationApiClient.StreamQuotes(symbols.Keys, cancellationTokenSource.Token))
+                {
+                    Assert.IsNotNull(quote);
+                    Log.Debug($"{nameof(GetStreamQuotesRichRateLimit)}.json: {quote}");
+                }
+                Log.Debug($"{nameof(GetStreamQuotesRichRateLimit)}.IsCancellationRequested: {cancellationTokenSource.IsCancellationRequested}");
+            } while (subscriptionTryCounter-- > 0);
         }
 
         private TradeStationApiClient CreateTradeStationApiClient()
