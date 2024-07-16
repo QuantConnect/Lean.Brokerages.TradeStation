@@ -51,7 +51,7 @@ namespace QuantConnect.Brokerages.TradeStation;
 public partial class TradeStationBrokerage : Brokerage
 {
     /// <inheritdoc cref="TradeStationApiClient" />
-    private readonly TradeStationApiClient _tradeStationApiClient;
+    private TradeStationApiClient _tradeStationApiClient;
 
     /// <inheritdoc cref="TradeStationSymbolMapper" />
     private TradeStationSymbolMapper _symbolMapper;
@@ -85,7 +85,7 @@ public partial class TradeStationBrokerage : Brokerage
     private ConcurrentDictionary<string, bool> _updateSubmittedResponseResultByBrokerageID = new();
 
     /// <inheritdoc cref="ISecurityProvider"/>
-    private ISecurityProvider _securityProvider { get; }
+    protected ISecurityProvider SecurityProvider { get; private set; }
 
     /// <inheritdoc cref="BrokerageConcurrentMessageHandler{T}"/>
     private BrokerageConcurrentMessageHandler<string> _messageHandler;
@@ -99,6 +99,13 @@ public partial class TradeStationBrokerage : Brokerage
     /// Returns true if we're currently connected to the broker
     /// </summary>
     public override bool IsConnected { get => _isSubscribeOnStreamOrderUpdate; }
+
+    /// <summary>
+    /// Parameterless constructor for brokerage
+    /// </summary>
+    public TradeStationBrokerage() : base("TradeStation")
+    {
+    }
 
     /// <summary>
     /// Constructor for the TradeStation brokerage.
@@ -163,7 +170,13 @@ public partial class TradeStationBrokerage : Brokerage
         string authorizationCode, string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider, IDataAggregator aggregator)
         : base("TradeStation")
     {
-        _securityProvider = securityProvider;
+        Initialize(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider, aggregator);
+    }
+
+    protected void Initialize(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl, string authorizationCode,
+        string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider, IDataAggregator aggregator)
+    {
+        SecurityProvider = securityProvider;
         _aggregator = aggregator;
         OrderProvider = orderProvider;
         _symbolMapper = new TradeStationSymbolMapper();
@@ -305,7 +318,7 @@ public partial class TradeStationBrokerage : Brokerage
         var result = default(bool);
         _messageHandler.WithLockedStream(() =>
         {
-            var holdingQuantity = _securityProvider.GetHoldingsQuantity(order.Symbol);
+            var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol);
 
             var isPlaceCrossOrder = TryCrossZeroPositionOrder(order, holdingQuantity);
 
@@ -415,7 +428,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// <returns>True if the request was made for the order to be updated, false otherwise</returns>
     public override bool UpdateOrder(Order order)
     {
-        var holdingQuantity = _securityProvider.GetHoldingsQuantity(order.Symbol);
+        var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol);
 
         if (!TryGetUpdateCrossZeroOrderQuantity(order, out var orderQuantity))
         {

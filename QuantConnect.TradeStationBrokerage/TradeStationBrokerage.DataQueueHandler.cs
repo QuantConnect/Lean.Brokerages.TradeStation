@@ -16,12 +16,14 @@
 using System;
 using System.Linq;
 using System.Threading;
+using QuantConnect.Util;
 using QuantConnect.Data;
 using QuantConnect.Packets;
 using QuantConnect.Logging;
 using System.Threading.Tasks;
 using QuantConnect.Interfaces;
 using QuantConnect.Data.Market;
+using QuantConnect.Configuration;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using QuantConnect.Brokerages.TradeStation.Models;
@@ -86,7 +88,27 @@ public partial class TradeStationBrokerage : IDataQueueHandler
     /// <inheritdoc cref="IDataQueueHandler.SetJob(LiveNodePacket)"/>
     public void SetJob(LiveNodePacket job)
     {
-        throw new NotImplementedException();
+        var aggregator = Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(
+            Config.Get("data-aggregator", "QuantConnect.Lean.Engine.DataFeeds.AggregationManager"),
+            forceTypeNameOnExisting: false);
+
+        Initialize(
+            apiKey: job.BrokerageData["trade-station-api-key"],
+            apiKeySecret: job.BrokerageData.TryGetValue("trade-station-api-secret", out var apiKeySecret) ? apiKeySecret : null,
+            restApiUrl: job.BrokerageData["trade-station-api-url"],
+            redirectUrl: job.BrokerageData.TryGetValue("trade-station-redirect-url", out var redirectUrl) ? redirectUrl : string.Empty,
+            authorizationCode: job.BrokerageData.TryGetValue("trade-station-authorization-code", out var authorizationCode) ? authorizationCode : string.Empty,
+            refreshToken: job.BrokerageData.TryGetValue("trade-station-refresh-token", out var refreshToken) ? refreshToken : string.Empty,
+            accountType: job.BrokerageData["trade-station-account-type"],
+            orderProvider: null,
+            securityProvider: null,
+            aggregator: aggregator
+        );
+
+        if (!IsConnected)
+        {
+            Connect();
+        }
     }
 
     /// <inheritdoc cref="IDataQueueHandler.Subscribe(SubscriptionDataConfig, EventHandler)"/>
