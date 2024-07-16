@@ -145,30 +145,33 @@ public partial class TradeStationBrokerage : IDataQueueHandler
     /// </summary>
     private void SubscribeOnTickUpdateEvents()
     {
-        // Avoid duplicate subscriptions by checking if a subscription is already in progress
-        if (_subscriptionsPending)
-        {
-            return;
-        }
-
         lock (_streamingTaskLock)
         {
+            if (_subscriptionsPending)
+            {
+                // Avoid duplicate subscriptions by checking if a subscription is already in progress
+                return;
+            }
             _subscriptionsPending = true;
-            StopQuoteStreamingTask();
         }
+        StopQuoteStreamingTask();
 
         _quoteStreamingTask = Task.Factory.StartNew(async () =>
         {
             // Wait for a specified delay to batch multiple symbol subscriptions into a single request
             await Task.Delay(_subscribeDelay).ConfigureAwait(false);
 
-            var brokeragesSymbolsToSubscribe = _orderBooks.Keys.ToList().AsReadOnly();
-            var isReturnQuote = default(bool);
-
-            // If there are no symbols to subscribe to, exit the task
-            if (brokeragesSymbolsToSubscribe.Count == 0)
+            List<string> brokerageTickers;
+            lock (_streamingTaskLock)
             {
-                return;
+                _subscriptionsPending = false;
+                brokerageTickers = _orderBooks.Keys.ToList();
+                if (brokerageTickers.Count == 0)
+                {
+                    // If there are no symbols to subscribe to, exit the task
+                    Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdateEvents)}: No symbols to subscribe to at this time. Exiting subscription task.");
+                    return;
+                }
             }
 
             while (!_streamQuoteCancellationTokenSource.IsCancellationRequested)
@@ -177,15 +180,8 @@ public partial class TradeStationBrokerage : IDataQueueHandler
                 try
                 {
                     // Stream quotes from the TradeStation API and handle each quote event
-                    await foreach (var quote in _tradeStationApiClient.StreamQuotes(brokeragesSymbolsToSubscribe, _streamQuoteCancellationTokenSource.Token))
+                    await foreach (var quote in _tradeStationApiClient.StreamQuotes(brokerageTickers, _streamQuoteCancellationTokenSource.Token))
                     {
-                        // Reset the subscription pending flag once the first quote is received
-                        if (!isReturnQuote)
-                        {
-                            isReturnQuote = true;
-                            _subscriptionsPending = false;
-                        }
-
                         HandleQuoteEvents(quote);
                     }
                 }
@@ -195,8 +191,6 @@ public partial class TradeStationBrokerage : IDataQueueHandler
                 }
                 Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdateEvents)}: Connection lost. Reconnecting in 10 seconds...");
                 _streamQuoteCancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(10));
-                // Refresh the list of symbols from the order books for reconnection
-                brokeragesSymbolsToSubscribe = _orderBooks.Keys.ToList().AsReadOnly();
             }
             // Signal that the quote streaming task is ending
             _quoteStreamEndingAutoResetEvent.Set();
@@ -233,6 +227,10 @@ public partial class TradeStationBrokerage : IDataQueueHandler
             {
                 EmitTradeTick(orderBook.Symbol, quote.Last, quote.LastSize, quote.TradeTime);
             }
+        }
+        else
+        {
+            Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(HandleQuoteEvents)}: Symbol {quote.Symbol} not found in order books. This could indicate an unexpected symbol or a missing initialization step.");
         }
     }
 
@@ -311,7 +309,6 @@ public partial class TradeStationBrokerage : IDataQueueHandler
         if (_orderBooks.TryRemove(brokerageSymbol, out var orderBook))
         {
             orderBook.BestBidAskUpdated -= OnBestBidAskUpdated;
-            orderBook.Clear();
         }
     }
 
