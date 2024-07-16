@@ -221,7 +221,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             }
         }
 
-        [Test, Explicit("Not implemented IDataQueueUniverseProvider")]
+        [Test]
         public void LookupSymbols()
         {
             var option = Symbol.CreateCanonicalOption(Symbols.AAPL);
