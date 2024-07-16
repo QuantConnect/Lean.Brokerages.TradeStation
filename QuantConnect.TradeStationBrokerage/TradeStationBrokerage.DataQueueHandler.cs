@@ -140,8 +140,12 @@ public partial class TradeStationBrokerage : IDataQueueHandler
         return true;
     }
 
+    /// <summary>
+    /// Subscribes to tick update events and handles the streaming of quote updates.
+    /// </summary>
     private void SubscribeOnTickUpdateEvents()
     {
+        // Avoid duplicate subscriptions by checking if a subscription is already in progress
         if (_subscriptionsPending)
         {
             return;
@@ -155,11 +159,13 @@ public partial class TradeStationBrokerage : IDataQueueHandler
 
         _quoteStreamingTask = Task.Factory.StartNew(async () =>
         {
+            // Wait for a specified delay to batch multiple symbol subscriptions into a single request
             await Task.Delay(_subscribeDelay).ConfigureAwait(false);
 
             var brokeragesSymbolsToSubscribe = _orderBooks.Keys.ToList().AsReadOnly();
-
             var isReturnQuote = default(bool);
+
+            // If there are no symbols to subscribe to, exit the task
             if (brokeragesSymbolsToSubscribe.Count == 0)
             {
                 return;
@@ -170,8 +176,10 @@ public partial class TradeStationBrokerage : IDataQueueHandler
                 Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdateEvents)}: Starting to listen for tick updates...");
                 try
                 {
+                    // Stream quotes from the TradeStation API and handle each quote event
                     await foreach (var quote in _tradeStationApiClient.StreamQuotes(brokeragesSymbolsToSubscribe, _streamQuoteCancellationTokenSource.Token))
                     {
+                        // Reset the subscription pending flag once the first quote is received
                         if (!isReturnQuote)
                         {
                             isReturnQuote = true;
@@ -187,12 +195,18 @@ public partial class TradeStationBrokerage : IDataQueueHandler
                 }
                 Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdateEvents)}: Connection lost. Reconnecting in 10 seconds...");
                 _streamQuoteCancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(10));
+                // Refresh the list of symbols from the order books for reconnection
                 brokeragesSymbolsToSubscribe = _orderBooks.Keys.ToList().AsReadOnly();
             }
+            // Signal that the quote streaming task is ending
             _quoteStreamEndingAutoResetEvent.Set();
         }, _streamQuoteCancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
     }
 
+    /// <summary>
+    /// Handles incoming quote events and updates the order books accordingly.
+    /// </summary>
+    /// <param name="quote">The incoming quote containing bid, ask, and trade information.</param>
     private void HandleQuoteEvents(Quote quote)
     {
         if (_orderBooks.TryGetValue(quote.Symbol, out var orderBook))
@@ -222,6 +236,13 @@ public partial class TradeStationBrokerage : IDataQueueHandler
         }
     }
 
+    /// <summary>
+    /// Emits a trade tick with the provided details and updates the aggregator.
+    /// </summary>
+    /// <param name="symbol">The symbol of the traded instrument.</param>
+    /// <param name="price">The trade price.</param>
+    /// <param name="size">The trade size.</param>
+    /// <param name="tradeTime">The time of the trade.</param>
     private void EmitTradeTick(Symbol symbol, decimal price, decimal size, DateTime tradeTime)
     {
         var tradeTick = new Tick
@@ -239,17 +260,22 @@ public partial class TradeStationBrokerage : IDataQueueHandler
         }
     }
 
-    private void OnBestBidAskUpdated(object sender, BestBidAskUpdatedEventArgs e)
+    /// <summary>
+    /// Handles updates to the best bid and ask prices and updates the aggregator with a new quote tick.
+    /// </summary>
+    /// <param name="sender">The source of the event.</param>
+    /// <param name="bestBidAskUpdatedEvent">The event arguments containing best bid and ask details.</param>
+    private void OnBestBidAskUpdated(object sender, BestBidAskUpdatedEventArgs bestBidAskUpdatedEvent)
     {
         var tick = new Tick
         {
-            AskPrice = e.BestAskPrice,
-            BidPrice = e.BestBidPrice,
+            AskPrice = bestBidAskUpdatedEvent.BestAskPrice,
+            BidPrice = bestBidAskUpdatedEvent.BestBidPrice,
             Time = DateTime.UtcNow,
-            Symbol = e.Symbol,
+            Symbol = bestBidAskUpdatedEvent.Symbol,
             TickType = TickType.Quote,
-            AskSize = e.BestAskSize,
-            BidSize = e.BestBidSize
+            AskSize = bestBidAskUpdatedEvent.BestAskSize,
+            BidSize = bestBidAskUpdatedEvent.BestBidSize
         };
         tick.SetValue();
 
@@ -312,7 +338,6 @@ public partial class TradeStationBrokerage : IDataQueueHandler
                 {
                     Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(StopQuoteStreamingTask)}: TimeOut waiting for Quote Streaming Task to end.");
                 }
-                Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(StopQuoteStreamingTask)}._quoteStreamEndingAutoResetEvent = {_quoteStreamEndingAutoResetEvent}");
             }
             catch (Exception ex)
             {
