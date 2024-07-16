@@ -118,28 +118,29 @@ public partial class TradeStationBrokerageTests
                     configBySymbol[symbol] = existingConfigs;
                 }
 
-                ProcessFeed(_brokerage.Subscribe(config, (s, e) => { }), cancelationToken, (baseData) =>
-                {
-                    if (baseData != null)
+                ProcessFeed(_brokerage.Subscribe(config, (s, e) => { }), cancelationToken.Token, callback:
+                    (baseData) =>
                     {
-                        Log.Trace($"Data received: {baseData}");
-                        lock (lockObject)
+                        if (baseData != null)
                         {
-                            amountDataBySymbol.AddOrUpdate(baseData.Symbol, 1, (k, o) => o + 1);
-
-                            if (amountDataBySymbol.Count == 100)
+                            Log.Trace($"Data received: {baseData}");
+                            lock (lockObject)
                             {
-                                resetEvent.Set();
+                                amountDataBySymbol.AddOrUpdate(baseData.Symbol, 1, (k, o) => o + 1);
+
+                                if (amountDataBySymbol.Count == 100)
+                                {
+                                    resetEvent.Set();
+                                }
                             }
                         }
-                    }
-                });
+                    });
             }
         }
 
-        resetEvent.WaitOne(TimeSpan.FromSeconds(60), cancelationToken.Token);
+        resetEvent.WaitOne(TimeSpan.FromSeconds(30), cancelationToken.Token);
 
-        foreach (var configs in configBySymbol.Values.Take(50))
+        foreach (var configs in configBySymbol.Values.Take(subscribeAmount - 2))
         {
             foreach(var config in configs)
             {
@@ -147,11 +148,13 @@ public partial class TradeStationBrokerageTests
             }
         }
 
+        amountDataBySymbol.Clear();
+
         Log.Debug($"{nameof(TradeStationBrokerageTests)}.{nameof(MultipleSubscription)}.1.amountDataBySymbol.Count = {amountDataBySymbol.Count}");
 
         resetEvent.WaitOne(TimeSpan.FromSeconds(60), cancelationToken.Token);
 
-        foreach (var configs in configBySymbol.Values.Skip(50))
+        foreach (var configs in configBySymbol.Values.Skip(subscribeAmount - 2))
         {
             foreach (var config in configs)
             {

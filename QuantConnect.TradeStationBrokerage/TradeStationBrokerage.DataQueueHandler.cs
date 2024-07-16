@@ -60,19 +60,9 @@ public partial class TradeStationBrokerage : IDataQueueHandler
     private readonly AutoResetEvent _quoteStreamEndingAutoResetEvent = new(false);
 
     /// <summary>
-    /// Display that stream quote task was started great
-    /// </summary>
-    private readonly ManualResetEvent _quoteStreamStartingManualResetEvent = new(false);
-
-    /// <summary>
     /// Indicates whether there are any pending subscription processes.
     /// </summary>
     private bool _subscriptionsPending;
-
-    /// <summary>
-    /// Stores the timestamp of the last subscription request in UTC.
-    /// </summary>
-    private DateTime _lastSubscribeRequestUtcTime = default;
 
     /// <summary>
     /// Specifies the delay interval between subscription attempts.
@@ -131,7 +121,7 @@ public partial class TradeStationBrokerage : IDataQueueHandler
         {
             AddOrderBook(symbol);
         }
-        SubscribeOnTickUpdate();
+        SubscribeOnTickUpdateEvents();
         return true;
     }
 
@@ -146,113 +136,61 @@ public partial class TradeStationBrokerage : IDataQueueHandler
         {
             RemoveOrderBook(symbol);
         }
-        SubscribeOnTickUpdate();
+        SubscribeOnTickUpdateEvents();
         return true;
     }
 
-    private void SubscribeOnTickUpdate()
+    private void SubscribeOnTickUpdateEvents()
     {
-        Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdate)}.1._subscriptionsPending = {_subscriptionsPending}");
-
         if (_subscriptionsPending)
         {
-            Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdate)}.2._subscriptionsPending = {_subscriptionsPending}");
             return;
         }
 
         lock (_streamingTaskLock)
         {
-            _lastSubscribeRequestUtcTime = DateTime.UtcNow;
             _subscriptionsPending = true;
+            StopQuoteStreamingTask();
         }
-        Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdate)}.3._subscriptionsPending = {_subscriptionsPending}");
 
-        Task.Run(async () =>
+        _quoteStreamingTask = Task.Factory.StartNew(async () =>
         {
-            while (true)
+            await Task.Delay(_subscribeDelay).ConfigureAwait(false);
+
+            var brokeragesSymbolsToSubscribe = _orderBooks.Keys.ToList().AsReadOnly();
+
+            var isReturnQuote = default(bool);
+            if (brokeragesSymbolsToSubscribe.Count == 0)
             {
-                var requestTime = default(DateTime);
-                var brokeragesSymbolsToSubscribe = default(List<string>);
-
-                lock (_streamingTaskLock)
-                {
-                    requestTime = _lastSubscribeRequestUtcTime.Add(_subscribeDelay);
-                    Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdate)}.requestTime = {requestTime}");
-
-                    StopQuoteStreamingTask();
-
-                    brokeragesSymbolsToSubscribe = SubscriptionManager.GetSubscribedSymbols().Select(s => _symbolMapper.GetBrokerageSymbol(s)).ToList();
-                }
-
-                var delayMilliseconds = default(int);
-                var timeToWait = requestTime - DateTime.UtcNow;
-                Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdate)}.timeToWait = {timeToWait}");
-
-                if (timeToWait <= TimeSpan.Zero)
-                {
-                    if (brokeragesSymbolsToSubscribe.Count == 0)
-                    {
-                        _subscriptionsPending = false;
-                        Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdate)}.brokeragesSymbols.Count = {brokeragesSymbolsToSubscribe.Count}");
-                        break;
-                    }
-
-                    Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdate)}.Subscribe on {brokeragesSymbolsToSubscribe.Count} symbols.");
-                    _quoteStreamingTask = Task.Factory.StartNew(async () =>
-                    {
-                        while (!_streamQuoteCancellationTokenSource.IsCancellationRequested)
-                        {
-                            var isReturnQuote = default(bool);
-                            Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdate)}: Starting to listen for tick updates...");
-                            try
-                            {
-                                await foreach (var quote in _tradeStationApiClient.StreamQuotes(brokeragesSymbolsToSubscribe, _streamQuoteCancellationTokenSource.Token))
-                                {
-                                    if (!isReturnQuote)
-                                    {
-                                        isReturnQuote = true;
-                                        _quoteStreamStartingManualResetEvent.Set();
-                                    }
-                                    HandleQuoteEvents(quote);
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdate)}.Exception: {ex}");
-                            }
-                            _quoteStreamEndingAutoResetEvent.Set();
-                            Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdate)}._quoteStreamingAutoResetEvent.Set()");
-                            Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdate)}: Connection lost. Reconnecting in 10 seconds...");
-                            _streamQuoteCancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(10));
-                        }
-                    }, _streamQuoteCancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-
-                    if (!_quoteStreamStartingManualResetEvent.WaitOne(TimeSpan.FromSeconds(5)))
-                    {
-                        Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdate)}: TimeOut waiting for Quote Streaming Task to start.");
-                    }
-
-                    lock (_streamingTaskLock)
-                    {
-                        _lastSubscribeRequestUtcTime = DateTime.UtcNow;
-                        if (SubscriptionManager.GetSubscribedSymbols().Count() == brokeragesSymbolsToSubscribe.Count)
-                        {
-                            Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdate)}: Stop pending subscription process.");
-                            // no more subscriptions pending, task finished
-                            _subscriptionsPending = false;
-                            break;
-                        }
-                    }
-                    delayMilliseconds = _subscribeDelay.Milliseconds;
-                }
-                else
-                {
-                    delayMilliseconds = timeToWait.Milliseconds;
-                }
-
-                await Task.Delay(delayMilliseconds).ConfigureAwait(false);
+                return;
             }
-        });
+
+            while (!_streamQuoteCancellationTokenSource.IsCancellationRequested)
+            {
+                Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdateEvents)}: Starting to listen for tick updates...");
+                try
+                {
+                    await foreach (var quote in _tradeStationApiClient.StreamQuotes(brokeragesSymbolsToSubscribe, _streamQuoteCancellationTokenSource.Token))
+                    {
+                        if (!isReturnQuote)
+                        {
+                            isReturnQuote = true;
+                            _subscriptionsPending = false;
+                        }
+
+                        HandleQuoteEvents(quote);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdateEvents)}.Exception: {ex}");
+                }
+                Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdateEvents)}: Connection lost. Reconnecting in 10 seconds...");
+                _streamQuoteCancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(10));
+                brokeragesSymbolsToSubscribe = _orderBooks.Keys.ToList().AsReadOnly();
+            }
+            _quoteStreamEndingAutoResetEvent.Set();
+        }, _streamQuoteCancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
     }
 
     private void HandleQuoteEvents(Quote quote)
@@ -364,7 +302,7 @@ public partial class TradeStationBrokerage : IDataQueueHandler
     private void StopQuoteStreamingTask(bool updateCancellationToken = true)
     {
         Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(StopQuoteStreamingTask)}._quoteStreamingTask = {_quoteStreamingTask?.Status}");
-        if (_quoteStreamingTask != null && !_quoteStreamingTask.IsCompleted)
+        if (_quoteStreamingTask != null)
         {
             _streamQuoteCancellationTokenSource.Cancel();
             try
