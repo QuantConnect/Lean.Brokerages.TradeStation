@@ -29,7 +29,9 @@ public readonly struct TradeStationOrderResponse : ITradeStationError
     /// </summary>
     public IEnumerable<TradeStationOrder> Orders { get; }
 
-    /// <inheritdoc cref="ITradeStationError.Errors"/>
+    /// <summary>
+    /// Represents an error that occurred during the retrieval of trading account information.
+    /// </summary>
     public IEnumerable<TradeStationError> Errors { get; }
 
     /// <summary>
