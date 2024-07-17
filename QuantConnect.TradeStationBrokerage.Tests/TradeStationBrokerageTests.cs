@@ -70,10 +70,10 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 }
 
                 return new TradeStationBrokerageTest(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, string.Empty,
-                    accountType, orderProvider, securityProvider, new AggregationManager());
+                    accountType, orderProvider, securityProvider);
             }
 
-            return new TradeStationBrokerageTest(apiKey, apiKeySecret, restApiUrl, string.Empty, string.Empty, refreshToken, accountType, orderProvider, securityProvider, new AggregationManager());
+            return new TradeStationBrokerageTest(apiKey, apiKeySecret, restApiUrl, string.Empty, string.Empty, refreshToken, accountType, orderProvider, securityProvider);
         }
         protected override bool IsAsync()
         {
@@ -456,12 +456,10 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             /// <param name="accountType">The type of TradeStation account for the current session.
             /// For <see cref="TradeStationAccountType.Cash"/> or <seealso cref="TradeStationAccountType.Margin"/> accounts, it is used for trading <seealso cref="SecurityType.Equity"/> and <seealso cref="SecurityType.Option"/>.
             /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
-            /// <param name="aggregator">The Aggregates ticks and bars based on given subscriptions.</param>
             /// <param name="orderProvider">The order provider.</param>
             public TradeStationBrokerageTest(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl,
-                string authorizationCode, string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider,
-                IDataAggregator aggregator)
-                : base(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider, aggregator)
+                string authorizationCode, string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
+                : base(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider)
             { }
 
             /// <summary>

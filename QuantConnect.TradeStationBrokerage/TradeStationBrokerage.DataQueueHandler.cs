@@ -88,10 +88,6 @@ public partial class TradeStationBrokerage : IDataQueueHandler
     /// <inheritdoc cref="IDataQueueHandler.SetJob(LiveNodePacket)"/>
     public void SetJob(LiveNodePacket job)
     {
-        var aggregator = Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(
-            Config.Get("data-aggregator", "QuantConnect.Lean.Engine.DataFeeds.AggregationManager"),
-            forceTypeNameOnExisting: false);
-
         Initialize(
             apiKey: job.BrokerageData["trade-station-api-key"],
             apiKeySecret: job.BrokerageData.TryGetValue("trade-station-api-secret", out var apiKeySecret) ? apiKeySecret : null,
@@ -101,8 +97,7 @@ public partial class TradeStationBrokerage : IDataQueueHandler
             refreshToken: job.BrokerageData.TryGetValue("trade-station-refresh-token", out var refreshToken) ? refreshToken : string.Empty,
             accountType: job.BrokerageData["trade-station-account-type"],
             orderProvider: null,
-            securityProvider: null,
-            aggregator: aggregator
+            securityProvider: null
         );
 
         if (!IsConnected)

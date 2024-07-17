@@ -14,7 +14,6 @@
 */
 
 using System;
-using QuantConnect.Data;
 using QuantConnect.Util;
 using QuantConnect.Packets;
 using QuantConnect.Interfaces;
@@ -99,11 +98,7 @@ public class TradeStationBrokerageFactory : BrokerageFactory
 
         var refreshToken = Read<string>(job.BrokerageData, "trade-station-refresh-token", errors);
 
-        var aggregator = Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(
-            Config.Get("data-aggregator", "QuantConnect.Lean.Engine.DataFeeds.AggregationManager"),
-            forceTypeNameOnExisting: false);
-
-
+        var ts = default(TradeStationBrokerage);
         if (string.IsNullOrEmpty(refreshToken))
         {
             var authorizationCode = Read<string>(job.BrokerageData, "trade-station-authorization-code", errors);
@@ -114,10 +109,18 @@ public class TradeStationBrokerageFactory : BrokerageFactory
                 throw new ArgumentException("RedirectUrl or AuthorizationCode cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
             }
 
-            return new TradeStationBrokerage(apiKey, apiSecret, apiUrl, redirectUrl, authorizationCode, accountType, algorithm, aggregator);
+            // Case 1: authentication with using redirectUrl, authorizationCode
+            ts = new TradeStationBrokerage(apiKey, apiSecret, apiUrl, redirectUrl, authorizationCode, accountType, algorithm);
+        }
+        else
+        {
+            // Case 2: authentication with using refreshToken
+            ts = new TradeStationBrokerage(apiKey, apiSecret, apiUrl, refreshToken, accountType, algorithm);
         }
 
-        return new TradeStationBrokerage(apiKey, apiSecret, apiUrl, refreshToken, accountType, algorithm, aggregator);
+        Composer.Instance.AddPart<IDataQueueHandler>(ts);
+
+        return ts;
     }
 
     /// <summary>

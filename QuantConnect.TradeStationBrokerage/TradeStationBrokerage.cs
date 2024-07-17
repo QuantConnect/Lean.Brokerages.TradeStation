@@ -33,6 +33,7 @@ using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using QuantConnect.Orders.Fees;
 using System.Collections.Generic;
+using QuantConnect.Configuration;
 using System.Security.Cryptography;
 using System.Collections.Concurrent;
 using System.Net.NetworkInformation;
@@ -123,10 +124,9 @@ public partial class TradeStationBrokerage : Brokerage
     /// it is used for trading <seealso cref="SecurityType.Equity"/> and <seealso cref="SecurityType.Option"/>.
     /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
     /// <param name="algorithm">The algorithm instance is required to retrieve account type</param>
-    /// <param name="aggregator">The Aggregates ticks and bars based on given subscriptions.</param>
     public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl, string authorizationCode,
-        string accountType, IAlgorithm algorithm, IDataAggregator aggregator)
-        : this(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, string.Empty, accountType, algorithm?.Portfolio?.Transactions, algorithm?.Portfolio, aggregator)
+        string accountType, IAlgorithm algorithm)
+        : this(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, string.Empty, accountType, algorithm?.Portfolio?.Transactions, algorithm?.Portfolio)
     { }
 
     /// <summary>
@@ -144,9 +144,8 @@ public partial class TradeStationBrokerage : Brokerage
     /// it is used for trading <seealso cref="SecurityType.Equity"/> and <seealso cref="SecurityType.Option"/>.
     /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
     /// <param name="algorithm">The algorithm instance is required to retrieve account type</param>
-    /// <param name="aggregator">The Aggregates ticks and bars based on given subscriptions.</param>
-    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string refreshToken, string accountType, IAlgorithm algorithm, IDataAggregator aggregator)
-        : this(apiKey, apiKeySecret, restApiUrl, string.Empty, string.Empty, refreshToken, accountType, algorithm?.Portfolio?.Transactions, algorithm?.Portfolio, aggregator)
+    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string refreshToken, string accountType, IAlgorithm algorithm)
+        : this(apiKey, apiKeySecret, restApiUrl, string.Empty, string.Empty, refreshToken, accountType, algorithm?.Portfolio?.Transactions, algorithm?.Portfolio)
     { }
 
     /// <summary>
@@ -165,19 +164,18 @@ public partial class TradeStationBrokerage : Brokerage
     /// For <see cref="TradeStationAccountType.Cash"/> or <seealso cref="TradeStationAccountType.Margin"/> accounts, it is used for trading <seealso cref="SecurityType.Equity"/> and <seealso cref="SecurityType.Option"/>.
     /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
     /// <param name="orderProvider">The order provider.</param>
-    /// <param name="aggregator">The Aggregates ticks and bars based on given subscriptions.</param>
+    /// <param name="securityProvider">The type capable of fetching the holdings for the specified symbol</param>
     public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl,
-        string authorizationCode, string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider, IDataAggregator aggregator)
+        string authorizationCode, string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
         : base("TradeStation")
     {
-        Initialize(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider, aggregator);
+        Initialize(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider);
     }
 
     protected void Initialize(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl, string authorizationCode,
-        string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider, IDataAggregator aggregator)
+        string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
     {
         SecurityProvider = securityProvider;
-        _aggregator = aggregator;
         OrderProvider = orderProvider;
         _symbolMapper = new TradeStationSymbolMapper();
         _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl,
@@ -189,6 +187,15 @@ public partial class TradeStationBrokerage : Brokerage
             SubscribeImpl = (symbols, _) => Subscribe(symbols),
             UnsubscribeImpl = (symbols, _) => UnSubscribe(symbols)
         };
+
+        _aggregator = Composer.Instance.GetPart<IDataAggregator>();
+        if (_aggregator == null)
+        {
+            // toolbox downloader case
+            var aggregatorName = Config.Get("data-aggregator", "QuantConnect.Lean.Engine.DataFeeds.AggregationManager");
+            Log.Trace($"AlpacaBrokerage.AlpacaBrokerage(): found no data aggregator instance, creating {aggregatorName}");
+            _aggregator = Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(aggregatorName, forceTypeNameOnExisting: false);
+        }
 
         ValidateSubscription();
     }
