@@ -124,7 +124,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// <remarks>
     /// This constructor initializes a new instance of the TradeStationBrokerage class with the provided parameters.
     /// </remarks>
-    /// <param name="apiKey">The API key for authentication.</param>
+    /// <param name="clientId">The API key for authentication.</param>
     /// <param name="apiKeySecret">The API key secret for authentication.</param>
     /// <param name="restApiUrl">The URL of the REST API.</param>
     /// <param name="redirectUrl">The redirect URL to generate great link to get right "authorizationCodeFromUrl"</param>
@@ -134,9 +134,9 @@ public partial class TradeStationBrokerage : Brokerage
     /// it is used for trading <seealso cref="SecurityType.Equity"/> and <seealso cref="SecurityType.Option"/>.
     /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
     /// <param name="algorithm">The algorithm instance is required to retrieve account type</param>
-    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl, string authorizationCode,
+    public TradeStationBrokerage(string clientId, string apiKeySecret, string restApiUrl, string redirectUrl, string authorizationCode,
         string accountType, IAlgorithm algorithm)
-        : this(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, string.Empty, accountType, algorithm?.Portfolio?.Transactions, algorithm?.Portfolio)
+        : this(clientId, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, string.Empty, accountType, algorithm?.Portfolio?.Transactions, algorithm?.Portfolio)
     { }
 
     /// <summary>
@@ -164,8 +164,8 @@ public partial class TradeStationBrokerage : Brokerage
     /// <remarks>
     /// This constructor initializes a new instance of the TradeStationBrokerage class with the provided parameters.
     /// </remarks>
-    /// <param name="apiKey">The API key for authentication.</param>
-    /// <param name="apiKeySecret">The API key secret for authentication.</param>
+    /// <param name="clientId">The API key for authentication.</param>
+    /// <param name="clientSecret">The API key secret for authentication.</param>
     /// <param name="restApiUrl">The URL of the REST API.</param>
     /// <param name="redirectUrl">The redirect URL to generate great link to get right "authorizationCodeFromUrl"</param>
     /// <param name="authorizationCode">The authorization code obtained from the URL.</param>
@@ -175,20 +175,20 @@ public partial class TradeStationBrokerage : Brokerage
     /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
     /// <param name="orderProvider">The order provider.</param>
     /// <param name="securityProvider">The type capable of fetching the holdings for the specified symbol</param>
-    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl,
+    public TradeStationBrokerage(string clientId, string clientSecret, string restApiUrl, string redirectUrl,
         string authorizationCode, string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
         : base("TradeStation")
     {
-        Initialize(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider);
+        Initialize(clientId, clientSecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider);
     }
 
-    protected void Initialize(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl, string authorizationCode,
+    protected void Initialize(string clientId, string clientSecret, string restApiUrl, string redirectUrl, string authorizationCode,
         string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
     {
         SecurityProvider = securityProvider;
         OrderProvider = orderProvider;
         _symbolMapper = new TradeStationSymbolMapper();
-        _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl,
+        _tradeStationApiClient = new TradeStationApiClient(clientId, clientSecret, restApiUrl,
             TradeStationExtensions.ParseAccountType(accountType), refreshToken, redirectUrl, authorizationCode);
         _messageHandler = new(HandleTradeStationMessage);
 

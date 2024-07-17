@@ -37,10 +37,10 @@ public class TradeStationBrokerageFactory : BrokerageFactory
     /// </remarks>
     public override Dictionary<string, string> BrokerageData => new()
     {
-        { "trade-station-api-key", Config.Get("trade-station-api-key") },
+        { "trade-station-client-id", Config.Get("trade-station-client-id") },
         // Optional: The secret for the client application’s API Key. Required for standard Auth Code Flow. Not required for Auth Code Flow with PKCE.
         // https://api.tradestation.com/docs/fundamentals/authentication/refresh-tokens
-        { "trade-station-api-secret", Config.Get("trade-station-api-secret", "") },
+        { "trade-station-client-secret", Config.Get("trade-station-client-secret", "") },
         // The URL to connect to brokerage environment:
         // Simulator(SIM): https://sim-api.tradestation.com/v3
         // LIVE: https://api.tradestation.com/v3
@@ -79,12 +79,12 @@ public class TradeStationBrokerageFactory : BrokerageFactory
     {
         var errors = new List<string>();
 
-        var apiKey = Read<string>(job.BrokerageData, "trade-station-api-key", errors);
+        var clientId = Read<string>(job.BrokerageData, "trade-station-client-id", errors);
 
-        var apiSecret = default(string);
-        if (job.BrokerageData.ContainsKey("trade-station-api-secret"))
+        var clientSecret = default(string);
+        if (job.BrokerageData.ContainsKey("trade-station-client-secret"))
         {
-            apiSecret = Read<string>(job.BrokerageData, "trade-station-api-secret", errors);
+            clientSecret = Read<string>(job.BrokerageData, "trade-station-client-secret", errors);
         }
 
         var apiUrl = Read<string>(job.BrokerageData, "trade-station-api-url", errors);
@@ -110,12 +110,12 @@ public class TradeStationBrokerageFactory : BrokerageFactory
             }
 
             // Case 1: authentication with using redirectUrl, authorizationCode
-            ts = new TradeStationBrokerage(apiKey, apiSecret, apiUrl, redirectUrl, authorizationCode, accountType, algorithm);
+            ts = new TradeStationBrokerage(clientId, clientSecret, apiUrl, redirectUrl, authorizationCode, accountType, algorithm);
         }
         else
         {
             // Case 2: authentication with using refreshToken
-            ts = new TradeStationBrokerage(apiKey, apiSecret, apiUrl, refreshToken, accountType, algorithm);
+            ts = new TradeStationBrokerage(clientId, clientSecret, apiUrl, refreshToken, accountType, algorithm);
         }
 
         Composer.Instance.AddPart<IDataQueueHandler>(ts);

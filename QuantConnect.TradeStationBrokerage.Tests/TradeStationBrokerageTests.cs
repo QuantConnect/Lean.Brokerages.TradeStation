@@ -45,12 +45,12 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             var algorithm = new Mock<IAlgorithm>();
 
-            var apiKey = Config.Get("trade-station-api-key");
-            var apiKeySecret = Config.Get("trade-station-api-secret");
+            var clientId = Config.Get("trade-station-client-id");
+            var clientSecret = Config.Get("trade-station-client-secret");
             var restApiUrl = Config.Get("trade-station-api-url");
             var accountType = Config.Get("trade-station-account-type");
 
-            if (new string[] { apiKey, apiKeySecret, restApiUrl, accountType }.Any(string.IsNullOrEmpty))
+            if (new string[] { clientId, clientSecret, restApiUrl, accountType }.Any(string.IsNullOrEmpty))
             {
                 throw new ArgumentException("API key, secret, and URL cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
             }
@@ -67,11 +67,11 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                     throw new ArgumentException("RedirectUrl or AuthorizationCode cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
                 }
 
-                return new TradeStationBrokerageTest(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, string.Empty,
+                return new TradeStationBrokerageTest(clientId, clientSecret, restApiUrl, redirectUrl, authorizationCode, string.Empty,
                     accountType, orderProvider, securityProvider);
             }
 
-            return new TradeStationBrokerageTest(apiKey, apiKeySecret, restApiUrl, string.Empty, string.Empty, refreshToken, accountType, orderProvider, securityProvider);
+            return new TradeStationBrokerageTest(clientId, clientSecret, restApiUrl, string.Empty, string.Empty, refreshToken, accountType, orderProvider, securityProvider);
         }
         protected override bool IsAsync()
         {

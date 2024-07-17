@@ -59,7 +59,7 @@ public class TokenRefreshHandler : DelegatingHandler
     /// <remarks>
     /// In the documentation, this API Key is referred to as <c>client_id</c>.
     /// </remarks>
-    private readonly string _apiKey;
+    private readonly string _clientId;
 
     /// <summary>
     /// Represents the secret associated with the client application’s API Key for authentication.
@@ -67,7 +67,7 @@ public class TokenRefreshHandler : DelegatingHandler
     /// <remarks>
     /// In the documentation, this API Key is referred to as <c>client_secret</c>.
     /// </remarks>
-    private readonly string _apiKeySecret;
+    private readonly string _clientSecret;
 
     /// <summary>
     /// Represents the authorization code obtained from the URL during OAuth authentication.
@@ -94,19 +94,19 @@ public class TokenRefreshHandler : DelegatingHandler
     /// Initializes a new instance of the <see cref="TokenRefreshHandler"/> class with the specified parameters.
     /// </summary>
     /// <param name="innerHandler">The inner HTTP message handler.</param>
-    /// <param name="apiKey">The API Key used by the client application.</param>
-    /// <param name="apiKeySecret">The secret associated with the client application’s API Key.</param>
+    /// <param name="clientId">The API Key used by the client application.</param>
+    /// <param name="clientSecret">The secret associated with the client application’s API Key.</param>
     /// <param name="authorizationCodeFromUrl">The authorization code obtained during OAuth authentication.</param>
     /// <param name="baseSignInUrl">The base URL for signing in and obtaining authentication tokens.</param>
     /// <param name="redirectUri">The URI to which the user will be redirected after authentication.</param>
     /// <param name="refreshToken">Optional. The refresh token used to obtain a new access token when the current one expires.
     /// If provided explicitly through configuration, it can expedite development processes by avoiding constant requests for new refresh tokens.
     /// If omitted, the handler may automatically determine the need for refreshing based on the presence of the authorization code obtained from the URL during OAuth authentication.</param>
-    public TokenRefreshHandler(HttpMessageHandler innerHandler, string apiKey, string apiKeySecret, string authorizationCodeFromUrl, string baseSignInUrl,
+    public TokenRefreshHandler(HttpMessageHandler innerHandler, string clientId, string clientSecret, string authorizationCodeFromUrl, string baseSignInUrl,
         string redirectUri, string refreshToken) : base(innerHandler)
     {
-        _apiKey = apiKey;
-        _apiKeySecret = apiKeySecret;
+        _clientId = clientId;
+        _clientSecret = clientSecret;
         _redirectUri = redirectUri;
         _authorizationCodeFromUrl = authorizationCodeFromUrl;
         _baseSignInUrl = baseSignInUrl;
@@ -177,8 +177,8 @@ public class TokenRefreshHandler : DelegatingHandler
         var parameters = new Dictionary<string, string>
         {
             { "grant_type", "authorization_code" },
-            { "client_id", _apiKey },
-            { "client_secret", _apiKeySecret },
+            { "client_id", _clientId },
+            { "client_secret", _clientSecret },
             { "code", _authorizationCodeFromUrl },
             { "redirect_uri", _redirectUri },
         };
@@ -204,15 +204,15 @@ public class TokenRefreshHandler : DelegatingHandler
         var parameters = new Dictionary<string, string>
         {
             { "grant_type", "refresh_token" },
-            { "client_id", _apiKey },
+            { "client_id", _clientId },
             { "refresh_token", refreshToken }
         };
 
         // The secret for the client application’s API Key. Required for standard Auth Code Flow. Not required for Auth Code Flow with PKCE.
         // https://api.tradestation.com/docs/fundamentals/authentication/refresh-tokens
-        if (!string.IsNullOrEmpty(_apiKeySecret))
+        if (!string.IsNullOrEmpty(_clientSecret))
         {
-            parameters["client_secret"] = _apiKeySecret;
+            parameters["client_secret"] = _clientSecret;
         }
 
         var response = await SendSignInAsync(new FormUrlEncodedContent(parameters), cancellationToken);
