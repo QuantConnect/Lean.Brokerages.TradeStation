@@ -44,7 +44,7 @@ public partial class TradeStationBrokerage : IDataQueueUniverseProvider
     {
         if (!symbol.SecurityType.IsOption())
         {
-            Log.Error("The provided symbol is not an option. SecurityType: " + symbol.SecurityType);
+            Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(LookupSymbols)}: The provided symbol is not an option. SecurityType: " + symbol.SecurityType);
             return Enumerable.Empty<Symbol>();
         }
         var blockingOptionCollection = new BlockingCollection<Symbol>();
