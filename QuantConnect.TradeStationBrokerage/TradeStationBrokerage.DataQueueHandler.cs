@@ -14,6 +14,7 @@
 */
 
 using System;
+using NodaTime;
 using System.Linq;
 using System.Threading;
 using QuantConnect.Util;
@@ -21,9 +22,9 @@ using QuantConnect.Data;
 using QuantConnect.Packets;
 using QuantConnect.Logging;
 using System.Threading.Tasks;
+using QuantConnect.Securities;
 using QuantConnect.Interfaces;
 using QuantConnect.Data.Market;
-using QuantConnect.Configuration;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using QuantConnect.Brokerages.TradeStation.Models;
@@ -45,6 +46,15 @@ public partial class TradeStationBrokerage : IDataQueueHandler
     /// A thread-safe dictionary that stores the order books by brokerage symbols.
     /// </summary>
     private readonly ConcurrentDictionary<string, DefaultOrderBook> _orderBooks = new();
+
+    /// <summary>
+    /// A thread-safe dictionary that maps a <see cref="Symbol"/> to a <see cref="DateTimeZone"/>.
+    /// </summary>
+    /// <remarks>
+    /// This dictionary is used to store the time zone information for each symbol in a concurrent environment,
+    /// ensuring thread safety when accessing or modifying the time zone data.
+    /// </remarks>
+    private readonly ConcurrentDictionary<Symbol, DateTimeZone> _exchangeTimeZoneByLeanSymbol = new();
 
     /// <summary>
     /// Use like synchronization context for threads
@@ -260,10 +270,15 @@ public partial class TradeStationBrokerage : IDataQueueHandler
     /// <param name="tradeTime">The time of the trade.</param>
     private void EmitTradeTick(Symbol symbol, decimal price, decimal size, DateTime tradeTime)
     {
+        if (!_exchangeTimeZoneByLeanSymbol.TryGetValue(symbol, out var exchangeTimeZone))
+        {
+            return;
+        }
+
         var tradeTick = new Tick
         {
             Value = price,
-            Time = tradeTime,
+            Time = tradeTime.ConvertFromUtc(exchangeTimeZone),
             Symbol = symbol,
             TickType = TickType.Trade,
             Quantity = size
@@ -282,11 +297,16 @@ public partial class TradeStationBrokerage : IDataQueueHandler
     /// <param name="bestBidAskUpdatedEvent">The event arguments containing best bid and ask details.</param>
     private void OnBestBidAskUpdated(object sender, BestBidAskUpdatedEventArgs bestBidAskUpdatedEvent)
     {
+        if (!_exchangeTimeZoneByLeanSymbol.TryGetValue(bestBidAskUpdatedEvent.Symbol, out var exchangeTimeZone))
+        {
+            return;
+        }
+
         var tick = new Tick
         {
             AskPrice = bestBidAskUpdatedEvent.BestAskPrice,
             BidPrice = bestBidAskUpdatedEvent.BestBidPrice,
-            Time = DateTime.UtcNow,
+            Time = DateTime.UtcNow.ConvertFromUtc(exchangeTimeZone),
             Symbol = bestBidAskUpdatedEvent.Symbol,
             TickType = TickType.Quote,
             AskSize = bestBidAskUpdatedEvent.BestAskSize,
@@ -306,6 +326,9 @@ public partial class TradeStationBrokerage : IDataQueueHandler
     /// <param name="symbol">The symbol for which the order book is to be added.</param>
     private void AddOrderBook(Symbol symbol)
     {
+        var exchangeTimeZone = MarketHoursDatabase.FromDataFolder().GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType).TimeZone;
+        _exchangeTimeZoneByLeanSymbol[symbol] = exchangeTimeZone;
+
         var brokerageSymbol = _symbolMapper.GetBrokerageSymbol(symbol);
 
         if (!_orderBooks.TryGetValue(brokerageSymbol, out var orderBook))
@@ -321,6 +344,8 @@ public partial class TradeStationBrokerage : IDataQueueHandler
     /// <param name="symbol">The symbol for which the order book is to be removed.</param>
     private void RemoveOrderBook(Symbol symbol)
     {
+        _exchangeTimeZoneByLeanSymbol.Remove(symbol, out _);
+
         var brokerageSymbol = _symbolMapper.GetBrokerageSymbol(symbol);
 
         if (_orderBooks.TryRemove(brokerageSymbol, out var orderBook))
