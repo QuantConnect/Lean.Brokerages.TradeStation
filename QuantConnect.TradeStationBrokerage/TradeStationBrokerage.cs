@@ -51,10 +51,14 @@ namespace QuantConnect.Brokerages.TradeStation;
 [BrokerageFactory(typeof(TradeStationBrokerageFactory))]
 public partial class TradeStationBrokerage : Brokerage
 {
-    /// <inheritdoc cref="TradeStationApiClient" />
+    /// <summary>
+    /// TradeStation api client implementation
+    /// </summary>
     private TradeStationApiClient _tradeStationApiClient;
 
-    /// <inheritdoc cref="TradeStationSymbolMapper" />
+    /// <summary>
+    /// Provides the mapping between Lean symbols and brokerage specific symbols.
+    /// </summary>
     private TradeStationSymbolMapper _symbolMapper;
 
     /// <summary>
@@ -62,7 +66,9 @@ public partial class TradeStationBrokerage : Brokerage
     /// </summary>
     private bool _isSubscribeOnStreamOrderUpdate;
 
-    /// <inheritdoc cref="CancellationTokenSource"/>
+    /// <summary>
+    /// Signals to a <see cref="CancellationToken"/> that it should be canceled.
+    /// </summary>
     private readonly CancellationTokenSource _cancellationTokenSource = new();
 
     /// <summary>
@@ -85,10 +91,14 @@ public partial class TradeStationBrokerage : Brokerage
     /// </remarks>
     private ConcurrentDictionary<string, bool> _updateSubmittedResponseResultByBrokerageID = new();
 
-    /// <inheritdoc cref="ISecurityProvider"/>
+    /// <summary>
+    /// Represents a type capable of fetching the holdings for the specified symbol
+    /// </summary>
     protected ISecurityProvider SecurityProvider { get; private set; }
 
-    /// <inheritdoc cref="BrokerageConcurrentMessageHandler{T}"/>
+    /// <summary>
+    /// Brokerage helper class to lock message stream while executing an action, for example placing an order
+    /// </summary>
     private BrokerageConcurrentMessageHandler<string> _messageHandler;
 
     /// <summary>

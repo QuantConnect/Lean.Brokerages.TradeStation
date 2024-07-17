@@ -36,10 +36,14 @@ namespace QuantConnect.Brokerages.TradeStation;
 /// </summary>
 public partial class TradeStationBrokerage : IDataQueueHandler
 {
-    /// <inheritdoc cref="IDataAggregator"/>
+    /// <summary>
+    /// Aggregates ticks and bars based on given subscriptions.
+    /// </summary>
     protected IDataAggregator _aggregator;
 
-    /// <inheritdoc cref="DataQueueHandlerSubscriptionManager"/>
+    /// <summary>
+    /// Count number of subscribers for each channel (Symbol, Socket) pair
+    /// </summary>
     protected DataQueueHandlerSubscriptionManager SubscriptionManager { get; set; }
 
     /// <summary>
@@ -95,7 +99,10 @@ public partial class TradeStationBrokerage : IDataQueueHandler
     /// </remarks>
     private CancellationTokenSource _streamQuoteCancellationTokenSource = new();
 
-    /// <inheritdoc cref="IDataQueueHandler.SetJob(LiveNodePacket)"/>
+    /// <summary>
+    /// Sets the job we're subscribing for
+    /// </summary>
+    /// <param name="job">Job we're subscribing for</param>
     public void SetJob(LiveNodePacket job)
     {
         Initialize(
@@ -116,7 +123,12 @@ public partial class TradeStationBrokerage : IDataQueueHandler
         }
     }
 
-    /// <inheritdoc cref="IDataQueueHandler.Subscribe(SubscriptionDataConfig, EventHandler)"/>
+    /// <summary>
+    /// Subscribe to the specified configuration
+    /// </summary>
+    /// <param name="dataConfig">defines the parameters to subscribe to a data feed</param>
+    /// <param name="newDataAvailableHandler">handler to be fired on new data available</param>
+    /// <returns>The new enumerator for this subscription request</returns>
     public IEnumerator<BaseData> Subscribe(SubscriptionDataConfig dataConfig, EventHandler newDataAvailableHandler)
     {
         if (!CanSubscribe(dataConfig.Symbol))
@@ -130,7 +142,10 @@ public partial class TradeStationBrokerage : IDataQueueHandler
         return enumerator;
     }
 
-    /// <inheritdoc cref="IDataQueueHandler.Unsubscribe(SubscriptionDataConfig)"/>
+    /// <summary>
+    /// Removes the specified configuration
+    /// </summary>
+    /// <param name="dataConfig">Subscription config to be removed</param>
     public void Unsubscribe(SubscriptionDataConfig dataConfig)
     {
         SubscriptionManager.Unsubscribe(dataConfig);

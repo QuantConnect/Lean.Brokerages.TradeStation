@@ -25,7 +25,9 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
     [TestFixture]
     public class TradeStationBrokerageSymbolMapperTests
     {
-        /// <inheritdoc cref="TradeStationSymbolMapper"/>
+        /// <summary>
+        /// Provides the mapping between Lean symbols and brokerage specific symbols.
+        /// </summary>
         private TradeStationSymbolMapper _symbolMapper;
 
         [OneTimeSetUp]

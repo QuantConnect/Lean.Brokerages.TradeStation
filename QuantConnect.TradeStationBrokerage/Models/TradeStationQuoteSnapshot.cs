@@ -161,7 +161,9 @@ public readonly struct Quote
     /// </summary>
     public string Low52WeekTimestamp { get; }
 
-    /// <inheritdoc cref="MarketFlag"/>
+    /// <summary>
+    /// Market specific information for a symbol.
+    /// </summary>
     public MarketFlag MarketFlags { get; }
 
     /// <summary>

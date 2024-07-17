@@ -35,9 +35,14 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// <remarks>
     /// This HashSet contains the supported security types that are allowed within the system.
     /// </remarks>
-    public readonly HashSet<SecurityType> SupportedSecurityType = new (){ SecurityType.Equity, SecurityType.Option, SecurityType.Future };
+    public readonly HashSet<SecurityType> SupportedSecurityType = new() { SecurityType.Equity, SecurityType.Option, SecurityType.Future };
 
-    /// <inheritdoc cref="ISymbolMapper.GetBrokerageSymbol(Symbol)"/>
+    /// <summary>
+    /// Converts a Lean symbol instance to a brokerage symbol
+    /// </summary>
+    /// <param name="symbol">A Lean symbol instance</param>
+    /// <returns> The brokerage symbol</returns>
+    /// <exception cref="NotImplementedException">The lean security type is not implemented.</exception>
     public string GetBrokerageSymbol(Symbol symbol)
     {
         switch (symbol.SecurityType)
@@ -76,7 +81,17 @@ public class TradeStationSymbolMapper : ISymbolMapper
         return $"{symbol.Underlying.Value} {symbol.ID.Date:yyMMdd}{symbol.ID.OptionRight.ToString()[0]}{symbol.ID.StrikePrice}";
     }
 
-    /// <inheritdoc cref="ISymbolMapper.GetLeanSymbol(string, SecurityType, string, DateTime, decimal, OptionRight)"/>
+    /// <summary>
+    /// Converts a brokerage symbol to a Lean symbol instance
+    /// </summary>
+    /// <param name="brokerageSymbol">The brokerage symbol</param>
+    /// <param name="securityType">The security type</param>
+    /// <param name="market">The market</param>
+    /// <param name="expirationDate">Expiration date of the security(if applicable)</param>
+    /// <param name="strike">The strike of the security (if applicable)</param>
+    /// <param name="optionRight">The option right of the security (if applicable)</param>
+    /// <returns>A new Lean Symbol instance</returns>
+    /// <exception cref="NotImplementedException">The security type is not implemented or not supported.</exception>
     public Symbol GetLeanSymbol(string brokerageSymbol, SecurityType securityType, string market, DateTime expirationDate = default, decimal strike = 0, OptionRight optionRight = OptionRight.Call)
     {
         switch (securityType)
