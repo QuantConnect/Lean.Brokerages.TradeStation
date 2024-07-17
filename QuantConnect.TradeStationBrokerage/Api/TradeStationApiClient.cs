@@ -24,7 +24,6 @@ using QuantConnect.Util;
 using QuantConnect.Orders;
 using QuantConnect.Logging;
 using System.Threading.Tasks;
-using QuantConnect.Configuration;
 using System.Collections.Generic;
 using Lean = QuantConnect.Orders;
 using System.Runtime.CompilerServices;

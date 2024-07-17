@@ -18,7 +18,6 @@ using System;
 using System.Linq;
 using NUnit.Framework;
 using System.Threading;
-using QuantConnect.Data;
 using QuantConnect.Tests;
 using QuantConnect.Orders;
 using QuantConnect.Logging;
@@ -27,7 +26,6 @@ using QuantConnect.Securities;
 using QuantConnect.Configuration;
 using System.Collections.Generic;
 using QuantConnect.Tests.Brokerages;
-using QuantConnect.Lean.Engine.DataFeeds;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests
 {
