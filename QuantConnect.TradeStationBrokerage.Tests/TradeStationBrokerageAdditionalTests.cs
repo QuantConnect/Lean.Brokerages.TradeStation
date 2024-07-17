@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -17,9 +17,11 @@ using System;
 using System.Linq;
 using Newtonsoft.Json;
 using NUnit.Framework;
+using System.Threading;
 using QuantConnect.Logging;
 using System.Threading.Tasks;
 using QuantConnect.Configuration;
+using QuantConnect.Algorithm.CSharp;
 using QuantConnect.Brokerages.TradeStation.Api;
 using QuantConnect.Brokerages.TradeStation.Models;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
@@ -160,6 +162,75 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.Greater(quoteSnapshot.Quotes.First().AskSize, 0);
             Assert.Greater(quoteSnapshot.Quotes.First().Bid, 0);
             Assert.Greater(quoteSnapshot.Quotes.First().BidSize, 0);
+        }
+
+        [TestCase("AAPL,INTL,TSLA,NVDA", Description = "Equtities")]
+        [TestCase("AAPL,ESZ24", Description = "Equity|Future")]
+        [TestCase("AAPL 240719C215,AAPL 240719C220,AAPL 240719C225,SPY 240719C250,SPY 240719C255,SPY 240719C260", Description = "Option")]
+        public async Task GetStreamMarketData(string entranceSymbol)
+        {
+            Log.Debug($"{nameof(GetStreamMarketData)}: Starting...");
+
+            var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var locker = new object();
+            var tradeStationApiClient = CreateTradeStationApiClient();
+
+            var symbols = entranceSymbol.Split(',').ToDictionary(symbol => symbol, _ => 0);
+
+            await foreach (var quote in tradeStationApiClient.StreamQuotes(symbols.Keys, cancellationTokenSource.Token))
+            {
+                Assert.IsNotNull(quote);
+
+                Log.Debug($"{nameof(GetStreamMarketData)}.json: {quote}");
+
+                lock (locker)
+                {
+                    symbols[quote.Symbol] += 1;
+                }
+            }
+            Log.Debug($"{nameof(GetStreamMarketData)}.IsCancellationRequested: {cancellationTokenSource.IsCancellationRequested}");
+
+            Assert.IsTrue(symbols.All((symbol) => symbol.Value > 0));
+        }
+
+        [TestCase(5, 1)]
+        [TestCase(5, 100)]
+        [TestCase(5, 200)]
+        public async Task GetStreamQuotesRichRateLimit(int subscriptionTryCounter, int takeSymbolBeforeSubscriptionAmount)
+        {
+            Log.Debug($"{nameof(GetStreamQuotesRichRateLimit)}: Starting...");
+
+            var locker = new object();
+            var tradeStationApiClient = CreateTradeStationApiClient();
+
+            var takeAmount = takeSymbolBeforeSubscriptionAmount;
+            do
+            {
+                var symbols = StressSymbols.StockSymbols.Take(takeAmount).ToDictionary(symbol => symbol, _ => 0);
+                takeAmount++;
+                Log.Debug($"{nameof(GetStreamQuotesRichRateLimit)}: increase takeAmount = {takeAmount}");
+
+                var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+                await foreach (var quote in tradeStationApiClient.StreamQuotes(symbols.Keys, cancellationTokenSource.Token))
+                {
+                    Assert.IsNotNull(quote);
+                    Log.Debug($"{nameof(GetStreamQuotesRichRateLimit)}.json: {quote}");
+                }
+                Log.Debug($"{nameof(GetStreamQuotesRichRateLimit)}.IsCancellationRequested: {cancellationTokenSource.IsCancellationRequested}");
+            } while (subscriptionTryCounter-- > 0);
+        }
+
+        [TestCase("AAPL")]
+        public async Task GetOptionExpirations(string ticker)
+        {
+            var tradeStationApiClient = CreateTradeStationApiClient();
+
+            await foreach (var optionContract in tradeStationApiClient.GetOptionExpirationsAndStrikes(ticker))
+            {
+                Assert.That(optionContract.expirationDate, Is.Not.EqualTo(default(DateTime)));
+                Assert.Greater(optionContract.strikes.Count(), 0);
+            }
         }
 
         private TradeStationApiClient CreateTradeStationApiClient()

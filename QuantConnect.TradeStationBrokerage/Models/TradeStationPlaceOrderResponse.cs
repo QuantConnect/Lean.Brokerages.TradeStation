@@ -24,7 +24,9 @@ namespace QuantConnect.Brokerages.TradeStation.Models;
 /// </summary>
 public readonly struct TradeStationPlaceOrderResponse : ITradeStationError
 {
-    /// <inheritdoc cref="ITradeStationError.Errors"/>
+    /// <summary>
+    /// Represents an error that occurred during the retrieval of trading account information.
+    /// </summary>
     public IEnumerable<TradeStationError> Errors { get; }
 
     /// <summary>

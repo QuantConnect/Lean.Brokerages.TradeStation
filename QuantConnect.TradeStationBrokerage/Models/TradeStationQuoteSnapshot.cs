@@ -13,6 +13,7 @@
  * limitations under the License.
 */
 
+using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
@@ -160,7 +161,9 @@ public readonly struct Quote
     /// </summary>
     public string Low52WeekTimestamp { get; }
 
-    /// <inheritdoc cref="MarketFlag"/>
+    /// <summary>
+    /// Market specific information for a symbol.
+    /// </summary>
     public MarketFlag MarketFlags { get; }
 
     /// <summary>
@@ -207,7 +210,7 @@ public readonly struct Quote
     /// <summary>
     /// Time of the last trade.
     /// </summary>
-    public string TradeTime { get; }
+    public DateTime TradeTime { get; }
 
     /// <summary>
     /// Daily volume in shares/contracts.
@@ -269,7 +272,7 @@ public readonly struct Quote
     public Quote(decimal ask, decimal askSize, decimal bid, decimal bidSize, decimal close, string dailyOpenInterest, decimal high, decimal low,
         decimal high52Week, string high52WeekTimestamp, decimal last, decimal minPrice, decimal maxPrice, string firstNoticeDate, string lastTradingDate,
         decimal low52Week, string low52WeekTimestamp, MarketFlag marketFlags, string netChange, string netChangePct, decimal open, decimal previousClose,
-        decimal previousVolume, string[] restrictions, string symbol, string tickSizeTier, string tradeTime, decimal volume, decimal lastSize,
+        decimal previousVolume, string[] restrictions, string symbol, string tickSizeTier, DateTime tradeTime, decimal volume, decimal lastSize,
         string lastVenue, string VWAP)
     {
         Ask = ask;
@@ -303,6 +306,11 @@ public readonly struct Quote
         LastSize = lastSize;
         LastVenue = lastVenue;
         this.VWAP = VWAP;
+    }
+
+    public override string ToString()
+    {
+        return $"{Symbol}: Ask={Ask} (Size={AskSize}), Bid={Bid} (Size={BidSize}), Open={Open}, High={High}, Low={Low}, Close={Close}, Last Price={Last} (Size={LastSize}), Trade Time={TradeTime}, Daily Open Interest={DailyOpenInterest}";
     }
 }
 

@@ -24,7 +24,6 @@ using QuantConnect.Util;
 using QuantConnect.Orders;
 using QuantConnect.Logging;
 using System.Threading.Tasks;
-using QuantConnect.Configuration;
 using System.Collections.Generic;
 using Lean = QuantConnect.Orders;
 using System.Runtime.CompilerServices;
@@ -242,27 +241,38 @@ public class TradeStationApiClient
     /// <param name="cancellationToken">A token to cancel the asynchronous operation.</param>
     public async IAsyncEnumerable<string> StreamOrders([EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        using (var request = new HttpRequestMessage(HttpMethod.Get, $"{_baseUrl}/v3/brokerage/stream/accounts/{_accountID.Value}/orders"))
+        await foreach (var response in StreamRequestAsyncEnumerable($"{_baseUrl}/v3/brokerage/stream/accounts/{_accountID.Value}/orders", cancellationToken))
         {
-            using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
-            {
-                response.EnsureSuccessStatusCode();
+            yield return response;
+        }
+    }
 
-                using (var stream = await response.Content.ReadAsStreamAsync(cancellationToken))
-                {
-                    using (StreamReader reader = new StreamReader(stream))
-                    {
-                        Log.Trace($"{nameof(TradeStationApiClient)}.{nameof(StreamOrders)}: We are now starting to read the order stream.");
-                        while (!reader.EndOfStream)
-                        {
-                            var jsonLine = await reader.ReadLineAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
-                            if (jsonLine == null || cancellationToken.IsCancellationRequested) break;
-                            yield return jsonLine;
-                        }
-                        Log.Trace($"{nameof(TradeStationApiClient)}.{nameof(StreamOrders)}: We have completed reading the order stream.");
-                    }
-                }
+    /// <summary>
+    /// Asynchronously streams quotes for the specified symbols from the TradeStation API.
+    /// </summary>
+    /// <param name="symbols">A collection of symbols for which to stream quote data.</param>
+    /// <param name="cancellationToken">A token to cancel the asynchronous operation.</param>
+    /// <returns>
+    /// An asynchronous enumerable of <see cref="Quote"/> objects representing the streamed quote data.
+    /// </returns>
+    /// <remarks>
+    /// This method opens a stream to continuously receive quote updates for the specified symbols.
+    /// Each response is deserialized into a <see cref="Quote"/> object before being returned.
+    /// </remarks>
+    public async IAsyncEnumerable<Quote> StreamQuotes(IReadOnlyCollection<string> symbols, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await foreach (var response in StreamRequestAsyncEnumerable($"{_baseUrl}/v3/marketdata/stream/quotes/{string.Join(",", symbols)}", cancellationToken))
+        {
+            // Skip processing the heartbeat response as it only indicates the stream is alive
+            if (response.Contains("Heartbeat", StringComparison.InvariantCultureIgnoreCase))
+            {
+                continue;
             }
+            else if (response.Contains("GoAway", StringComparison.InvariantCultureIgnoreCase))
+            {
+                break;
+            }
+            yield return JsonConvert.DeserializeObject<Quote>(response);
         }
     }
 
@@ -292,6 +302,24 @@ public class TradeStationApiClient
     public async Task<string> GetAccountIDByAccountType(TradeStationAccountType accountType)
     {
         return (await GetAccounts()).Single(acc => acc.AccountType == accountType).AccountID;
+    }
+
+    /// <summary>
+    /// Retrieves option expirations and corresponding strikes for a given ticker symbol asynchronously.
+    /// </summary>
+    /// <param name="ticker">The ticker symbol for which option expirations and strikes are requested.</param>
+    /// <returns>
+    /// An asynchronous enumerable representing the operation. Each element in the sequence contains an expiration date and a collection of strikes associated with that expiration date.
+    /// </returns>
+    public async IAsyncEnumerable<(DateTime expirationDate, IEnumerable<decimal> strikes)> GetOptionExpirationsAndStrikes(string ticker)
+    {
+        var expirations = await GetOptionExpirations(ticker);
+
+        foreach (var expiration in expirations.Expirations)
+        {
+            var optionStrikes = await GetOptionStrikes(ticker, expiration.Date);
+            yield return (expiration.Date, optionStrikes.Strikes.SelectMany(x => x));
+        }
     }
 
     /// <summary>
@@ -434,6 +462,47 @@ public class TradeStationApiClient
             catch (Exception ex)
             {
                 throw new Exception(ex.Message);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Streams JSON lines from the specified request URI as an asynchronous enumerable sequence.
+    /// </summary>
+    /// <param name="requestUri">The URI to which the GET request is sent.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>An asynchronous enumerable sequence of JSON lines from the response.</returns>
+    /// <exception cref="HttpRequestException">Thrown when the HTTP response status code does not indicate success.</exception>
+    /// <exception cref="TaskCanceledException">Thrown if the operation is canceled.</exception>
+    /// <exception cref="OperationCanceledException">Thrown if the operation is canceled via the <paramref name="cancellationToken"/>.</exception>
+    /// <remarks>
+    /// This method sends an HTTP GET request to the specified URI and streams the response content line by line. 
+    /// It ensures that the HTTP response is successful and then reads the response stream asynchronously.
+    /// Each line from the response is yielded as a string.
+    /// 
+    /// The <paramref name="cancellationToken"/> can be used to cancel the operation at any time. 
+    /// If the cancellation is requested, the method will stop reading and yielding lines.
+    /// </remarks>
+    private async IAsyncEnumerable<string> StreamRequestAsyncEnumerable(string requestUri, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        using (var request = new HttpRequestMessage(HttpMethod.Get, requestUri))
+        {
+            using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
+            {
+                response.EnsureSuccessStatusCode();
+
+                using (var stream = await response.Content.ReadAsStreamAsync(cancellationToken))
+                {
+                    using (StreamReader reader = new StreamReader(stream))
+                    {
+                        while (!reader.EndOfStream)
+                        {
+                            var jsonLine = await reader.ReadLineAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
+                            if (jsonLine == null || cancellationToken.IsCancellationRequested) break;
+                            yield return jsonLine;
+                        }
+                    }
+                }
             }
         }
     }

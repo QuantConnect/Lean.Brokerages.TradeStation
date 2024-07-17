@@ -35,7 +35,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// <summary>
         /// Gets the TradeStationBrokerageTest instance from the Brokerage.
         /// </summary>
-        private TradeStationBrokerageTest _brokerage => Brokerage as TradeStationBrokerageTest;
+        protected TradeStationBrokerageTest _brokerage => Brokerage as TradeStationBrokerageTest;
 
         protected override Symbol Symbol { get; } = Symbols.AAPL;
 
@@ -106,6 +106,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             get
             {
+                TestGlobals.Initialize();
                 var INTL = Symbol.Create("INTL", SecurityType.Equity, Market.USA);
                 yield return new TestCaseData(new LimitOrderTestParameters(INTL, 23m, 22m)).SetCategory("Equity").SetName("INTL|EQUITY|LIMIT");
                 yield return new TestCaseData(new StopMarketOrderTestParameters(INTL, 23m, 22m)).SetCategory("Equity").SetName("INTL|EQUITY|STOPMARKET");
@@ -116,7 +117,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 yield return new TestCaseData(new StopMarketOrderTestParameters(AAPLOption, 15.1m, 15.1m)).SetCategory("Option").SetName("AAPL|OPTION|STOPMARKET");
                 yield return new TestCaseData(new StopLimitOrderTestParameters(AAPLOption, 15.1m, 15.1m)).SetCategory("Option").SetName("AAPL|OPTION|STOPLIMIT");
 
-                var COTTON = Symbol.CreateFuture(Futures.Softs.Cotton2, Market.USA, new DateTime(2024, 7, 1));
+                var COTTON = Symbol.CreateFuture(Futures.Softs.Cotton2, Market.ICE, new DateTime(2024, 7, 1));
                 yield return new TestCaseData(new LimitOrderTestParameters(COTTON, 72m, 70m)).SetCategory("Future").SetName("COTTON|FUTURE|LIMIT").Explicit("At the first, setup specific `trade-station-account-type` in config file.");
                 yield return new TestCaseData(new StopMarketOrderTestParameters(COTTON, 72m, 70m)).SetCategory("Future").SetName("COTTON|FUTURE|STOPMARKET").Explicit("At the first, setup specific `trade-station-account-type` in config file.");
                 yield return new TestCaseData(new StopLimitOrderTestParameters(COTTON, 72m, 72m)).SetCategory("Future").SetName("COTTON|FUTURE|STOPLIMIT").Explicit("At the first, setup specific `trade-station-account-type` in config file.");
@@ -218,7 +219,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             }
         }
 
-        [Test, Explicit("Not implemented IDataQueueUniverseProvider")]
+        [Test]
         public void LookupSymbols()
         {
             var option = Symbol.CreateCanonicalOption(Symbols.AAPL);

@@ -33,7 +33,9 @@ public readonly struct TradeStationPosition : ITradeStationError
     [JsonProperty("Positions")]
     public IEnumerable<Position> Positions { get; }
 
-    /// <inheritdoc cref="ITradeStationError.Errors"/>
+    /// <summary>
+    /// Represents an error that occurred during the retrieval of trading account information.
+    /// </summary>
     [JsonProperty("Errors")]
     public IEnumerable<TradeStationError> Errors { get; }
 

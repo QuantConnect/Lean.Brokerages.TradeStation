@@ -23,6 +23,7 @@ using Newtonsoft.Json;
 using QuantConnect.Api;
 using System.Threading;
 using QuantConnect.Util;
+using QuantConnect.Data;
 using QuantConnect.Orders;
 using Newtonsoft.Json.Linq;
 using System.Globalization;
@@ -32,6 +33,7 @@ using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using QuantConnect.Orders.Fees;
 using System.Collections.Generic;
+using QuantConnect.Configuration;
 using System.Security.Cryptography;
 using System.Collections.Concurrent;
 using System.Net.NetworkInformation;
@@ -43,13 +45,20 @@ using QuantConnect.Brokerages.TradeStation.Models.Enums;
 
 namespace QuantConnect.Brokerages.TradeStation;
 
+/// <summary>
+/// Represents the TradeStation Brokerage implementation.
+/// </summary>
 [BrokerageFactory(typeof(TradeStationBrokerageFactory))]
-public class TradeStationBrokerage : Brokerage
+public partial class TradeStationBrokerage : Brokerage
 {
-    /// <inheritdoc cref="TradeStationApiClient" />
-    private readonly TradeStationApiClient _tradeStationApiClient;
+    /// <summary>
+    /// TradeStation api client implementation
+    /// </summary>
+    private TradeStationApiClient _tradeStationApiClient;
 
-    /// <inheritdoc cref="TradeStationSymbolMapper" />
+    /// <summary>
+    /// Provides the mapping between Lean symbols and brokerage specific symbols.
+    /// </summary>
     private TradeStationSymbolMapper _symbolMapper;
 
     /// <summary>
@@ -57,7 +66,9 @@ public class TradeStationBrokerage : Brokerage
     /// </summary>
     private bool _isSubscribeOnStreamOrderUpdate;
 
-    /// <inheritdoc cref="CancellationTokenSource"/>
+    /// <summary>
+    /// Signals to a <see cref="CancellationToken"/> that it should be canceled.
+    /// </summary>
     private readonly CancellationTokenSource _cancellationTokenSource = new();
 
     /// <summary>
@@ -80,10 +91,14 @@ public class TradeStationBrokerage : Brokerage
     /// </remarks>
     private ConcurrentDictionary<string, bool> _updateSubmittedResponseResultByBrokerageID = new();
 
-    /// <inheritdoc cref="ISecurityProvider"/>
-    private ISecurityProvider _securityProvider { get; }
+    /// <summary>
+    /// Represents a type capable of fetching the holdings for the specified symbol
+    /// </summary>
+    protected ISecurityProvider SecurityProvider { get; private set; }
 
-    /// <inheritdoc cref="BrokerageConcurrentMessageHandler{T}"/>
+    /// <summary>
+    /// Brokerage helper class to lock message stream while executing an action, for example placing an order
+    /// </summary>
     private BrokerageConcurrentMessageHandler<string> _messageHandler;
 
     /// <summary>
@@ -95,6 +110,13 @@ public class TradeStationBrokerage : Brokerage
     /// Returns true if we're currently connected to the broker
     /// </summary>
     public override bool IsConnected { get => _isSubscribeOnStreamOrderUpdate; }
+
+    /// <summary>
+    /// Parameterless constructor for brokerage
+    /// </summary>
+    public TradeStationBrokerage() : base("TradeStation")
+    {
+    }
 
     /// <summary>
     /// Constructor for the TradeStation brokerage.
@@ -152,16 +174,39 @@ public class TradeStationBrokerage : Brokerage
     /// For <see cref="TradeStationAccountType.Cash"/> or <seealso cref="TradeStationAccountType.Margin"/> accounts, it is used for trading <seealso cref="SecurityType.Equity"/> and <seealso cref="SecurityType.Option"/>.
     /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
     /// <param name="orderProvider">The order provider.</param>
+    /// <param name="securityProvider">The type capable of fetching the holdings for the specified symbol</param>
     public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl,
         string authorizationCode, string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
         : base("TradeStation")
     {
-        _securityProvider = securityProvider;
+        Initialize(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider);
+    }
+
+    protected void Initialize(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl, string authorizationCode,
+        string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
+    {
+        SecurityProvider = securityProvider;
         OrderProvider = orderProvider;
         _symbolMapper = new TradeStationSymbolMapper();
         _tradeStationApiClient = new TradeStationApiClient(apiKey, apiKeySecret, restApiUrl,
             TradeStationExtensions.ParseAccountType(accountType), refreshToken, redirectUrl, authorizationCode);
         _messageHandler = new(HandleTradeStationMessage);
+
+        SubscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager()
+        {
+            SubscribeImpl = (symbols, _) => Subscribe(symbols),
+            UnsubscribeImpl = (symbols, _) => UnSubscribe(symbols)
+        };
+
+        _aggregator = Composer.Instance.GetPart<IDataAggregator>();
+        if (_aggregator == null)
+        {
+            // toolbox downloader case
+            var aggregatorName = Config.Get("data-aggregator", "QuantConnect.Lean.Engine.DataFeeds.AggregationManager");
+            Log.Trace($"AlpacaBrokerage.AlpacaBrokerage(): found no data aggregator instance, creating {aggregatorName}");
+            _aggregator = Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(aggregatorName);
+        }
+
         ValidateSubscription();
     }
 
@@ -290,7 +335,7 @@ public class TradeStationBrokerage : Brokerage
         var result = default(bool);
         _messageHandler.WithLockedStream(() =>
         {
-            var holdingQuantity = _securityProvider.GetHoldingsQuantity(order.Symbol);
+            var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol);
 
             var isPlaceCrossOrder = TryCrossZeroPositionOrder(order, holdingQuantity);
 
@@ -400,7 +445,7 @@ public class TradeStationBrokerage : Brokerage
     /// <returns>True if the request was made for the order to be updated, false otherwise</returns>
     public override bool UpdateOrder(Order order)
     {
-        var holdingQuantity = _securityProvider.GetHoldingsQuantity(order.Symbol);
+        var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol);
 
         if (!TryGetUpdateCrossZeroOrderQuantity(order, out var orderQuantity))
         {
@@ -443,9 +488,9 @@ public class TradeStationBrokerage : Brokerage
         _messageHandler.WithLockedStream(() =>
         {
             if (_tradeStationApiClient.CancelOrder(brokerageOrderId).SynchronouslyAwaitTaskResult())
-        {
+            {
                 result = true;
-        }
+            }
         });
         return result;
     }
@@ -473,6 +518,7 @@ public class TradeStationBrokerage : Brokerage
         {
             Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(Disconnect)}: TimeOut waiting for stream order task to end.");
         }
+        StopQuoteStreamingTask(updateCancellationToken: false);
     }
 
     #endregion
