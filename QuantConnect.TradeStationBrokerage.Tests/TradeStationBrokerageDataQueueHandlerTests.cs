@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -94,31 +94,31 @@ public partial class TradeStationBrokerageTests
         cancelationToken.Cancel();
     }
 
-    [TestCase(100)]
+    [TestCase(101)]
     public void MultipleSubscription(int subscribeAmount)
     {
         var lockObject = new object();
         var resetEvent = new ManualResetEvent(false);
         var cancelationToken = new CancellationTokenSource();
         var amountDataBySymbol = new ConcurrentDictionary<Symbol, int>();
-        var configBySymbol = new Dictionary<Symbol, List<SubscriptionDataConfig>>();
+        var configBySymbol = new Dictionary<Symbol, (List<SubscriptionDataConfig> Configs, CancellationTokenSource CancellationTokenSource)>();
 
         foreach (var symbol in _equitySymbols.Value.Take(subscribeAmount))
         {
             foreach (var config in GetSubscriptionDataConfigsBySymbolResolution(symbol, Resolution.Tick))
             {
                 // Try to add a new entry with a single-element array containing the current config
-                if (!configBySymbol.TryAdd(symbol, new List<SubscriptionDataConfig>{ config }))
+                if (!configBySymbol.TryAdd(symbol, (new List<SubscriptionDataConfig> { config }, new CancellationTokenSource())))
                 {
                     // If the key already exists, append the new config to the existing array
-                    var existingConfigs = new List<SubscriptionDataConfig>(configBySymbol[symbol])
+                    var existingConfigs = new List<SubscriptionDataConfig>(configBySymbol[symbol].Configs)
                     {
                         config
                     };
-                    configBySymbol[symbol] = existingConfigs;
+                    configBySymbol[symbol] = (existingConfigs, configBySymbol[symbol].CancellationTokenSource);
                 }
 
-                ProcessFeed(_brokerage.Subscribe(config, (s, e) => { }), cancelationToken.Token, callback:
+                ProcessFeed(_brokerage.Subscribe(config, (s, e) => { }), configBySymbol[symbol].CancellationTokenSource.Token, callback:
                     (baseData) =>
                     {
                         if (baseData != null)
@@ -128,7 +128,7 @@ public partial class TradeStationBrokerageTests
                             {
                                 amountDataBySymbol.AddOrUpdate(baseData.Symbol, 1, (k, o) => o + 1);
 
-                                if (amountDataBySymbol.Count == 100)
+                                if (amountDataBySymbol.Count == 49)
                                 {
                                     resetEvent.Set();
                                 }
@@ -140,17 +140,38 @@ public partial class TradeStationBrokerageTests
 
         resetEvent.WaitOne(TimeSpan.FromSeconds(30), cancelationToken.Token);
 
-        foreach (var configs in configBySymbol.Values.Take(subscribeAmount - 2))
+        foreach (var configs in configBySymbol.Values.Take(subscribeAmount / 2))
         {
-            foreach(var config in configs)
+            foreach (var config in configs.Configs)
             {
                 _brokerage.Unsubscribe(config);
             }
+            configs.CancellationTokenSource.Cancel();
+            configBySymbol.Remove(configs.Configs[0].Symbol);
         }
 
-        amountDataBySymbol.Clear();
+        Assert.Greater(amountDataBySymbol.Count, 0);
+        Assert.True(amountDataBySymbol.Values.All(x => x > 0));
 
-        Log.Debug($"{nameof(TradeStationBrokerageTests)}.{nameof(MultipleSubscription)}.1.amountDataBySymbol.Count = {amountDataBySymbol.Count}");
+        amountDataBySymbol.Clear();
+        resetEvent.Reset();
+
+        resetEvent.WaitOne(TimeSpan.FromSeconds(30), cancelationToken.Token);
+
+        foreach (var configs in configBySymbol.Values)
+        {
+            foreach (var config in configs.Configs)
+            {
+                _brokerage.Unsubscribe(config);
+            }
+            configs.CancellationTokenSource.Cancel();
+        }
+
+        Assert.Greater(amountDataBySymbol.Count, 0);
+        Assert.True(amountDataBySymbol.Values.All(x => x > 0));
+
+        cancelationToken.Cancel();
+    }
 
         resetEvent.WaitOne(TimeSpan.FromSeconds(60), cancelationToken.Token);
 
