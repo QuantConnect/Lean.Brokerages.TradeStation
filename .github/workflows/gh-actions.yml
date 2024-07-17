@@ -8,8 +8,8 @@ jobs:
   build:
     runs-on: ubuntu-20.04
     env:
-      QC_TRADE_STATION_API_KEY: ${{ secrets.QC_TRADE_STATION_API_KEY }}
-      QC_TRADE_STATION_API_SECRET: ${{ secrets.QC_TRADE_STATION_API_SECRET }}
+      QC_TRADE_STATION_CLIENT_ID: ${{ secrets.QC_TRADE_STATION_CLIENT_ID }}
+      QC_TRADE_STATION_CLIENT_SECRET: ${{ secrets.QC_TRADE_STATION_CLIENT_SECRET }}
       QC_TRADE_STATION_ACCOUNT_TYPE: ${{ secrets.QC_TRADE_STATION_ACCOUNT_TYPE }}
       QC_TRADE_STATION_REFRESH_TOKEN: ${{ secrets.QC_TRADE_STATION_REFRESH_TOKEN }}
       QC_JOB_USER_ID: ${{ secrets.QC_JOB_USER_ID }}
@@ -24,7 +24,7 @@ jobs:
       - uses: addnab/docker-run-action@v3
         with:
           image: quantconnect/lean:foundation
-          options: --workdir /__w/Lean.Brokerages.TradeStation/Lean.Brokerages.TradeStation -v /home/runner/work:/__w -e QC_TRADE_STATION_API_KEY=${{ env.QC_TRADE_STATION_API_KEY }} -e QC_TRADE_STATION_API_SECRET=${{ env.QC_TRADE_STATION_API_SECRET }} -e QC_TRADE_STATION_ACCOUNT_TYPE=${{ env.QC_TRADE_STATION_ACCOUNT_TYPE }} -e QC_TRADE_STATION_REFRESH_TOKEN=${{ env.QC_TRADE_STATION_REFRESH_TOKEN }} -e QC_JOB_USER_ID=${{ env.QC_JOB_USER_ID }} -e QC_API_ACCESS_TOKEN=${{ env.QC_API_ACCESS_TOKEN }} -e QC_JOB_ORGANIZATION_ID=${{ env.QC_JOB_ORGANIZATION_ID }}
+          options: --workdir /__w/Lean.Brokerages.TradeStation/Lean.Brokerages.TradeStation -v /home/runner/work:/__w -e QC_TRADE_STATION_CLIENT_ID=${{ env.QC_TRADE_STATION_CLIENT_ID }} -e QC_TRADE_STATION_CLIENT_SECRET=${{ env.QC_TRADE_STATION_CLIENT_SECRET }} -e QC_TRADE_STATION_ACCOUNT_TYPE=${{ env.QC_TRADE_STATION_ACCOUNT_TYPE }} -e QC_TRADE_STATION_REFRESH_TOKEN=${{ env.QC_TRADE_STATION_REFRESH_TOKEN }} -e QC_JOB_USER_ID=${{ env.QC_JOB_USER_ID }} -e QC_API_ACCESS_TOKEN=${{ env.QC_API_ACCESS_TOKEN }} -e QC_JOB_ORGANIZATION_ID=${{ env.QC_JOB_ORGANIZATION_ID }}
 
       - name: Checkout Lean Same Branch
         id: lean-same-branch

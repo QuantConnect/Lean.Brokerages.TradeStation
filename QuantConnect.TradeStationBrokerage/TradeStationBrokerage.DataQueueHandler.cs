@@ -106,8 +106,8 @@ public partial class TradeStationBrokerage : IDataQueueHandler
     public void SetJob(LiveNodePacket job)
     {
         Initialize(
-            apiKey: job.BrokerageData["trade-station-api-key"],
-            apiKeySecret: job.BrokerageData.TryGetValue("trade-station-api-secret", out var apiKeySecret) ? apiKeySecret : null,
+            clientId: job.BrokerageData["trade-station-client-id"],
+            clientSecret: job.BrokerageData.TryGetValue("trade-station-client-secret", out var clientSecret) ? clientSecret : null,
             restApiUrl: job.BrokerageData["trade-station-api-url"],
             redirectUrl: job.BrokerageData.TryGetValue("trade-station-redirect-url", out var redirectUrl) ? redirectUrl : string.Empty,
             authorizationCode: job.BrokerageData.TryGetValue("trade-station-authorization-code", out var authorizationCode) ? authorizationCode : string.Empty,

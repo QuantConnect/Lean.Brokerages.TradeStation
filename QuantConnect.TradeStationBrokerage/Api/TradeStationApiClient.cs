@@ -44,7 +44,7 @@ public class TradeStationApiClient
     /// <remarks>
     /// In the documentation, this API Key is referred to as <c>client_id</c>.
     /// </remarks>
-    private readonly string _apiKey;
+    private readonly string _cliendId;
 
     /// <summary>
     /// Represents the URI to which the user will be redirected after authentication.
@@ -74,23 +74,23 @@ public class TradeStationApiClient
     /// <summary>
     /// Initializes a new instance of the TradeStationApiClient class with the specified API Key, API Key Secret, REST API URL, redirect URI, account type, and optional parameters.
     /// </summary>
-    /// <param name="apiKey">The API Key used by the client application to authenticate requests.</param>
-    /// <param name="apiKeySecret">The secret associated with the client application’s API Key for authentication.</param>
+    /// <param name="clientId">The API Key used by the client application to authenticate requests.</param>
+    /// <param name="clientSecret">The secret associated with the client application’s API Key for authentication.</param>
     /// <param name="restApiUrl">The URL of the REST API.</param>
     /// <param name="tradeStationAccountType">The type of TradeStation account.</param>
     /// <param name="refreshToken">The type of TradeStation account.</param>
     /// <param name="redirectUri">The URI to which the user will be redirected after authentication.</param>
     /// <param name="authorizationCode">The authorization code obtained from the URL during OAuth authentication. Default is an empty string.</param>
     /// <param name="signInUri">The URI of the sign-in page for TradeStation authentication. Default is "https://signin.tradestation.com".</param>
-    public TradeStationApiClient(string apiKey, string apiKeySecret, string restApiUrl, TradeStationAccountType tradeStationAccountType,
+    public TradeStationApiClient(string clientId, string clientSecret, string restApiUrl, TradeStationAccountType tradeStationAccountType,
         string refreshToken, string redirectUri, string authorizationCode, string signInUri = "https://signin.tradestation.com")
     {
-        _apiKey = apiKey;
+        _cliendId = clientId;
         _redirectUri = redirectUri;
         _baseUrl = restApiUrl;
 
         var httpClientHandler = new HttpClientHandler();
-        var tokenRefreshHandler = new TokenRefreshHandler(httpClientHandler, apiKey, apiKeySecret, authorizationCode, signInUri, redirectUri, refreshToken);
+        var tokenRefreshHandler = new TokenRefreshHandler(httpClientHandler, clientId, clientSecret, authorizationCode, signInUri, redirectUri, refreshToken);
         _httpClient = new(tokenRefreshHandler);
         _accountID = new Lazy<string>(() =>
         {
@@ -405,7 +405,7 @@ public class TradeStationApiClient
     {
         var uri = new UriBuilder($"https://signin.tradestation.com/authorize?" +
             $"response_type=code" +
-            $"&client_id={_apiKey}" +
+            $"&client_id={_cliendId}" +
             $"&audience=https://api.tradestation.com" +
             $"&redirect_uri={_redirectUri}" +
             $"&scope=openid offline_access MarketData ReadAccount Trade OptionSpreads Matrix");

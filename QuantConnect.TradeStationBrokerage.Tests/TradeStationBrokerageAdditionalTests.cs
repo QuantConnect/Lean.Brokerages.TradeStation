@@ -135,12 +135,12 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         [Test]
         public void GetSignInUrl()
         {
-            var apiKey = Config.Get("trade-station-api-key");
-            var apiSecret = Config.Get("trade-station-api-secret");
+            var clientId = Config.Get("trade-station-client-id");
+            var clientSecret = Config.Get("trade-station-client-secret");
             var apiUrl = Config.Get("trade-station-api-url");
             var redirectUrl = Config.Get("trade-station-redirect-url");
 
-            var tradeStationApiClient = new TradeStationApiClient(apiKey, apiSecret, apiUrl, TradeStationAccountType.Margin,
+            var tradeStationApiClient = new TradeStationApiClient(clientId, clientSecret, apiUrl, TradeStationAccountType.Margin,
                 string.Empty, redirectUrl, string.Empty);
 
             var signInUrl = tradeStationApiClient.GetSignInUrl();
@@ -235,12 +235,12 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
         private TradeStationApiClient CreateTradeStationApiClient()
         {
-            var apiKey = Config.Get("trade-station-api-key");
-            var apiKeySecret = Config.Get("trade-station-api-secret");
+            var clientId = Config.Get("trade-station-client-id");
+            var clientSecret = Config.Get("trade-station-client-secret");
             var apiUrl = Config.Get("trade-station-api-url");
             var accountType = Config.Get("trade-station-account-type");
 
-            if (new string[] { apiKey, apiKeySecret, apiUrl, accountType }.Any(string.IsNullOrEmpty))
+            if (new string[] { clientId, clientSecret, apiUrl, accountType }.Any(string.IsNullOrEmpty))
             {
                 throw new ArgumentException("API key, secret, and URL cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
             }
@@ -257,11 +257,11 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                     throw new ArgumentException("API key, secret, and URL cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
                 }
 
-                return new TradeStationApiClient(apiKey, apiKeySecret, apiUrl, TradeStationExtensions.ParseAccountType(accountType), string.Empty,
+                return new TradeStationApiClient(clientId, clientSecret, apiUrl, TradeStationExtensions.ParseAccountType(accountType), string.Empty,
                     redirectUrl, authorizationCode);
             }
 
-            return new TradeStationApiClient(apiKey, apiKeySecret, apiUrl, TradeStationExtensions.ParseAccountType(accountType), refreshToken, string.Empty, string.Empty);
+            return new TradeStationApiClient(clientId, clientSecret, apiUrl, TradeStationExtensions.ParseAccountType(accountType), refreshToken, string.Empty, string.Empty);
         }
     }
 }
