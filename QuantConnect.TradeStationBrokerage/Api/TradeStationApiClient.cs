@@ -269,6 +269,10 @@ public class TradeStationApiClient
             {
                 continue;
             }
+            else if (response.Contains("GoAway", StringComparison.InvariantCultureIgnoreCase))
+            {
+                break;
+            }
             yield return JsonConvert.DeserializeObject<Quote>(response);
         }
     }
