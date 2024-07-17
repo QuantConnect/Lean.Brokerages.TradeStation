@@ -1,4 +1,4 @@
-/*
+﻿/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -22,6 +22,7 @@ using QuantConnect.Tests;
 using QuantConnect.Logging;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
+using QuantConnect.Securities;
 using QuantConnect.Data.Market;
 using System.Collections.Generic;
 using QuantConnect.Algorithm.CSharp;
@@ -49,6 +50,19 @@ public partial class TradeStationBrokerageTests
         {
             yield return new TestCaseData(Symbols.AAPL, Resolution.Tick);
             yield return new TestCaseData(Symbols.AAPL, Resolution.Second);
+        }
+    }
+
+    private static IEnumerable<IReadOnlyCollection<Symbol>> SubscribeDifferentSecurityTypeTestParameters
+    {
+        get
+        {
+            yield return new List<Symbol>()
+            {
+                Symbols.AAPL,
+                Symbol.CreateFuture(Futures.Softs.Cotton2, Market.ICE, new DateTime(2024, 10, 1)),
+                Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 225m, new DateTime(2024, 07, 19))
+            };
         }
     }
 
@@ -173,9 +187,53 @@ public partial class TradeStationBrokerageTests
         cancelationToken.Cancel();
     }
 
+    [TestCaseSource(nameof(SubscribeDifferentSecurityTypeTestParameters))]
+    public void SubscriptionOnDifferentSymbolSecurityTypes(IReadOnlyCollection<Symbol> subscribeSymbols)
+    {
+        var lockObject = new object();
+        var cancelationToken = new CancellationTokenSource();
+        var amountDataBySymbol = new ConcurrentDictionary<Symbol, int>();
+        var resetEvent = new AutoResetEvent(false);
+        var configBySymbol = new Dictionary<Symbol, List<SubscriptionDataConfig>>();
+
+        foreach (var symbol in subscribeSymbols)
+        {
+            foreach (var config in GetSubscriptionDataConfigs(symbol, Resolution.Tick))
+            {
+                // Try to add a new entry with a single-element array containing the current config
+                if (!configBySymbol.TryAdd(config.Symbol, new List<SubscriptionDataConfig> { config }))
+                {
+                    // If the key already exists, append the new config to the existing array
+                    var existingConfigs = new List<SubscriptionDataConfig>(configBySymbol[config.Symbol])
+                    {
+                        config
+                    };
+                    configBySymbol[config.Symbol] = existingConfigs;
+                }
+
+                ProcessFeed(_brokerage.Subscribe(config, (s, e) => { }), cancelationToken.Token, callback:
+                    (baseData) =>
+                    {
+                        if (baseData != null)
+                        {
+                            Log.Trace($"Data received: {baseData}");
+                            lock (lockObject)
+                            {
+                                amountDataBySymbol.AddOrUpdate(baseData.Symbol, 1, (k, o) => o + 1);
+
+                                if (amountDataBySymbol.Values.Count == subscribeSymbols.Count && amountDataBySymbol.Values.All(x => x > 2))
+                                {
+                                    resetEvent.Set();
+                                }
+                            }
+                        }
+                    });
+            }
+        }
+
         resetEvent.WaitOne(TimeSpan.FromSeconds(60), cancelationToken.Token);
 
-        foreach (var configs in configBySymbol.Values.Skip(subscribeAmount - 2))
+        foreach (var configs in configBySymbol.Values)
         {
             foreach (var config in configs)
             {
@@ -183,7 +241,10 @@ public partial class TradeStationBrokerageTests
             }
         }
 
-        Log.Debug($"{nameof(TradeStationBrokerageTests)}.{nameof(MultipleSubscription)}.2.amountDataBySymbol.Count = {amountDataBySymbol.Count}");
+        resetEvent.WaitOne(TimeSpan.FromSeconds(5), cancelationToken.Token);
+
+        Assert.Greater(amountDataBySymbol.Count, 0);
+        Assert.True(amountDataBySymbol.Values.All(x => x > 1));
 
         cancelationToken.Cancel();
     }
