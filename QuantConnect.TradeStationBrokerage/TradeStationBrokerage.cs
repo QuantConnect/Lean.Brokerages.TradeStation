@@ -51,6 +51,8 @@ namespace QuantConnect.Brokerages.TradeStation;
 [BrokerageFactory(typeof(TradeStationBrokerageFactory))]
 public partial class TradeStationBrokerage : Brokerage
 {
+    private bool _isInitialized;
+
     /// <summary>
     /// TradeStation api client implementation
     /// </summary>
@@ -185,6 +187,11 @@ public partial class TradeStationBrokerage : Brokerage
     protected void Initialize(string clientId, string clientSecret, string restApiUrl, string redirectUrl, string authorizationCode,
         string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
     {
+        if (_isInitialized)
+        {
+            return;
+        }
+        _isInitialized = true;
         SecurityProvider = securityProvider;
         OrderProvider = orderProvider;
         _symbolMapper = new TradeStationSymbolMapper();
@@ -600,6 +607,12 @@ public partial class TradeStationBrokerage : Brokerage
     /// <param name="json">The JSON string containing the TradeStation message.</param>
     private void HandleTradeStationMessage(string json)
     {
+        if (OrderProvider == null)
+        {
+            // we are used as a data source only, not a brokerage
+            return;
+        }
+
         var jObj = JObject.Parse(json);
         if (_isSubscribeOnStreamOrderUpdate && jObj["AccountID"] != null)
         {
