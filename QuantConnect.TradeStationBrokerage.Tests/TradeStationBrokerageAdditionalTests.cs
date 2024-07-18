@@ -20,6 +20,7 @@ using NUnit.Framework;
 using System.Threading;
 using QuantConnect.Logging;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 using QuantConnect.Configuration;
 using QuantConnect.Algorithm.CSharp;
 using QuantConnect.Brokerages.TradeStation.Api;
@@ -230,6 +231,43 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             {
                 Assert.That(optionContract.expirationDate, Is.Not.EqualTo(default(DateTime)));
                 Assert.Greater(optionContract.strikes.Count(), 0);
+            }
+        }
+
+        [TestCase("AAPL", TradeStationUnitTimeIntervalType.Minute, "2024/06/18", "2024/07/18")]
+        [TestCase("AAPL", TradeStationUnitTimeIntervalType.Hour, "2024/06/18", "2024/07/18")]
+        [TestCase("AAPL", TradeStationUnitTimeIntervalType.Daily, "2024/06/18", "2024/07/18")]
+        [TestCase("AAPL", TradeStationUnitTimeIntervalType.Minute, "2023/06/18", "2024/07/18")]
+        [TestCase("AAPL", TradeStationUnitTimeIntervalType.Minute, "2024/02/12", "2024/03/23")]
+        public async Task GetBars(string ticker, TradeStationUnitTimeIntervalType unitTime, DateTime startDate, DateTime endDate)
+        {
+            var tradeStationApiClient = CreateTradeStationApiClient();
+
+            var bars = new List<TradeStationBar>();
+            await foreach (var bar in tradeStationApiClient.GetBars(ticker, unitTime, startDate, endDate))
+            {
+                bars.Add(bar);
+            }
+
+            Assert.IsNotNull(bars);
+            Assert.Greater(bars.Count, 0);
+
+            AssertTimeIntervalBetweenDates(unitTime, bars[1].TimeStamp - bars[0].TimeStamp);
+        }
+
+        private static void AssertTimeIntervalBetweenDates(TradeStationUnitTimeIntervalType unitTime, TimeSpan differenceBetweenDates)
+        {
+            switch (unitTime)
+            {
+                case TradeStationUnitTimeIntervalType.Minute:
+                    Assert.That(differenceBetweenDates, Is.EqualTo(Time.OneMinute));
+                    break;
+                case TradeStationUnitTimeIntervalType.Hour:
+                    Assert.That(differenceBetweenDates, Is.EqualTo(Time.OneHour));
+                    break;
+                case TradeStationUnitTimeIntervalType.Daily:
+                    Assert.That(differenceBetweenDates, Is.EqualTo(Time.OneDay));
+                    break;
             }
         }
 

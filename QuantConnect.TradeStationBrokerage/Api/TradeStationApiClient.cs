@@ -39,6 +39,11 @@ namespace QuantConnect.Brokerages.TradeStation.Api;
 public class TradeStationApiClient
 {
     /// <summary>
+    /// Maximum number of bars that can be requested in a single call to <see cref="GetBars(string, TradeStationUnitTimeIntervalType, DateTime, DateTime)"/>.
+    /// </summary>
+    private const int MaxBars = 57500;
+
+    /// <summary>
     /// Represents the API Key used by the client application to authenticate requests.
     /// </summary>
     /// <remarks>
@@ -319,6 +324,102 @@ public class TradeStationApiClient
         {
             var optionStrikes = await GetOptionStrikes(ticker, expiration.Date);
             yield return (expiration.Date, optionStrikes.Strikes.SelectMany(x => x));
+        }
+    }
+
+    /// <summary>
+    /// Fetches marketdata bars for the given symbol, interval, and timeframe. 
+    /// The maximum amount of intraday bars a user can fetch is 57,600 per request.
+    /// </summary>
+    /// <param name="symbol">The valid symbol string.</param>
+    /// <param name="unitOfTime">The unit of time for each bar interval. <see cref="TradeStationUnitTimeIntervalType"/></param>
+    /// <param name="firstDate">The first date formatted as YYYY-MM-DD,2020-04-20T18:00:00Z.</param>
+    /// <param name="lastDate">The last date formatted as YYYY-MM-DD,2020-04-20T18:00:00Z.</param>
+    /// <returns>
+    /// An asynchronous stream of <see cref="TradeStationBar"/> objects representing the market data bars
+    /// within the specified time frame and interval. The stream allows for efficient handling of large
+    /// datasets by processing items as they are retrieved.
+    /// </returns>
+    public async IAsyncEnumerable<TradeStationBar> GetBars(string symbol, TradeStationUnitTimeIntervalType unitOfTime, DateTime firstDate, DateTime lastDate)
+    {
+        var totalDateRange = lastDate - firstDate;
+
+        var totalUnitTimeByIntervalTime = unitOfTime switch
+        {
+            TradeStationUnitTimeIntervalType.Minute => totalDateRange.TotalMinutes,
+            TradeStationUnitTimeIntervalType.Hour => totalDateRange.TotalHours,
+            TradeStationUnitTimeIntervalType.Daily => totalDateRange.TotalDays,
+            _ => throw new NotSupportedException($"{nameof(TradeStationApiClient)}.{nameof(GetBars)}: Unsupported time interval type '{unitOfTime}'")
+        };
+
+        var totalRequestAmount = totalUnitTimeByIntervalTime / MaxBars;
+
+        do
+        {
+            var newLastDate = unitOfTime switch
+            {
+                TradeStationUnitTimeIntervalType.Minute => firstDate.AddMinutes(MaxBars),
+                TradeStationUnitTimeIntervalType.Hour => firstDate.AddHours(MaxBars),
+                TradeStationUnitTimeIntervalType.Daily => firstDate.AddDays(MaxBars),
+                _ => throw new NotSupportedException($"{nameof(TradeStationApiClient)}.{nameof(GetBars)}: Unsupported time interval type '{unitOfTime}'")
+            };
+
+            if (newLastDate > lastDate)
+            {
+                newLastDate = lastDate;
+            }
+
+            await foreach (var bar in GetBarsAsync(symbol, unitOfTime, firstDate, newLastDate))
+            {
+                yield return bar;
+            }
+
+            firstDate = newLastDate;
+
+        } while (--totalRequestAmount >= 0);
+    }
+
+    /// <summary>
+    /// Fetches marketdata bars for the given symbol, interval, and timeframe. 
+    /// The maximum amount of intraday bars a user can fetch is 57,600 per request.
+    /// </summary>
+    /// <param name="symbol">The valid symbol string.</param>
+    /// <param name="unitOfTime">The unit of time for each bar interval. <see cref="TradeStationUnitTimeIntervalType"/></param>
+    /// <param name="firstDate">The first date formatted as YYYY-MM-DD,2020-04-20T18:00:00Z.</param>
+    /// <param name="lastDate">The last date formatted as YYYY-MM-DD,2020-04-20T18:00:00Z.</param>
+    /// <returns>
+    /// An asynchronous stream of <see cref="TradeStationBar"/> objects representing the market data bars
+    /// within the specified time frame and interval. The stream allows for efficient handling of large
+    /// datasets by processing items as they are retrieved.
+    /// </returns>
+    private async IAsyncEnumerable<TradeStationBar> GetBarsAsync(string symbol, TradeStationUnitTimeIntervalType unitOfTime, DateTime firstDate, DateTime lastDate)
+    {
+        var url = new StringBuilder($"/v3/marketdata/barcharts/{symbol}?");
+        if (unitOfTime == TradeStationUnitTimeIntervalType.Hour)
+        {
+            url.Append($"interval=60&unit={TradeStationUnitTimeIntervalType.Minute}&");
+        }
+        else
+        {
+            url.Append($"interval=1&unit={unitOfTime}&");
+        }
+
+        url.Append($"firstdate={firstDate:yyyy-MM-ddTHH:mm:ssZ}&lastdate={lastDate:yyyy-MM-ddTHH:mm:ssZ}");
+
+        var bars = default(IEnumerable<TradeStationBar>);
+        try
+        {
+            bars = (await RequestAsync<TradeStationBars>(_baseUrl, url.ToString(), HttpMethod.Get)).Bars;
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"{nameof(TradeStationApiClient)}.{nameof(GetBarsAsync)}.error: {ex.Message}");
+            yield break;
+        }
+
+        foreach (var bar in bars)
+        {
+            yield return bar;
         }
     }
 
