@@ -301,7 +301,13 @@ public class TradeStationApiClient
     /// </remarks>
     public async Task<string> GetAccountIDByAccountType(TradeStationAccountType accountType)
     {
-        return (await GetAccounts()).Single(acc => acc.AccountType == accountType).AccountID;
+        var accounts = await GetAccounts();
+        var result = accounts.SingleOrDefault(acc => acc.AccountType == accountType);
+        if (result.Equals(default(Account)))
+        {
+            throw new InvalidOperationException($"Failed to find account type: {accountType}. Available options: {string.Join(",", accounts.Select(x => x.AccountType.ToString()))}");
+        }
+        return result.AccountID;
     }
 
     /// <summary>
