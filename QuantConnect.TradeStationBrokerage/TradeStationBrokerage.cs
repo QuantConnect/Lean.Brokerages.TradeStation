@@ -94,6 +94,11 @@ public partial class TradeStationBrokerage : Brokerage
     private ConcurrentDictionary<string, bool> _updateSubmittedResponseResultByBrokerageID = new();
 
     /// <summary>
+    /// A concurrent dictionary to store the order ID and the corresponding filled quantity.
+    /// </summary>
+    private ConcurrentDictionary<int, decimal> _orderIdToFillQuantity = new();
+
+    /// <summary>
     /// Represents a type capable of fetching the holdings for the specified symbol
     /// </summary>
     protected ISecurityProvider SecurityProvider { get; private set; }
@@ -677,6 +682,15 @@ public partial class TradeStationBrokerage : Brokerage
 
                 var leg = brokerageOrder.Legs.First();
 
+                // TradeStation sends the accumulative filled quantity but we need the partial amount for our event
+                _orderIdToFillQuantity.TryGetValue(leanOrder.Id, out var previousExecutionAmount);
+                var accumulativeFilledQuantity = _orderIdToFillQuantity[leanOrder.Id] = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.ExecQuantity) : leg.ExecQuantity;
+
+                if (leanOrderStatus.IsClosed())
+                {
+                    _orderIdToFillQuantity.TryRemove(leanOrder.Id, out _);
+                }
+
                 var orderEvent = new OrderEvent(
                     leanOrder,
                     DateTime.UtcNow,
@@ -685,7 +699,7 @@ public partial class TradeStationBrokerage : Brokerage
                 {
                     Status = leanOrderStatus,
                     FillPrice = leg.ExecutionPrice,
-                    FillQuantity = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.ExecQuantity) : leg.ExecQuantity
+                    FillQuantity = accumulativeFilledQuantity - previousExecutionAmount
                 };
 
                 // if we filled the order and have another contingent order waiting, submit it

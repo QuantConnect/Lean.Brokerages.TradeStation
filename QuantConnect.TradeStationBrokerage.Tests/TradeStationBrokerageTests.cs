@@ -293,6 +293,13 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         }
 
         [Test]
+        public void PartialLongMarketOrder()
+        {
+            var marketOrder = new MarketOrderTestParameters(Symbols.SPY, properties: new OrderProperties() { TimeInForce = TimeInForce.Day });
+            PlaceOrderWaitForStatus(marketOrder.CreateLongMarketOrder(-1797), OrderStatus.Filled, secondsTimeout: 120);
+        }
+
+        [Test]
         public void PlaceLimitOrderAndUpdate()
         {
             Log.Trace("PLACE LIMIT ORDER AND UPDATE");
