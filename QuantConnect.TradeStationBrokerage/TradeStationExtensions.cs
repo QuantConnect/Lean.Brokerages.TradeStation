@@ -14,7 +14,10 @@
 */
 
 using System;
+using System.Threading;
 using QuantConnect.Orders;
+using System.Threading.Tasks;
+using System.Collections.Generic;
 using QuantConnect.Orders.TimeInForces;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
 
@@ -212,5 +215,37 @@ public static class TradeStationExtensions
         }
 
         return parsedAccountType;
+    }
+
+    /// <summary>
+    /// Converts an <see cref="IAsyncEnumerable{T}"/> to an <see cref="IEnumerable{T}"/>.
+    /// </summary>
+    /// <typeparam name="T">The type of the elements in the source sequence.</typeparam>
+    /// <param name="source">The source <see cref="IAsyncEnumerable{T}"/> to convert.</param>
+    /// <param name="cancellationToken">A <see cref="CancellationToken"/> to observe while waiting for the task to complete.</param>
+    /// <returns>An <see cref="IEnumerable{T}"/> that iterates over the source <see cref="IAsyncEnumerable{T}"/>.</returns>
+    /// <remarks>
+    /// This method allows you to synchronously iterate over an asynchronous sequence. Use it cautiously
+    /// as it may block the calling thread if the asynchronous sequence takes time to produce elements.
+    /// </remarks>
+    public static IEnumerable<T> ToEnumerable<T>(this IAsyncEnumerable<T> source, CancellationToken cancellationToken = default)
+    {
+        IAsyncEnumerator<T> e = source.GetAsyncEnumerator(cancellationToken);
+        try
+        {
+            while (true)
+            {
+                ValueTask<bool> moveNext = e.MoveNextAsync();
+                if (moveNext.IsCompletedSuccessfully ? moveNext.Result : moveNext.AsTask().GetAwaiter().GetResult())
+                {
+                    yield return e.Current;
+                }
+                else break;
+            }
+        }
+        finally
+        {
+            e.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
     }
 }
