@@ -349,14 +349,7 @@ public partial class TradeStationBrokerage : Brokerage
             if (isPlaceCrossOrder == null)
             {
                 var response = PlaceTradeStationOrder(order, holdingQuantity);
-                if (response != null)
-                {
-                    foreach (var brokerageOrder in response.Value.Orders)
-                    {
-                        order.BrokerId.Add(brokerageOrder.OrderID);
-                    }
-                    result = true;
-                }
+                result = response != null && response.Value.Orders.Count > 0;
             }
             else
             {
@@ -440,6 +433,11 @@ public partial class TradeStationBrokerage : Brokerage
             {
                 // die
                 OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"Brokerage OrderId not found for {order.Id}: {brokerageOrder.Message}"));
+            }
+
+            if (!order.BrokerId.Contains(brokerageOrder.OrderID))
+            {
+                order.BrokerId.Add(brokerageOrder.OrderID);
             }
 
             if (isSubmittedEvent)
