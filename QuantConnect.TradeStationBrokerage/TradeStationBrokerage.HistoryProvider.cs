@@ -87,7 +87,7 @@ public partial class TradeStationBrokerage
 
     private IEnumerable<BaseData> GetTradeStationHistory(HistoryRequest request)
     {
-        var brokerageSymbol = _symbolMapper.GetBrokerageSymbol(symbol);
+        var brokerageSymbol = _symbolMapper.GetBrokerageSymbol(request.Symbol);
 
         var brokerageUnitTime = request.Resolution switch
         {
