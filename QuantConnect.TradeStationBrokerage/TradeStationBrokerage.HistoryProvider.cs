@@ -82,25 +82,31 @@ public partial class TradeStationBrokerage
             return null;
         }
 
-        return GetHistory(request.Symbol, request.Resolution, request.StartTimeUtc, request.EndTimeUtc);
+        return GetTradeStationHistory(request);
     }
 
-    private IEnumerable<BaseData> GetHistory(Symbol symbol, Resolution resolution, DateTime startTimeUtc, DateTime endTimeUtc)
+    private IEnumerable<BaseData> GetTradeStationHistory(HistoryRequest request)
     {
         var brokerageSymbol = _symbolMapper.GetBrokerageSymbol(symbol);
 
-        var brokerageUnitTime = resolution switch
+        var brokerageUnitTime = request.Resolution switch
         {
             Resolution.Minute => TradeStationUnitTimeIntervalType.Minute,
             Resolution.Hour => TradeStationUnitTimeIntervalType.Hour,
             Resolution.Daily => TradeStationUnitTimeIntervalType.Daily,
-            _ => throw new NotSupportedException($"{nameof(TradeStationBrokerage)}.{nameof(GetHistory)}: Unsupported time Resolution type '{resolution}'")
+            _ => throw new NotSupportedException($"{nameof(TradeStationBrokerage)}.{nameof(GetHistory)}: Unsupported time Resolution type '{request.Resolution}'")
         };
 
-        var period = resolution.ToTimeSpan();
-        foreach (var bar in _tradeStationApiClient.GetBars(brokerageSymbol, brokerageUnitTime, startTimeUtc, endTimeUtc).ToEnumerable())
+        var period = request.Resolution.ToTimeSpan();
+
+        foreach (var bar in _tradeStationApiClient.GetBars(brokerageSymbol, brokerageUnitTime, request.StartTimeUtc, request.EndTimeUtc).ToEnumerable())
         {
-            yield return new TradeBar(bar.TimeStamp, symbol, bar.Open, bar.High, bar.Low, bar.Close, bar.TotalVolume, period);
+            var tradeBar = new TradeBar(bar.TimeStamp.ConvertFromUtc(request.ExchangeHours.TimeZone), request.Symbol, bar.Open, bar.High, bar.Low, bar.Close, bar.TotalVolume, period);
+
+            if (request.ExchangeHours.IsOpen(tradeBar.Time, tradeBar.EndTime, request.IncludeExtendedMarketHours))
+            {
+                yield return tradeBar;
+            }
         }
     }
 }
