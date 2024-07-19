@@ -436,6 +436,12 @@ public partial class TradeStationBrokerage : Brokerage
                 return null;
             }
 
+            if (string.IsNullOrEmpty(brokerageOrder.OrderID))
+            {
+                // die
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"Brokerage OrderId not found for {order.Id}: {brokerageOrder.Message}"));
+            }
+
             if (isSubmittedEvent)
             {
                 OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
@@ -613,94 +619,102 @@ public partial class TradeStationBrokerage : Brokerage
             return;
         }
 
-        var jObj = JObject.Parse(json);
-        if (_isSubscribeOnStreamOrderUpdate && jObj["AccountID"] != null)
+        try
         {
-            var brokerageOrder = jObj.ToObject<TradeStationOrder>();
-
-            var leanOrderStatus = default(OrderStatus);
-            switch (brokerageOrder.Status)
+            var jObj = JObject.Parse(json);
+            if (_isSubscribeOnStreamOrderUpdate && jObj["AccountID"] != null)
             {
-                case TradeStationOrderStatusType.Ack:
-                    // Remove the order entry when the order is acknowledged (indicating successful submission)
-                    _updateSubmittedResponseResultByBrokerageID.TryRemove(new(brokerageOrder.OrderID, true));
-                    return;
-                // Sometimes, a filled event is received without the ClosedDateTime property set. 
-                // Subsequently, another event is received with the ClosedDateTime property correctly populated.
-                case TradeStationOrderStatusType.Fll when brokerageOrder.ClosedDateTime != default:
-                case TradeStationOrderStatusType.Brf:
-                    leanOrderStatus = OrderStatus.Filled;
-                    break;
-                case TradeStationOrderStatusType.Fpr:
-                    leanOrderStatus = OrderStatus.PartiallyFilled;
-                    break;
-                case TradeStationOrderStatusType.Rej:
-                case TradeStationOrderStatusType.Tsc:
-                case TradeStationOrderStatusType.Rjr:
-                case TradeStationOrderStatusType.Bro:
-                    leanOrderStatus = OrderStatus.Invalid;
-                    break;
-                // Sometimes, a Out event is received without the ClosedDateTime property set. 
-                // Subsequently, another event is received with the ClosedDateTime property correctly populated.
-                case TradeStationOrderStatusType.Out when brokerageOrder.ClosedDateTime != default:
-                    // Remove the order entry if it was marked as submitted but is now out
-                    // Sometimes, the order receives an "Out" status on every even occurrence
-                    if (_updateSubmittedResponseResultByBrokerageID.TryRemove(new(brokerageOrder.OrderID, true)))
-                    {
+                var brokerageOrder = jObj.ToObject<TradeStationOrder>();
+
+                var leanOrderStatus = default(OrderStatus);
+                switch (brokerageOrder.Status)
+                {
+                    case TradeStationOrderStatusType.Ack:
+                        // Remove the order entry when the order is acknowledged (indicating successful submission)
+                        _updateSubmittedResponseResultByBrokerageID.TryRemove(new(brokerageOrder.OrderID, true));
                         return;
-                    }
-                    leanOrderStatus = OrderStatus.Canceled;
-                    break;
-                default:
-                    Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}.TradeStationStreamStatus: {json}");
+                    // Sometimes, a filled event is received without the ClosedDateTime property set. 
+                    // Subsequently, another event is received with the ClosedDateTime property correctly populated.
+                    case TradeStationOrderStatusType.Fll when brokerageOrder.ClosedDateTime != default:
+                    case TradeStationOrderStatusType.Brf:
+                        leanOrderStatus = OrderStatus.Filled;
+                        break;
+                    case TradeStationOrderStatusType.Fpr:
+                        leanOrderStatus = OrderStatus.PartiallyFilled;
+                        break;
+                    case TradeStationOrderStatusType.Rej:
+                    case TradeStationOrderStatusType.Tsc:
+                    case TradeStationOrderStatusType.Rjr:
+                    case TradeStationOrderStatusType.Bro:
+                        leanOrderStatus = OrderStatus.Invalid;
+                        break;
+                    // Sometimes, a Out event is received without the ClosedDateTime property set. 
+                    // Subsequently, another event is received with the ClosedDateTime property correctly populated.
+                    case TradeStationOrderStatusType.Out when brokerageOrder.ClosedDateTime != default:
+                        // Remove the order entry if it was marked as submitted but is now out
+                        // Sometimes, the order receives an "Out" status on every even occurrence
+                        if (_updateSubmittedResponseResultByBrokerageID.TryRemove(new(brokerageOrder.OrderID, true)))
+                        {
+                            return;
+                        }
+                        leanOrderStatus = OrderStatus.Canceled;
+                        break;
+                    default:
+                        Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}.TradeStationStreamStatus: {json}");
+                        return;
+                };
+
+                if (!TryGetOrRemoveCrossZeroOrder(brokerageOrder.OrderID, leanOrderStatus, out var leanOrder))
+                {
+                    leanOrder = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID)?.SingleOrDefault();
+                }
+
+                if (leanOrder == null)
+                {
+                    // If the lean order is still null, wait for up to 10 seconds before trying again to get the order from the cache.
+                    // This is necessary when a CrossZeroOrder was placed successfully and we need to ensure the order is available.
+                    Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}. order id not found: {brokerageOrder.OrderID}");
                     return;
-            };
+                }
 
-            if (!TryGetOrRemoveCrossZeroOrder(brokerageOrder.OrderID, leanOrderStatus, out var leanOrder))
-            {
-                leanOrder = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID)?.SingleOrDefault();
+                var leg = brokerageOrder.Legs.First();
+
+                var orderEvent = new OrderEvent(
+                    leanOrder,
+                    DateTime.UtcNow,
+                    new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD)),
+                    brokerageOrder.RejectReason)
+                {
+                    Status = leanOrderStatus,
+                    FillPrice = leg.ExecutionPrice,
+                    FillQuantity = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.ExecQuantity) : leg.ExecQuantity
+                };
+
+                // if we filled the order and have another contingent order waiting, submit it
+                if (!TryHandleRemainingCrossZeroOrder(leanOrder, orderEvent))
+                {
+                    OnOrderEvent(orderEvent);
+                }
             }
-
-            if (leanOrder == null)
+            else if (jObj["StreamStatus"] != null)
             {
-                // If the lean order is still null, wait for up to 10 seconds before trying again to get the order from the cache.
-                // This is necessary when a CrossZeroOrder was placed successfully and we need to ensure the order is available.
-                Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}. order id not found: {brokerageOrder.OrderID}");
-                return;
-            }
-
-            var leg = brokerageOrder.Legs.First();
-
-            var orderEvent = new OrderEvent(
-                leanOrder,
-                DateTime.UtcNow,
-                new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD)),
-                brokerageOrder.RejectReason)
-            {
-                Status = leanOrderStatus,
-                FillPrice = leg.ExecutionPrice,
-                FillQuantity = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.ExecQuantity) : leg.ExecQuantity
-            };
-
-            // if we filled the order and have another contingent order waiting, submit it
-            if (!TryHandleRemainingCrossZeroOrder(leanOrder, orderEvent))
-            {
-                OnOrderEvent(orderEvent);
+                var status = jObj.ToObject<TradeStationStreamStatus>();
+                switch (status.StreamStatus)
+                {
+                    case "EndSnapshot":
+                        _isSubscribeOnStreamOrderUpdate = true;
+                        _autoResetEvent.Set();
+                        break;
+                    default:
+                        Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}.TradeStationStreamStatus: {json}");
+                        break;
+                }
             }
         }
-        else if (jObj["StreamStatus"] != null)
+        catch (Exception ex)
         {
-            var status = jObj.ToObject<TradeStationStreamStatus>();
-            switch (status.StreamStatus)
-            {
-                case "EndSnapshot":
-                    _isSubscribeOnStreamOrderUpdate = true;
-                    _autoResetEvent.Set();
-                    break;
-                default:
-                    Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}.TradeStationStreamStatus: {json}");
-                    break;
-            }
+            Log.Error(ex, $"Raw json: {json}");
+            throw;
         }
     }
 

@@ -30,7 +30,7 @@ public readonly struct TradeStationOptionStrike
     /// <summary>
     /// Gets the collection of strike prices. Each inner collection represents a set of strike prices.
     /// </summary>
-    public IEnumerable<IEnumerable<decimal>> Strikes { get; }
+    public List<List<decimal>> Strikes { get; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TradeStationOptionStrike"/> struct with the specified spread type and strikes.
@@ -38,5 +38,5 @@ public readonly struct TradeStationOptionStrike
     /// <param name="spreadType">The type of the spread.</param>
     /// <param name="strikes">The collection of strike prices.</param>
     [JsonConstructor]
-    public TradeStationOptionStrike(string spreadType, IEnumerable<IEnumerable<decimal>> strikes) => (SpreadType, Strikes) = (spreadType, strikes);
+    public TradeStationOptionStrike(string spreadType, List<List<decimal>> strikes) => (SpreadType, Strikes) = (spreadType, strikes);
 }

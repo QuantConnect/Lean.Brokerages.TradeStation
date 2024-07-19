@@ -27,12 +27,12 @@ public readonly struct TradeStationOrderResponse : ITradeStationError
     /// <summary>
     /// Gets the collection of orders associated with the positions.
     /// </summary>
-    public IEnumerable<TradeStationOrder> Orders { get; }
+    public List<TradeStationOrder> Orders { get; }
 
     /// <summary>
     /// Represents an error that occurred during the retrieval of trading account information.
     /// </summary>
-    public IEnumerable<TradeStationError> Errors { get; }
+    public List<TradeStationError> Errors { get; }
 
     /// <summary>
     /// A token returned with paginated orders which can be used in a subsequent request to retrieve the next page.
@@ -40,7 +40,7 @@ public readonly struct TradeStationOrderResponse : ITradeStationError
     public string NextToken { get; }
 
     [JsonConstructor]
-    public TradeStationOrderResponse(IEnumerable<TradeStationOrder> orders, IEnumerable<TradeStationError> errors, string nextToken)
+    public TradeStationOrderResponse(List<TradeStationOrder> orders, List<TradeStationError> errors, string nextToken)
     {
         Orders = orders;
         Errors = errors;
@@ -84,7 +84,7 @@ public readonly struct TradeStationOrder
     /// <summary>
     /// Describes the relationship between linked orders in a group and this order.
     /// </summary>
-    public IEnumerable<ConditionalOrder> ConditionalOrders { get; }
+    public List<ConditionalOrder> ConditionalOrders { get; }
 
     /// <summary>
     /// The currency conversion rate that is used in order to convert from the currency of the symbol to the currency of the account.
@@ -119,17 +119,17 @@ public readonly struct TradeStationOrder
     /// <summary>
     /// An array of legs associated with this order.
     /// </summary>
-    public IEnumerable<Leg> Legs { get; }
+    public List<Leg> Legs { get; }
 
     /// <summary>
     /// Allows you to specify when an order will be placed based on the price action of one or more symbols.
     /// </summary>
-    public IEnumerable<MarketActivationRule> MarketActivationRules { get; }
+    public List<MarketActivationRule> MarketActivationRules { get; }
 
     /// <summary>
     /// Allows you to specify a time that an order will be placed.
     /// </summary>
-    public IEnumerable<TimeActivationRule> TimeActivationRules { get; }
+    public List<TimeActivationRule> TimeActivationRules { get; }
 
     /// <summary>
     /// The limit price for Limit and Stop Limit orders.
@@ -206,9 +206,9 @@ public readonly struct TradeStationOrder
     public string UnbundledRouteFee { get; }
 
     [JsonConstructor]
-    public TradeStationOrder(string accountID, string advancedOptions, DateTime closedDateTime, decimal commissionFee, IEnumerable<ConditionalOrder> conditionalOrders,
-        string conversionRate, string currency, string duration, string filledPrice, DateTime goodTillDate, string groupName, IEnumerable<Leg> legs,
-        IEnumerable<MarketActivationRule> marketActivationRules, IEnumerable<TimeActivationRule> timeActivationRules, decimal limitPrice, string orderID,
+    public TradeStationOrder(string accountID, string advancedOptions, DateTime closedDateTime, decimal commissionFee, List<ConditionalOrder> conditionalOrders,
+        string conversionRate, string currency, string duration, string filledPrice, DateTime goodTillDate, string groupName, List<Leg> legs,
+        List<MarketActivationRule> marketActivationRules, List<TimeActivationRule> timeActivationRules, decimal limitPrice, string orderID,
         DateTime openedDateTime, TradeStationOrderType orderType, string priceUsedForBuyingPower, string rejectReason, string routing, string showOnlyQuantity,
         string spread, TradeStationOrderStatusType status, string statusDescription, decimal stopPrice, TrailingStop trailingStop, string unbundledRouteFee)
     {

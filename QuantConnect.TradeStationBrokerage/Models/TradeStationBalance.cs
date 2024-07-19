@@ -29,12 +29,12 @@ public readonly struct TradeStationBalance : ITradeStationError
     /// <summary>
     /// Gets the balances information.
     /// </summary>
-    public IEnumerable<Balance> Balances { get; }
+    public List<Balance> Balances { get; }
 
     /// <summary>
     /// Represents an error that occurred during the retrieval of trading account information.
     /// </summary>
-    public IEnumerable<TradeStationError> Errors { get; }
+    public List<TradeStationError> Errors { get; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TradeStationBalance"/> struct.
@@ -42,7 +42,7 @@ public readonly struct TradeStationBalance : ITradeStationError
     /// <param name="balances">The balances information.</param>
     /// <param name="errors">The errors occurred during the retrieval.</param>
     [JsonConstructor]
-    public TradeStationBalance(IEnumerable<Balance> balances, IEnumerable<TradeStationError> errors)
+    public TradeStationBalance(List<Balance> balances, List<TradeStationError> errors)
     {
         Balances = balances;
         Errors = errors;
@@ -103,7 +103,7 @@ public readonly struct Balance
     /// <summary>
     /// Only applies to <c>futures</c>. Collection of properties that describe balance characteristics in different currencies.
     /// </summary>
-    public IEnumerable<CurrencyDetail> CurrencyDetails { get; }
+    public List<CurrencyDetail> CurrencyDetails { get; }
 
     /// <summary>
     /// The brokerage commission cost and routing fees (if applicable) for a trade based on the number of shares or contracts.
@@ -126,7 +126,7 @@ public readonly struct Balance
     /// <param name="commission">The commission amount.</param>
     [JsonConstructor]
     public Balance(string accountID, TradeStationAccountType accountType, string cashBalance, string buyingPower, string equity, string marketValue,
-        string todayProfitLoss, string unclearedDeposit, BalanceDetail balanceDetail, IEnumerable<CurrencyDetail> currencyDetails, string commission)
+        string todayProfitLoss, string unclearedDeposit, BalanceDetail balanceDetail, List<CurrencyDetail> currencyDetails, string commission)
     {
         AccountID = accountID;
         AccountType = accountType;

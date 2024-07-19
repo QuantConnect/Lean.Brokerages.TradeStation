@@ -49,12 +49,6 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var clientSecret = Config.Get("trade-station-client-secret");
             var restApiUrl = Config.Get("trade-station-api-url");
             var accountType = Config.Get("trade-station-account-type");
-
-            if (new string[] { clientId, clientSecret, restApiUrl, accountType }.Any(string.IsNullOrEmpty))
-            {
-                throw new ArgumentException("API key, secret, and URL cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
-            }
-
             var refreshToken = Config.Get("trade-station-refresh-token");
 
             if (string.IsNullOrEmpty(refreshToken))
@@ -100,6 +94,36 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 return AddAndRound(lastPrice, 0.03m);
             }
             return SubtractAndRound(lastPrice, 0.03m);
+        }
+
+        /// <summary>
+        /// Provides the data required to test each order type in various cases
+        /// </summary>
+        private static IEnumerable<TestCaseData> EquityMarketOrderParameters
+        {
+            get
+            {
+                var EPU = Symbol.Create("AAPL", SecurityType.Equity, Market.USA);
+                yield return new TestCaseData(new MarketOrderTestParameters(EPU));
+            }
+        }
+
+        [Test, TestCaseSource(nameof(EquityMarketOrderParameters))]
+        public void ShortFromZeroEquity(OrderTestParameters parameters)
+        {
+            base.ShortFromZero(parameters);
+        }
+
+        [Test, TestCaseSource(nameof(EquityMarketOrderParameters))]
+        public void ShortFromLongEquity(OrderTestParameters parameters)
+        {
+            base.ShortFromLong(parameters);
+        }
+
+        [Test, TestCaseSource(nameof(EquityMarketOrderParameters))]
+        public void LongFromShortEquity(OrderTestParameters parameters)
+        {
+            base.LongFromShort(parameters);
         }
 
         private static IEnumerable<TestCaseData> OrderTestParameters
@@ -358,6 +382,10 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// <returns>An instance of <see cref="QuantConnect.Tests.Brokerages.OrderTestParameters"/> with the last price for a short order.</returns>
         private OrderTestParameters GetLastPriceForShortOrder(OrderTestParameters orderTestParameters)
         {
+            if (orderTestParameters is MarketOrderTestParameters)
+            {
+                return orderTestParameters;
+            }
             var orderType = GetOrderTypeByOrderTestParameters(orderTestParameters);
             return GetLastPriceForShortOrder(orderTestParameters.Symbol, orderType);
         }
@@ -369,6 +397,10 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// <returns>An instance of <see cref="QuantConnect.Tests.Brokerages.OrderTestParameters"/> with the last price for a long order.</returns>
         private OrderTestParameters GetLastPriceForLongOrder(OrderTestParameters orderTestParameters)
         {
+            if (orderTestParameters is MarketOrderTestParameters)
+            {
+                return orderTestParameters;
+            }
             var orderType = GetOrderTypeByOrderTestParameters(orderTestParameters);
             return GetLastPriceForLongOrder(orderTestParameters.Symbol, orderType);
         }
