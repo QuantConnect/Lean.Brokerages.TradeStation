@@ -381,7 +381,7 @@ public class TradeStationApiClient
 
     /// <summary>
     /// Fetches marketdata bars for the given symbol, interval, and timeframe. 
-    /// The maximum amount of intraday bars a user can fetch is 57,600 per request.
+    /// The maximum amount of intraday bars a user can fetch is 57,500 per request.
     /// </summary>
     /// <param name="symbol">The valid symbol string.</param>
     /// <param name="unitOfTime">The unit of time for each bar interval. <see cref="TradeStationUnitTimeIntervalType"/></param>

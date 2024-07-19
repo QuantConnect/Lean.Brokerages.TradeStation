@@ -43,22 +43,22 @@ public readonly struct TradeStationBar
     /// <summary>
     /// The high price of the current bar.
     /// </summary>
-    public readonly string High { get; }
+    public readonly decimal High { get; }
 
     /// <summary>
     /// The low price of the current bar.
     /// </summary>
-    public readonly string Low { get; }
+    public readonly decimal Low { get; }
 
     /// <summary>
     /// The open price of the current bar.
     /// </summary>
-    public readonly string Open { get; }
+    public readonly decimal Open { get; }
 
     /// <summary>
     /// The close price of the current bar.
     /// </summary>
-    public readonly string Close { get; }
+    public readonly decimal Close { get; }
 
     /// <summary>
     /// Timestamp represented as an RFC3339 formatted date.
@@ -68,7 +68,7 @@ public readonly struct TradeStationBar
     /// <summary>
     /// The sum of up volume and down volume.
     /// </summary>
-    public readonly string TotalVolume { get; }
+    public readonly decimal TotalVolume { get; }
 
     /// <summary>
     /// A trade made at a price less than or equal to the previous trade price.
@@ -134,8 +134,8 @@ public readonly struct TradeStationBar
     /// Initializes a new instance of the <see cref="TradeStationBar"/> struct.
     /// </summary>
     public TradeStationBar(
-        string high, string low, string open, string close, DateTime timeStamp,
-        string totalVolume, ulong downTicks, ulong downVolume, string openInterest,
+        decimal high, decimal low, decimal open, decimal close, DateTime timeStamp,
+        decimal totalVolume, ulong downTicks, ulong downVolume, string openInterest,
         bool isRealtime, bool isEndOfHistory, ulong totalTicks, ulong unchangedTicks,
         ulong unchangedVolume, ulong upTicks, ulong upVolume, long epoch, string barStatus)
     {
