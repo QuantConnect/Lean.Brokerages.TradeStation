@@ -27,14 +27,14 @@ public readonly struct TradeStationOptionExpiration
     /// <summary>
     /// Gets the collection of expirations.
     /// </summary>
-    public IEnumerable<Expiration> Expirations { get; }
+    public List<Expiration> Expirations { get; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TradeStationOptionExpiration"/> struct.
     /// </summary>
     /// <param name="expirations">The collection of expirations.</param>
     [JsonConstructor]
-    public TradeStationOptionExpiration(IEnumerable<Expiration> expirations) => Expirations = expirations;
+    public TradeStationOptionExpiration(List<Expiration> expirations) => Expirations = expirations;
 }
 
 /// <summary>

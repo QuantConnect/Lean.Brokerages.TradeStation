@@ -27,12 +27,12 @@ public readonly struct TradeStationPlaceOrderResponse : ITradeStationError
     /// <summary>
     /// Represents an error that occurred during the retrieval of trading account information.
     /// </summary>
-    public IEnumerable<TradeStationError> Errors { get; }
+    public List<TradeStationError> Errors { get; }
 
     /// <summary>
     /// Gets the collection of orders that were placed successfully.
     /// </summary>
-    public IEnumerable<OrderResponse> Orders { get; }
+    public List<OrderResponse> Orders { get; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TradeStationPlaceOrderResponse"/> struct.
@@ -40,7 +40,7 @@ public readonly struct TradeStationPlaceOrderResponse : ITradeStationError
     /// <param name="errors">The collection of errors occurred during the order placement process.</param>
     /// <param name="orders">The collection of orders that were placed successfully.</param>
     [JsonConstructor]
-    public TradeStationPlaceOrderResponse(IEnumerable<TradeStationError> errors, IEnumerable<OrderResponse> orders)
+    public TradeStationPlaceOrderResponse(List<TradeStationError> errors, List<OrderResponse> orders)
     {
         Errors = errors;
         Orders = orders;

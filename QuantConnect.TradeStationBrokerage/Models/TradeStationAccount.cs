@@ -28,7 +28,7 @@ public readonly struct TradeStationAccount
     /// <summary>
     /// Gets the collection of accounts associated with the TradeStation account.
     /// </summary>
-    public IEnumerable<Account> Accounts { get; }
+    public List<Account> Accounts { get; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TradeStationAccount"/> struct
@@ -36,7 +36,7 @@ public readonly struct TradeStationAccount
     /// </summary>
     /// <param name="accounts">The collection of accounts to be associated with the TradeStation account.</param>
     [JsonConstructor]
-    public TradeStationAccount(IEnumerable<Account> accounts)
+    public TradeStationAccount(List<Account> accounts)
     {
         Accounts = accounts;
     }

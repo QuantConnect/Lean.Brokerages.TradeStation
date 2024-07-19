@@ -31,13 +31,13 @@ public readonly struct TradeStationPosition : ITradeStationError
     /// Gets the collection of positions.
     /// </summary>
     [JsonProperty("Positions")]
-    public IEnumerable<Position> Positions { get; }
+    public List<Position> Positions { get; }
 
     /// <summary>
     /// Represents an error that occurred during the retrieval of trading account information.
     /// </summary>
     [JsonProperty("Errors")]
-    public IEnumerable<TradeStationError> Errors { get; }
+    public List<TradeStationError> Errors { get; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TradeStationPosition"/> struct.
@@ -45,7 +45,7 @@ public readonly struct TradeStationPosition : ITradeStationError
     /// <param name="positions">Enumerable collection of positions.</param>
     /// <param name="errors">Enumerable collection of errors related to the positions.</param>
     [JsonConstructor]
-    public TradeStationPosition(IEnumerable<Position> positions, IEnumerable<TradeStationError> errors)
+    public TradeStationPosition(List<Position> positions, List<TradeStationError> errors)
     {
         Positions = positions;
         Errors = errors;

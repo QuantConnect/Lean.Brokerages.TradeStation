@@ -27,12 +27,12 @@ public readonly struct TradeStationQuoteSnapshot
     /// <summary>
     /// Gets the collection of quotes.
     /// </summary>
-    public IEnumerable<Quote> Quotes { get; }
+    public List<Quote> Quotes { get; }
 
     /// <summary>
     /// Gets the collection of errors, if any.
     /// </summary>
-    public IEnumerable<QuoteError> Errors { get; }
+    public List<QuoteError> Errors { get; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TradeStationQuoteSnapshot"/> struct.
@@ -40,7 +40,7 @@ public readonly struct TradeStationQuoteSnapshot
     /// <param name="quotes">The collection of quotes.</param>
     /// <param name="errors">The collection of errors, if any.</param>
     [JsonConstructor]
-    public TradeStationQuoteSnapshot(IEnumerable<Quote> quotes, IEnumerable<QuoteError> errors)
+    public TradeStationQuoteSnapshot(List<Quote> quotes, List<QuoteError> errors)
     {
         Quotes = quotes;
         Errors = errors;

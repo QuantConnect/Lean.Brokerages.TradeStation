@@ -22,5 +22,5 @@ public interface ITradeStationError
     /// <summary>
     /// Gets the collection of errors associated with the positions.
     /// </summary>
-    public IEnumerable<TradeStationError> Errors { get; }
+    public List<TradeStationError> Errors { get; }
 }
