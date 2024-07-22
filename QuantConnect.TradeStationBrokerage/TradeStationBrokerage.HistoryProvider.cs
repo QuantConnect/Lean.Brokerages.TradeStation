@@ -14,6 +14,7 @@
 */
 
 using System;
+using System.Text;
 using QuantConnect.Data;
 using QuantConnect.Logging;
 using QuantConnect.Data.Market;
@@ -54,7 +55,15 @@ public partial class TradeStationBrokerage
             if (!_unsupportedSecurityTypeWarningFired)
             {
                 _unsupportedSecurityTypeWarningFired = true;
-                Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(GetHistory)}: Unsupported SecurityType '{request.Symbol.SecurityType}' for symbol '{request.Symbol}'");
+                var error = new StringBuilder($"{nameof(TradeStationBrokerage)}.{nameof(GetHistory)}: ");
+                if (request.Symbol.IsCanonical())
+                {
+                    Log.Trace(error.Append($"The symbol '{request.Symbol}' is in canonical form, which is not supported for historical data retrieval.").ToString());
+                }
+                else
+                {
+                    Log.Trace(error.Append($"Unsupported SecurityType '{request.Symbol.SecurityType}' for symbol '{request.Symbol}'").ToString());
+                }
             }
 
             return null;
