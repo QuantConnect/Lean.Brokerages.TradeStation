@@ -99,6 +99,11 @@ public partial class TradeStationBrokerage : Brokerage
     private ConcurrentDictionary<int, decimal> _orderIdToFillQuantity = new();
 
     /// <summary>
+    /// Specifies the type of account on TradeStation in current session.
+    /// </summary>
+    private TradeStationAccountType tradeStationAccountType;
+
+    /// <summary>
     /// Represents a type capable of fetching the holdings for the specified symbol
     /// </summary>
     protected ISecurityProvider SecurityProvider { get; private set; }
@@ -200,8 +205,9 @@ public partial class TradeStationBrokerage : Brokerage
         SecurityProvider = securityProvider;
         OrderProvider = orderProvider;
         _symbolMapper = new TradeStationSymbolMapper();
+        tradeStationAccountType = TradeStationExtensions.ParseAccountType(accountType);
         _tradeStationApiClient = new TradeStationApiClient(clientId, clientSecret, restApiUrl,
-            TradeStationExtensions.ParseAccountType(accountType), refreshToken, redirectUrl, authorizationCode);
+            tradeStationAccountType, refreshToken, redirectUrl, authorizationCode);
         _messageHandler = new(HandleTradeStationMessage);
 
         SubscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager()
@@ -346,6 +352,12 @@ public partial class TradeStationBrokerage : Brokerage
         {
             OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1,
                 $"Symbol is not supported {order.Symbol}"));
+            return false;
+        }
+        else if (IsRightAccountForSymbolSecurityType(order.Symbol.SecurityType))
+        {
+            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1,
+                $"Unable to process the order. The security type '{order.Symbol.SecurityType}' does not match the account type '{tradeStationAccountType}'. Please check your account settings and try again."));
             return false;
         }
 
@@ -576,6 +588,20 @@ public partial class TradeStationBrokerage : Brokerage
 
         return _symbolMapper.SupportedSecurityType.Contains(symbol.SecurityType);
     }
+
+    /// <summary>
+    /// Determines if the provided <paramref name="securityType"/> matches the <see cref="TradeStationAccountType"/>.
+    /// </summary>
+    /// <param name="securityType">The type of security to check.</param>
+    /// <returns>
+    /// <c>true</c> if the security type is <see cref="SecurityType.Future"/> and the account type is <see cref="TradeStationAccountType.Futures"/>;
+    /// otherwise, <c>true</c>.
+    /// </returns>
+    private bool IsRightAccountForSymbolSecurityType(SecurityType securityType) => securityType switch
+    {
+        SecurityType.Future => tradeStationAccountType == TradeStationAccountType.Futures,
+        _ => true
+    };
 
     /// <summary>
     /// Subscribes to order updates and processes them asynchronously.
