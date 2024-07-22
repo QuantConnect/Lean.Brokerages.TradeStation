@@ -36,11 +36,12 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             _symbolMapper = new TradeStationSymbolMapper();
         }
 
-        [TestCase("AAPL", "AAPL", TradeStationAssetType.Stock, null, TradeStationOptionType.Call, 0)]
-        [TestCase("ESZ24", "ES", TradeStationAssetType.Future, "2024/12/20", TradeStationOptionType.Call, 0)]
-        [TestCase("TSLA 240510C167.5", "TSLA", TradeStationAssetType.StockOption, "2024/5/10", TradeStationOptionType.Call, 167.5)]
+        [TestCase("AAPL", "AAPL", TradeStationAssetType.Stock, null, TradeStationOptionType.Call, 0, Market.USA)]
+        [TestCase("ESZ24", "ES", TradeStationAssetType.Future, "2024/12/20", TradeStationOptionType.Call, 0, Market.CME)]
+        [TestCase("CTV24", "CT", TradeStationAssetType.Future, "2024/10/1", TradeStationOptionType.Call, 0, Market.ICE)]
+        [TestCase("TSLA 240510C167.5", "TSLA", TradeStationAssetType.StockOption, "2024/5/10", TradeStationOptionType.Call, 167.5, Market.USA)]
         public void ReturnsCorrectLeanSymbol(string symbol, string underlying, TradeStationAssetType assetType,
-            DateTime expirationDate, TradeStationOptionType optionType, decimal strikePrice)
+            DateTime expirationDate, TradeStationOptionType optionType, decimal strikePrice, string expectedMarket)
         {
             var leg = new Leg("", 0m, 0m, 0m, TradeStationTradeActionType.Buy, symbol, underlying, assetType, 0m, expirationDate, optionType, strikePrice);
 
@@ -48,6 +49,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
 
             Assert.IsNotNull(leanSymbol);
+            Assert.That(leanSymbol.ID.Market, Is.EqualTo(expectedMarket));
         }
 
         private static IEnumerable<TestCaseData> LeanSymbolTestCases
