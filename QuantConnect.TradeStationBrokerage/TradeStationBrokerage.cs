@@ -354,7 +354,7 @@ public partial class TradeStationBrokerage : Brokerage
                 $"Symbol is not supported {order.Symbol}"));
             return false;
         }
-        else if (IsRightAccountForSymbolSecurityType(order.Symbol.SecurityType))
+        else if (!IsRightAccountForSymbolSecurityType(order.Symbol.SecurityType))
         {
             OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1,
                 $"Unable to process the order. The security type '{order.Symbol.SecurityType}' does not match the account type '{tradeStationAccountType}'. Please check your account settings and try again."));
