@@ -391,7 +391,7 @@ public partial class TradeStationBrokerage : Brokerage
     private TradeStationPlaceOrderResponse? PlaceTradeStationOrder(Order order, decimal holdingQuantity, bool isSubmittedEvent = true)
     {
         var symbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
-        var tradeAction = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity).ToStringInvariant().ToUpperInvariant();
+        var tradeAction = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity);
         return PlaceOrderCommon(order, order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, symbol, order.GetLimitPrice(), order.GetStopPrice(), isSubmittedEvent);
     }
 
@@ -404,8 +404,7 @@ public partial class TradeStationBrokerage : Brokerage
     protected override CrossZeroOrderResponse PlaceCrossZeroOrder(CrossZeroFirstOrderRequest crossZeroOrderRequest, bool isPlaceOrderWithLeanEvent)
     {
         var symbol = _symbolMapper.GetBrokerageSymbol(crossZeroOrderRequest.LeanOrder.Symbol);
-        var tradeAction = ConvertDirection(crossZeroOrderRequest.LeanOrder.SecurityType, crossZeroOrderRequest.LeanOrder.Direction, crossZeroOrderRequest.OrderQuantityHolding)
-            .ToStringInvariant().ToUpperInvariant();
+        var tradeAction = ConvertDirection(crossZeroOrderRequest.LeanOrder.SecurityType, crossZeroOrderRequest.LeanOrder.Direction, crossZeroOrderRequest.OrderQuantityHolding);
 
         var crossZeroOrderResponse = default(CrossZeroOrderResponse);
         _messageHandler.WithLockedStream(() =>
@@ -770,20 +769,47 @@ public partial class TradeStationBrokerage : Brokerage
     /// <param name="holdingQuantity">The quantity of holdings.</param>
     /// <returns>
     /// A <see cref="TradeStationTradeActionType"/> that represents the trade action type for TradeStation.
-    /// For Futures, returns Buy if the order direction is Buy, otherwise returns Sell.
+    /// For Futures, returns <see cref="TradeStationTradeActionType.Buy"/> if the order direction is Buy, otherwise returns <see cref="TradeStationTradeActionType.Sell"/>.
     /// For Equities or Options, calls <see cref="GetOrderPosition(OrderDirection, decimal)"/> to determine the trade action type.
     /// </returns>
     /// <exception cref="ArgumentException">Thrown when an unsupported <see cref="SecurityType"/> is provided.</exception>
-    private static TradeStationTradeActionType ConvertDirection(SecurityType securityType, OrderDirection leanOrderDirection, decimal holdingQuantity)
+    /// <exception cref="NotSupportedException">Thrown when an unsupported order position is provided.</exception>
+    private static string ConvertDirection(SecurityType securityType, OrderDirection leanOrderDirection, decimal holdingQuantity)
     {
+        var tradeAction = default(TradeStationTradeActionType);
         switch (securityType)
         {
             case SecurityType.Equity:
             case SecurityType.Option:
-                return GetOrderPosition(leanOrderDirection, holdingQuantity).ConvertDirection(securityType);
+                var orderPosition = GetOrderPosition(leanOrderDirection, holdingQuantity);
+                switch (orderPosition)
+                {
+                    // Increasing existing long position or opening new long position from zero
+                    case OrderPosition.BuyToOpen:
+                        tradeAction = securityType == SecurityType.Option ? TradeStationTradeActionType.BuyToOpen : TradeStationTradeActionType.Buy;
+                        break;
+                    // Decreasing existing short position or opening new short position from zero
+                    case OrderPosition.SellToOpen:
+                        tradeAction = securityType == SecurityType.Option ? TradeStationTradeActionType.SellToOpen : TradeStationTradeActionType.SellShort;
+                        break;
+                    // Buying from an existing short position (reducing, closing or flipping)
+                    case OrderPosition.BuyToClose:
+                        tradeAction = securityType == SecurityType.Option ? TradeStationTradeActionType.BuyToClose : TradeStationTradeActionType.BuyToCover;
+                        break;
+                    // Selling from an existing long position (reducing, closing or flipping)
+                    case OrderPosition.SellToClose:
+                        tradeAction = securityType == SecurityType.Option ? TradeStationTradeActionType.SellToClose : TradeStationTradeActionType.Sell;
+                        break;
+                    // This should never happen
+                    default:
+                        throw new NotSupportedException("The specified order position is not supported.");
+                };
+                break;
             default:
-                return leanOrderDirection == OrderDirection.Buy ? TradeStationTradeActionType.Buy : TradeStationTradeActionType.Sell;
+                tradeAction = leanOrderDirection == OrderDirection.Buy ? TradeStationTradeActionType.Buy : TradeStationTradeActionType.Sell;
+                break;
         }
+        return tradeAction.ToStringInvariant().ToUpperInvariant();
     }
 
     private class ModulesReadLicenseRead : QuantConnect.Api.RestResponse
