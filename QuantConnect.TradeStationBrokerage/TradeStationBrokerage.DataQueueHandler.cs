@@ -343,7 +343,7 @@ public partial class TradeStationBrokerage : IDataQueueHandler
     /// <param name="symbol">The symbol for which the order book is to be added.</param>
     private void AddOrderBook(Symbol symbol)
     {
-        var exchangeTimeZone = MarketHoursDatabase.FromDataFolder().GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType).TimeZone;
+        var exchangeTimeZone = symbol.GetSymbolExchangeTimeZone();
         _exchangeTimeZoneByLeanSymbol[symbol] = exchangeTimeZone;
 
         var brokerageSymbol = _symbolMapper.GetBrokerageSymbol(symbol);
