@@ -52,6 +52,7 @@ namespace QuantConnect.Brokerages.TradeStation;
 public partial class TradeStationBrokerage : Brokerage
 {
     private bool _isInitialized;
+    private Exception _lastError;
 
     /// <summary>
     /// TradeStation api client implementation
@@ -404,7 +405,7 @@ public partial class TradeStationBrokerage : Brokerage
     protected override CrossZeroOrderResponse PlaceCrossZeroOrder(CrossZeroFirstOrderRequest crossZeroOrderRequest, bool isPlaceOrderWithLeanEvent)
     {
         var symbol = _symbolMapper.GetBrokerageSymbol(crossZeroOrderRequest.LeanOrder.Symbol);
-        var tradeAction = ConvertDirection(crossZeroOrderRequest.LeanOrder.SecurityType, crossZeroOrderRequest.LeanOrder.Direction, crossZeroOrderRequest.OrderQuantityHolding);
+        var tradeAction = ConvertDirection(crossZeroOrderRequest.LeanOrder.SecurityType, crossZeroOrderRequest.OrderPosition);
 
         var crossZeroOrderResponse = default(CrossZeroOrderResponse);
         _messageHandler.WithLockedStream(() =>
@@ -539,6 +540,11 @@ public partial class TradeStationBrokerage : Brokerage
         }
 
         _isSubscribeOnStreamOrderUpdate = SubscribeOnOrderUpdate();
+        if (!_isSubscribeOnStreamOrderUpdate && _lastError != null)
+        {
+            // we were not able to connect and there's an exception, let's bubble it up
+            throw _lastError;
+        }
     }
 
     /// <summary>
@@ -630,6 +636,7 @@ public partial class TradeStationBrokerage : Brokerage
                 }
                 catch (Exception ex)
                 {
+                    _lastError = ex;
                     Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}.Exception: {ex}");
                 }
                 Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}: Connection lost. Reconnecting in 10 seconds...");
@@ -638,7 +645,7 @@ public partial class TradeStationBrokerage : Brokerage
             _orderUpdateEndManualResetEvent.Set();
         }, _cancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
-        return _autoResetEvent.WaitOne(TimeSpan.FromSeconds(30), _cancellationTokenSource.Token);
+        return _autoResetEvent.WaitOne(TimeSpan.FromSeconds(25), _cancellationTokenSource.Token);
     }
 
     /// <summary>
@@ -776,12 +783,16 @@ public partial class TradeStationBrokerage : Brokerage
     /// <exception cref="NotSupportedException">Thrown when an unsupported order position is provided.</exception>
     private static string ConvertDirection(SecurityType securityType, OrderDirection leanOrderDirection, decimal holdingQuantity)
     {
+        return ConvertDirection(securityType, GetOrderPosition(leanOrderDirection, holdingQuantity));
+    }
+
+    private static string ConvertDirection(SecurityType securityType, OrderPosition orderPosition)
+    {
         var tradeAction = default(TradeStationTradeActionType);
         switch (securityType)
         {
             case SecurityType.Equity:
             case SecurityType.Option:
-                var orderPosition = GetOrderPosition(leanOrderDirection, holdingQuantity);
                 switch (orderPosition)
                 {
                     // Increasing existing long position or opening new long position from zero
@@ -806,11 +817,14 @@ public partial class TradeStationBrokerage : Brokerage
                 };
                 break;
             default:
-                tradeAction = leanOrderDirection == OrderDirection.Buy ? TradeStationTradeActionType.Buy : TradeStationTradeActionType.Sell;
+                // futures are just buy or sell
+                tradeAction = (orderPosition == OrderPosition.BuyToOpen || orderPosition == OrderPosition.BuyToClose)
+                    ? TradeStationTradeActionType.Buy : TradeStationTradeActionType.Sell;
                 break;
         }
         return tradeAction.ToStringInvariant().ToUpperInvariant();
     }
+
 
     private class ModulesReadLicenseRead : QuantConnect.Api.RestResponse
     {
