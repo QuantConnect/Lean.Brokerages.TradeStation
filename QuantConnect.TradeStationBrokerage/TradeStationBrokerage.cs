@@ -101,7 +101,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// <summary>
     /// Specifies the type of account on TradeStation in current session.
     /// </summary>
-    private TradeStationAccountType tradeStationAccountType;
+    private TradeStationAccountType _tradeStationAccountType;
 
     /// <summary>
     /// Represents a type capable of fetching the holdings for the specified symbol
@@ -205,9 +205,9 @@ public partial class TradeStationBrokerage : Brokerage
         SecurityProvider = securityProvider;
         OrderProvider = orderProvider;
         _symbolMapper = new TradeStationSymbolMapper();
-        tradeStationAccountType = TradeStationExtensions.ParseAccountType(accountType);
+        _tradeStationAccountType = TradeStationExtensions.ParseAccountType(accountType);
         _tradeStationApiClient = new TradeStationApiClient(clientId, clientSecret, restApiUrl,
-            tradeStationAccountType, refreshToken, redirectUrl, authorizationCode);
+            _tradeStationAccountType, refreshToken, redirectUrl, authorizationCode);
         _messageHandler = new(HandleTradeStationMessage);
 
         SubscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager()
@@ -357,7 +357,7 @@ public partial class TradeStationBrokerage : Brokerage
         else if (!IsRightAccountForSymbolSecurityType(order.Symbol.SecurityType))
         {
             OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1,
-                $"Unable to process the order. The security type '{order.Symbol.SecurityType}' does not match the account type '{tradeStationAccountType}'. Please check your account settings and try again."));
+                $"Unable to process the order. The security type '{order.Symbol.SecurityType}' does not match the account type '{_tradeStationAccountType}'. Please check your account settings and try again."));
             return false;
         }
 
@@ -600,8 +600,8 @@ public partial class TradeStationBrokerage : Brokerage
     /// </returns>
     private bool IsRightAccountForSymbolSecurityType(SecurityType securityType) => securityType switch
     {
-        SecurityType.Future => tradeStationAccountType == TradeStationAccountType.Futures,
-        _ => true
+        SecurityType.Future => _tradeStationAccountType == TradeStationAccountType.Futures,
+        _ => _tradeStationAccountType != TradeStationAccountType.Futures
     };
 
     /// <summary>
