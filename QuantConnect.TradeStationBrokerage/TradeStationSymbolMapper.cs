@@ -14,6 +14,7 @@
 */
 
 using System;
+using QuantConnect.Securities;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 
@@ -102,6 +103,10 @@ public class TradeStationSymbolMapper : ISymbolMapper
                 var underlying = Symbol.Create(brokerageSymbol, SecurityType.Equity, market);
                 return Symbol.CreateOption(underlying, underlying.ID.Market, SecurityType.Option.DefaultOptionStyle(), optionRight, strike, expirationDate);
             case SecurityType.Future:
+                if (!SymbolPropertiesDatabase.FromDataFolder().TryGetMarket(brokerageSymbol, SecurityType.Future, out market))
+                {
+                    market = DefaultBrokerageModel.DefaultMarketMap[SecurityType.Future];
+                }
                 return Symbol.CreateFuture(brokerageSymbol, market, expirationDate);
             default:
                 throw new NotImplementedException($"{nameof(TradeStationSymbolMapper)}.{nameof(GetLeanSymbol)}: " +

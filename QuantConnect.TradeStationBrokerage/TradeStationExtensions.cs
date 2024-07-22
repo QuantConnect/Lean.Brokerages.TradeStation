@@ -17,6 +17,7 @@ using System;
 using System.Threading;
 using QuantConnect.Orders;
 using System.Threading.Tasks;
+using QuantConnect.Securities;
 using System.Collections.Generic;
 using QuantConnect.Orders.TimeInForces;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
@@ -248,4 +249,19 @@ public static class TradeStationExtensions
             e.DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
     }
+
+    /// <summary>
+    /// Retrieves the time zone of the exchange for the given symbol.
+    /// </summary>
+    /// <param name="symbol">The symbol for which to get the exchange time zone.</param>
+    /// <returns>
+    /// The <see cref="NodaTime.DateTimeZone"/> representing the time zone of the exchange
+    /// where the given symbol is traded.
+    /// </returns>
+    /// <remarks>
+    /// This method uses the <see cref="MarketHoursDatabase"/> to fetch the exchange hours
+    /// and extract the time zone information for the provided symbol.
+    /// </remarks>
+    public static NodaTime.DateTimeZone GetSymbolExchangeTimeZone(this Symbol symbol)
+        => MarketHoursDatabase.FromDataFolder().GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType).TimeZone;
 }
