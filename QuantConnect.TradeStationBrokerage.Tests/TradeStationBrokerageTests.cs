@@ -269,14 +269,17 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// </list>
         /// </summary>
         /// <param name="longQuantityMultiplayer">The multiplier for the long order quantity, relative to the default quantity.</param>
-        [TestCase(4)]
-        public void MarketCrossZeroLongFromShort(decimal longQuantityMultiplayer)
+        [TestCase("AAPL", SecurityType.Equity, Market.USA, null, 4)]
+        [TestCase(Futures.Softs.Cotton2, SecurityType.Future, Market.ICE, "2024/10/1", 4, Description = "Pay attention on Config:trade-station-account-type")]
+        public void MarketCrossZeroLongFromShort(string ticker, SecurityType securityType, string market, DateTime expireDate, decimal longQuantityMultiplayer)
         {
+            Log.Trace($"TEST MARKET CROSS ZERO LONG FROM SHORT OF {securityType.ToString().ToUpperInvariant()}");
+            var symbol = CreateSymbol(ticker, securityType, expirationDate: expireDate, market: market);
             var expectedOrderStatusChangedOrdering = new[] { OrderStatus.Submitted, OrderStatus.PartiallyFilled, OrderStatus.Filled };
             var actualCrossZeroOrderStatusOrdering = new Queue<OrderStatus>();
 
             // create market order to holding something
-            var marketOrder = new MarketOrderTestParameters(Symbols.AAPL, properties: new OrderProperties() { TimeInForce = TimeInForce.Day });
+            var marketOrder = new MarketOrderTestParameters(symbol, properties: new OrderProperties() { TimeInForce = TimeInForce.Day });
 
             // place short position to holding at least -1 quantity to run of cross zero order
             PlaceOrderWaitForStatus(marketOrder.CreateLongMarketOrder(GetDefaultQuantity()), OrderStatus.Filled, secondsTimeout: 120);
