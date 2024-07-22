@@ -143,34 +143,6 @@ public static class TradeStationExtensions
     }
 
     /// <summary>
-    /// Converts the order position to the corresponding TradeStation trade action type
-    /// based on the security type.
-    /// </summary>
-    /// <param name="orderPosition">The order position.</param>
-    /// <param name="securityType">The security type.</param>
-    /// <returns>The corresponding TradeStation trade action type.</returns>
-    /// <exception cref="NotSupportedException">Thrown when the order position is not supported.</exception>
-    /// <example>
-    /// Example usage:
-    /// <code>
-    /// var tradeActionType = ConvertDirection(OrderPosition.BuyToOpen, SecurityType.Option);
-    /// </code>
-    /// </example>
-    public static TradeStationTradeActionType ConvertDirection(this OrderPosition orderPosition, SecurityType securityType) => orderPosition switch
-    {
-        // Increasing existing long position or opening new long position from zero
-        OrderPosition.BuyToOpen => securityType == SecurityType.Option ? TradeStationTradeActionType.BuyToOpen : TradeStationTradeActionType.Buy,
-        // Decreasing existing short position or opening new short position from zero
-        OrderPosition.SellToOpen => securityType == SecurityType.Option ? TradeStationTradeActionType.SellToOpen : TradeStationTradeActionType.SellShort,
-        // Buying from an existing short position (reducing, closing or flipping)
-        OrderPosition.BuyToClose => securityType == SecurityType.Option ? TradeStationTradeActionType.BuyToClose : TradeStationTradeActionType.BuyToCover,
-        // Selling from an existing long position (reducing, closing or flipping)
-        OrderPosition.SellToClose => securityType == SecurityType.Option ? TradeStationTradeActionType.SellToClose : TradeStationTradeActionType.Sell,
-        // This should never happen
-        _ => throw new NotSupportedException("The specified order position is not supported.")
-    };
-
-    /// <summary>
     /// Gets the stop price of the specified order.
     /// </summary>
     /// <param name="order">The order to retrieve the stop price from.</param>

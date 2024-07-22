@@ -52,6 +52,7 @@ namespace QuantConnect.Brokerages.TradeStation;
 public partial class TradeStationBrokerage : Brokerage
 {
     private bool _isInitialized;
+    private Exception _lastError;
 
     /// <summary>
     /// TradeStation api client implementation
@@ -97,6 +98,11 @@ public partial class TradeStationBrokerage : Brokerage
     /// A concurrent dictionary to store the order ID and the corresponding filled quantity.
     /// </summary>
     private ConcurrentDictionary<int, decimal> _orderIdToFillQuantity = new();
+
+    /// <summary>
+    /// Specifies the type of account on TradeStation in current session.
+    /// </summary>
+    private TradeStationAccountType _tradeStationAccountType;
 
     /// <summary>
     /// Represents a type capable of fetching the holdings for the specified symbol
@@ -200,8 +206,9 @@ public partial class TradeStationBrokerage : Brokerage
         SecurityProvider = securityProvider;
         OrderProvider = orderProvider;
         _symbolMapper = new TradeStationSymbolMapper();
+        _tradeStationAccountType = TradeStationExtensions.ParseAccountType(accountType);
         _tradeStationApiClient = new TradeStationApiClient(clientId, clientSecret, restApiUrl,
-            TradeStationExtensions.ParseAccountType(accountType), refreshToken, redirectUrl, authorizationCode);
+            _tradeStationAccountType, refreshToken, redirectUrl, authorizationCode);
         _messageHandler = new(HandleTradeStationMessage);
 
         SubscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager()
@@ -348,6 +355,12 @@ public partial class TradeStationBrokerage : Brokerage
                 $"Symbol is not supported {order.Symbol}"));
             return false;
         }
+        else if (!IsRightAccountForSymbolSecurityType(order.Symbol.SecurityType))
+        {
+            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1,
+                $"Unable to process the order. The security type '{order.Symbol.SecurityType}' does not match the account type '{_tradeStationAccountType}'. Please check your account settings and try again."));
+            return false;
+        }
 
         var result = default(bool);
         _messageHandler.WithLockedStream(() =>
@@ -379,7 +392,7 @@ public partial class TradeStationBrokerage : Brokerage
     private TradeStationPlaceOrderResponse? PlaceTradeStationOrder(Order order, decimal holdingQuantity, bool isSubmittedEvent = true)
     {
         var symbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
-        var tradeAction = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity).ToStringInvariant().ToUpperInvariant();
+        var tradeAction = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity);
         return PlaceOrderCommon(order, order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, symbol, order.GetLimitPrice(), order.GetStopPrice(), isSubmittedEvent);
     }
 
@@ -392,7 +405,7 @@ public partial class TradeStationBrokerage : Brokerage
     protected override CrossZeroOrderResponse PlaceCrossZeroOrder(CrossZeroFirstOrderRequest crossZeroOrderRequest, bool isPlaceOrderWithLeanEvent)
     {
         var symbol = _symbolMapper.GetBrokerageSymbol(crossZeroOrderRequest.LeanOrder.Symbol);
-        var tradeAction = crossZeroOrderRequest.OrderPosition.ConvertDirection(crossZeroOrderRequest.LeanOrder.SecurityType).ToStringInvariant().ToUpperInvariant();
+        var tradeAction = ConvertDirection(crossZeroOrderRequest.LeanOrder.SecurityType, crossZeroOrderRequest.OrderPosition);
 
         var crossZeroOrderResponse = default(CrossZeroOrderResponse);
         _messageHandler.WithLockedStream(() =>
@@ -527,6 +540,11 @@ public partial class TradeStationBrokerage : Brokerage
         }
 
         _isSubscribeOnStreamOrderUpdate = SubscribeOnOrderUpdate();
+        if (!_isSubscribeOnStreamOrderUpdate && _lastError != null)
+        {
+            // we were not able to connect and there's an exception, let's bubble it up
+            throw _lastError;
+        }
     }
 
     /// <summary>
@@ -578,6 +596,20 @@ public partial class TradeStationBrokerage : Brokerage
     }
 
     /// <summary>
+    /// Determines if the provided <paramref name="securityType"/> matches the <see cref="TradeStationAccountType"/>.
+    /// </summary>
+    /// <param name="securityType">The type of security to check.</param>
+    /// <returns>
+    /// <c>true</c> if the security type is <see cref="SecurityType.Future"/> and the account type is <see cref="TradeStationAccountType.Futures"/>;
+    /// otherwise, <c>true</c>.
+    /// </returns>
+    private bool IsRightAccountForSymbolSecurityType(SecurityType securityType) => securityType switch
+    {
+        SecurityType.Future => _tradeStationAccountType == TradeStationAccountType.Futures,
+        _ => _tradeStationAccountType != TradeStationAccountType.Futures
+    };
+
+    /// <summary>
     /// Subscribes to order updates and processes them asynchronously.
     /// </summary>
     /// <returns>
@@ -604,6 +636,7 @@ public partial class TradeStationBrokerage : Brokerage
                 }
                 catch (Exception ex)
                 {
+                    _lastError = ex;
                     Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}.Exception: {ex}");
                 }
                 Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnOrderUpdate)}: Connection lost. Reconnecting in 10 seconds...");
@@ -612,7 +645,7 @@ public partial class TradeStationBrokerage : Brokerage
             _orderUpdateEndManualResetEvent.Set();
         }, _cancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
-        return _autoResetEvent.WaitOne(TimeSpan.FromSeconds(30), _cancellationTokenSource.Token);
+        return _autoResetEvent.WaitOne(TimeSpan.FromSeconds(25), _cancellationTokenSource.Token);
     }
 
     /// <summary>
@@ -743,21 +776,55 @@ public partial class TradeStationBrokerage : Brokerage
     /// <param name="holdingQuantity">The quantity of holdings.</param>
     /// <returns>
     /// A <see cref="TradeStationTradeActionType"/> that represents the trade action type for TradeStation.
-    /// For Futures, returns Buy if the order direction is Buy, otherwise returns Sell.
+    /// For Futures, returns <see cref="TradeStationTradeActionType.Buy"/> if the order direction is Buy, otherwise returns <see cref="TradeStationTradeActionType.Sell"/>.
     /// For Equities or Options, calls <see cref="GetOrderPosition(OrderDirection, decimal)"/> to determine the trade action type.
     /// </returns>
     /// <exception cref="ArgumentException">Thrown when an unsupported <see cref="SecurityType"/> is provided.</exception>
-    private static TradeStationTradeActionType ConvertDirection(SecurityType securityType, OrderDirection leanOrderDirection, decimal holdingQuantity)
+    /// <exception cref="NotSupportedException">Thrown when an unsupported order position is provided.</exception>
+    private static string ConvertDirection(SecurityType securityType, OrderDirection leanOrderDirection, decimal holdingQuantity)
     {
+        return ConvertDirection(securityType, GetOrderPosition(leanOrderDirection, holdingQuantity));
+    }
+
+    private static string ConvertDirection(SecurityType securityType, OrderPosition orderPosition)
+    {
+        var tradeAction = default(TradeStationTradeActionType);
         switch (securityType)
         {
             case SecurityType.Equity:
             case SecurityType.Option:
-                return GetOrderPosition(leanOrderDirection, holdingQuantity).ConvertDirection(securityType);
+                switch (orderPosition)
+                {
+                    // Increasing existing long position or opening new long position from zero
+                    case OrderPosition.BuyToOpen:
+                        tradeAction = securityType == SecurityType.Option ? TradeStationTradeActionType.BuyToOpen : TradeStationTradeActionType.Buy;
+                        break;
+                    // Decreasing existing short position or opening new short position from zero
+                    case OrderPosition.SellToOpen:
+                        tradeAction = securityType == SecurityType.Option ? TradeStationTradeActionType.SellToOpen : TradeStationTradeActionType.SellShort;
+                        break;
+                    // Buying from an existing short position (reducing, closing or flipping)
+                    case OrderPosition.BuyToClose:
+                        tradeAction = securityType == SecurityType.Option ? TradeStationTradeActionType.BuyToClose : TradeStationTradeActionType.BuyToCover;
+                        break;
+                    // Selling from an existing long position (reducing, closing or flipping)
+                    case OrderPosition.SellToClose:
+                        tradeAction = securityType == SecurityType.Option ? TradeStationTradeActionType.SellToClose : TradeStationTradeActionType.Sell;
+                        break;
+                    // This should never happen
+                    default:
+                        throw new NotSupportedException("The specified order position is not supported.");
+                };
+                break;
             default:
-                return leanOrderDirection == OrderDirection.Buy ? TradeStationTradeActionType.Buy : TradeStationTradeActionType.Sell;
+                // futures are just buy or sell
+                tradeAction = (orderPosition == OrderPosition.BuyToOpen || orderPosition == OrderPosition.BuyToClose)
+                    ? TradeStationTradeActionType.Buy : TradeStationTradeActionType.Sell;
+                break;
         }
+        return tradeAction.ToStringInvariant().ToUpperInvariant();
     }
+
 
     private class ModulesReadLicenseRead : QuantConnect.Api.RestResponse
     {
