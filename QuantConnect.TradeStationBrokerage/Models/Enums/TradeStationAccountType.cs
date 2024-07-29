@@ -24,29 +24,29 @@ namespace QuantConnect.Brokerages.TradeStation.Models.Enums;
 public enum TradeStationAccountType
 {
     /// <summary>
-    /// Undocumented trade station account types, we've seen 'forex' for example
-    /// </summary>
-    Unknown,
-
-    /// <summary>
     /// Cash account type. Trades are executed using only the funds available in the account.
     /// </summary>
-    Cash,
+    Cash = 0,
 
     /// <summary>
     /// Margin account type. Allows borrowing funds from the broker to trade securities, 
     /// increasing trading potential but also carrying higher risks.
     /// </summary>
-    Margin,
+    Margin = 1,
 
     /// <summary>
     /// Futures account type. Specifically designed for trading futures contracts.
     /// </summary>
-    Futures,
+    Futures = 2,
 
     /// <summary>
     /// Delivery versus Payment (DVP) account type. Typically used in financial transactions 
     /// where securities are exchanged for cash with simultaneous delivery.
     /// </summary>
-    DVP
+    DVP = 3,
+
+    /// <summary>
+    /// Undocumented trade station account types, we've seen 'forex' for example
+    /// </summary>
+    Unknown = 4,
 }
