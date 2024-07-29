@@ -99,7 +99,9 @@ public class TradeStationApiClient
         _httpClient = new(tokenRefreshHandler);
         _accountID = new Lazy<string>(() =>
         {
-            return GetAccountIDByAccountType(tradeStationAccountType).SynchronouslyAwaitTaskResult();
+            var accountId = GetAccountIDByAccountType(tradeStationAccountType).SynchronouslyAwaitTaskResult();
+            Log.Trace($"TradeStationApiClient(): will use account id: {accountId}");
+            return accountId;
         });
     }
 

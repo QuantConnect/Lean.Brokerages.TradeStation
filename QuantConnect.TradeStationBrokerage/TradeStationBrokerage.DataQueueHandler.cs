@@ -293,9 +293,7 @@ public partial class TradeStationBrokerage : IDataQueueHandler
         var tradeTick = new Tick
         {
             Value = price,
-            // If tradeTime is not the default value, convert tradeTime from UTC to the exchange's time zone
-            // Otherwise, use the current UTC time and convert it to the exchange's time zone
-            Time = tradeTime != default ? tradeTime.ConvertFromUtc(exchangeTimeZone) : DateTime.UtcNow.ConvertFromUtc(exchangeTimeZone),
+            Time = DateTime.UtcNow.ConvertFromUtc(exchangeTimeZone),
             Symbol = symbol,
             TickType = TickType.Trade,
             Quantity = size
