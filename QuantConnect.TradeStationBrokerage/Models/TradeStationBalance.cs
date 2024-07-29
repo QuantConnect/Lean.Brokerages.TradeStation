@@ -62,7 +62,6 @@ public readonly struct Balance
     /// <summary>
     /// The type of the account. Valid values are: Cash, Margin, Futures and DVP.
     /// </summary>
-    [JsonConverter(typeof(StringEnumConverter))]
     public TradeStationAccountType AccountType { get; }
 
     /// <summary>

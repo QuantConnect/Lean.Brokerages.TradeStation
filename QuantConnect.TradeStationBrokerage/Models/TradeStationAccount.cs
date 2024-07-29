@@ -66,7 +66,6 @@ public readonly struct Account
     /// Gets the type of the account.
     /// </summary>
     /// </summary>
-    [JsonConverter(typeof(StringEnumConverter))]
     public TradeStationAccountType AccountType { get; }
 
     /// <summary>
