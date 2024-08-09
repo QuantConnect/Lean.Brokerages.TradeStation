@@ -16,9 +16,7 @@ This repository hosts the TradeStation Brokerage Plugin Integration with the Qua
 
 <p align="center">
 <picture >
-  <source media="(prefers-color-scheme: dark)" srcset="">
-  <source media="(prefers-color-scheme: light)" srcset="">
-  <img alt="introduction" width="25%">
+<img width="40%" alt="tradestation-github-logo" src="https://github.com/user-attachments/assets/e7ae4aea-8b86-456a-a57d-fae6aa27d70b">
 </picture>
 <p>
 
