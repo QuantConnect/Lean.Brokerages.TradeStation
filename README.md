@@ -32,7 +32,7 @@ For more information about the TradeStation brokerage, see the [QuantConnect-Tra
 
   You can deploy using a visual interface in the QuantConnect cloud. For instructions, see the [QuantConnect-TradeStation Integration Page](https://www.quantconnect.com/docs/v2/our-platform/live-trading/brokerages/tradestation). 
   
-
+![tradestation-deployment](https://github.com/user-attachments/assets/d543a9dc-7dfb-4350-8210-1f348f2fbc77)
 
   In the QuantConnect Cloud Platform, you can harness the QuantConnect Live Data Feed, the TradeStation Live Data Feed, or both. For most users, this is substantially cheaper and easier than self-hosting.
   
