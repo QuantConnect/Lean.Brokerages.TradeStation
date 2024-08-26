@@ -13,6 +13,7 @@
  * limitations under the License.
 */
 
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
 
@@ -64,9 +65,20 @@ public class TradeStationPlaceOrderRequest
     /// <list type="bullet">
     /// <item><description>BUY - for equities and futures</description></item>
     /// <item><description>SELL - for equities and futures</description></item>
+    /// <item><description>BUYTOCOVER - for equities</description></item>
+    /// <item><description>SELLSHORT - for equities</description></item>
+    /// <item><description>BUYTOOPEN - for options</description></item>
+    /// <item><description>BUYTOCLOSE - for options</description></item>
+    /// <item><description>SELLTOOPEN - for options</description></item>
+    /// <item><description>SELLTOCLOSE - for options</description></item>
     /// </list>
     /// </remarks>
     public string TradeAction { get; }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    public IReadOnlyCollection<TradeStationPlaceOrderLeg> Legs { get; set; }
 
     /// <summary>
     /// The limit price for this order.
@@ -98,6 +110,14 @@ public class TradeStationPlaceOrderRequest
         TimeInForce = timeInForce;
         TradeAction = tradeAction;
     }
+
+    public TradeStationPlaceOrderRequest(string accountID, TradeStationOrderType orderType, IReadOnlyCollection<TradeStationPlaceOrderLeg> legs, TimeInForce timeInForce)
+    {
+        AccountID = accountID;
+        OrderType = orderType;
+        Legs = legs;
+        TimeInForce = timeInForce;
+    }
 }
 
 /// <summary>
@@ -125,4 +145,41 @@ public readonly struct TimeInForce
         Duration = duration;
         Expiration = expiration;
     }
+}
+
+public readonly struct TradeStationPlaceOrderLeg
+{
+    /// <summary>
+    /// The quantity of the order.
+    /// </summary>
+    /// <value>The quantity of the order.</value>
+    public string Quantity { get; }
+
+    /// <summary>
+    /// The symbol used for this order.
+    /// </summary>
+    /// <value>The symbol used for this order.</value>
+    public string Symbol { get; }
+
+    /// <summary>
+    /// Represents the trade action for the order.
+    /// </summary>
+    /// <value>The trade action for the order.</value>
+    /// <remarks>
+    /// <para>Valid values:</para>
+    /// <list type="bullet">
+    /// <item><description>BUY - for equities and futures</description></item>
+    /// <item><description>SELL - for equities and futures</description></item>
+    /// <item><description>BUYTOCOVER - for equities</description></item>
+    /// <item><description>SELLSHORT - for equities</description></item>
+    /// <item><description>BUYTOOPEN - for options</description></item>
+    /// <item><description>BUYTOCLOSE - for options</description></item>
+    /// <item><description>SELLTOOPEN - for options</description></item>
+    /// <item><description>SELLTOCLOSE - for options</description></item>
+    /// </list>
+    /// </remarks>
+    public string TradeAction { get; }
+
+    [JsonConstructor]
+    public TradeStationPlaceOrderLeg(string quantity, string symbol, string tradeAction) => (Quantity, Symbol, TradeAction) = (quantity, symbol, tradeAction);
 }

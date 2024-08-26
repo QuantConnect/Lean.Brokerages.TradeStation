@@ -193,6 +193,19 @@ public class TradeStationApiClient
             JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
     }
 
+    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(IReadOnlyCollection<TradeStationPlaceOrderLeg> legs,
+        OrderType leanOrderType, Lean.TimeInForce leanTimeInForce, decimal? limitPrice = null)
+    {
+        var orderType = leanOrderType.ConvertLeanOrderTypeToTradeStation();
+
+        var (duration, expiryDateTime) = leanTimeInForce.GetBrokerageTimeInForce();
+
+        var tradeStationOrder = new TradeStationPlaceOrderRequest(_accountID.Value, orderType, legs, new Models.TimeInForce(duration, expiryDateTime));
+
+        return await RequestAsync<TradeStationPlaceOrderResponse>(_baseUrl, $"/v3/orderexecution/orders", HttpMethod.Post,
+            JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
+    }
+
     /// <summary>
     /// Replaces an existing order with the specified parameters.
     /// </summary>

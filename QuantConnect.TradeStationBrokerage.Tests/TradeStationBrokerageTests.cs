@@ -385,6 +385,34 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             }
         }
 
+        [Test]
+        public void PlaceComboMarketOrder()
+        {
+            var aaplUnderlying = Symbols.AAPL;
+
+            var aaplOptionContracts = new List<Symbol>
+            {
+                Symbol.CreateOption(aaplUnderlying, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 100m, new DateTime(2024, 8, 30)),
+                Symbol.CreateOption(aaplUnderlying, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 125m, new DateTime(2024, 8, 30))
+            };
+
+            var groupOrderManager = new GroupOrderManager(1, legCount: aaplOptionContracts.Count, quantity: 5);
+
+            var comboOrders = new List<ComboMarketOrder>(aaplOptionContracts.Count);
+
+            foreach (var optionContract in aaplOptionContracts)
+            {
+                comboOrders.Add(new ComboMarketOrder(optionContract, 1m.GetOrderLegGroupQuantity(groupOrderManager), DateTime.UtcNow, groupOrderManager));
+            }
+
+            foreach (var comboOrder in comboOrders)
+            {
+                OrderProvider.Add(comboOrder);
+                groupOrderManager.OrderIds.Add(comboOrder.Id);
+                Assert.IsTrue(Brokerage.PlaceOrder(comboOrder));
+            }
+        }
+
         /// <summary>
         /// Retrieves the last price for a short order based on the provided order test parameters.
         /// </summary>

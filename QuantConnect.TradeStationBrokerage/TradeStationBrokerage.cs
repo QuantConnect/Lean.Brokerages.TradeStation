@@ -100,6 +100,16 @@ public partial class TradeStationBrokerage : Brokerage
     private ConcurrentDictionary<int, decimal> _orderIdToFillQuantity = new();
 
     /// <summary>
+    /// A thread-safe dictionary that caches original orders when they are part of a group.
+    /// </summary>
+    /// <remarks>
+    /// The dictionary uses the order ID as the key and stores the original <see cref="Order"/> objects as values.
+    /// This allows for the modification of the original orders, such as setting the brokerage ID, 
+    /// without retrieving a cloned instance from the order provider.
+    /// </remarks>
+    private readonly ConcurrentDictionary<int, Order> _pendingGroupOrders = new();
+
+    /// <summary>
     /// Specifies the type of account on TradeStation in current session.
     /// </summary>
     private TradeStationAccountType _tradeStationAccountType;
@@ -371,7 +381,16 @@ public partial class TradeStationBrokerage : Brokerage
 
             if (isPlaceCrossOrder == null)
             {
-                var response = PlaceTradeStationOrder(order, holdingQuantity);
+                if (!order.TryGetGroupOrders(TryGetOrder, out var orders))
+                {
+                    // some order of the group is missing but cache the new one
+                    CacheOrder(order);
+                    result = true;
+                    return;
+                }
+                RemoveCachedOrders(orders);
+
+                var response = PlaceTradeStationOrder(orders, holdingQuantity);
                 result = response != null && response.Value.Orders.Count > 0;
             }
             else
@@ -389,11 +408,19 @@ public partial class TradeStationBrokerage : Brokerage
     /// <param name="holdingQuantity">The holding quantity associated with the order.</param>
     /// <param name="isSubmittedEvent">Indicates if the order submission event should be triggered.</param>
     /// <returns>A response from TradeStation after placing the order.</returns>
-    private TradeStationPlaceOrderResponse? PlaceTradeStationOrder(Order order, decimal holdingQuantity, bool isSubmittedEvent = true)
+    private TradeStationPlaceOrderResponse? PlaceTradeStationOrder(IReadOnlyCollection<Order> orders, decimal holdingQuantity, bool isSubmittedEvent = true)
     {
+        var order = orders.First();
+        if (orders.Count == 1)
+        {
         var symbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
         var tradeAction = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity);
-        return PlaceOrderCommon(order, order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, symbol, order.GetLimitPrice(), order.GetStopPrice(), isSubmittedEvent);
+            return PlaceOrderCommon(orders, order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, symbol, order.GetLimitPrice(), order.GetStopPrice(), isSubmittedEvent);
+    }
+        else
+        {
+            return PlaceOrderCommon(orders, order.Type, order.TimeInForce, order.AbsoluteQuantity, "", "", order.GetLimitPrice(), order.GetStopPrice(), isSubmittedEvent);
+        }
     }
 
     /// <summary>
@@ -410,7 +437,7 @@ public partial class TradeStationBrokerage : Brokerage
         var crossZeroOrderResponse = default(CrossZeroOrderResponse);
         _messageHandler.WithLockedStream(() =>
         {
-            var response = PlaceOrderCommon(crossZeroOrderRequest.LeanOrder, crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
+            var response = PlaceOrderCommon(new List<Order> { crossZeroOrderRequest.LeanOrder }, crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
                 crossZeroOrderRequest.AbsoluteOrderQuantity, tradeAction, symbol, crossZeroOrderRequest.LeanOrder.GetLimitPrice(), crossZeroOrderRequest.LeanOrder.GetStopPrice(), isPlaceOrderWithLeanEvent);
 
             if (response == null || !response.Value.Orders.Any())
@@ -438,12 +465,31 @@ public partial class TradeStationBrokerage : Brokerage
     /// <param name="stopPrice">The stop price for the order, if applicable.</param>
     /// <param name="isSubmittedEvent">Indicates if the order submission event should be triggered.</param>
     /// <returns>A response from TradeStation after placing the order.</returns>
-    private TradeStationPlaceOrderResponse? PlaceOrderCommon(Order order, OrderType orderType, TimeInForce timeInForce, decimal quantity, string tradeAction, string symbol, decimal? limitPrice, decimal? stopPrice, bool isSubmittedEvent)
+    private TradeStationPlaceOrderResponse? PlaceOrderCommon(IReadOnlyCollection<Order> orders, OrderType orderType, TimeInForce timeInForce, decimal quantity, string tradeAction, string symbol, decimal? limitPrice, decimal? stopPrice, bool isSubmittedEvent)
     {
-        var response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, quantity, tradeAction, symbol, limitPrice, stopPrice).SynchronouslyAwaitTaskResult();
+        var response = default(TradeStationPlaceOrderResponse);
+        if (orders.Count == 1)
+        {
+            response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, quantity, tradeAction, symbol, limitPrice, stopPrice).SynchronouslyAwaitTaskResult();
+        }
+        else
+        {
+            var legs = new List<TradeStationPlaceOrderLeg>();
+            foreach (var order in orders)
+    {
+                var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol);
+                var brokerageSymbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
+                var tradeActionMultiple = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity);
+                legs.Add(new TradeStationPlaceOrderLeg(order.AbsoluteQuantity.ToStringInvariant(), brokerageSymbol, tradeActionMultiple));
+            }
+
+            response = _tradeStationApiClient.PlaceOrder(legs, orderType, timeInForce, limitPrice).SynchronouslyAwaitTaskResult();
+        }
 
         foreach (var brokerageOrder in response.Orders)
         {
+            foreach (var order in orders)
+            {
             // Check if the order failed due to an existing position. Reason: [EC601,EC602,EC701,EC702]: You are long/short N shares.
             if (brokerageOrder.Message.Contains("Order failed", StringComparison.InvariantCultureIgnoreCase))
             {
@@ -468,6 +514,7 @@ public partial class TradeStationBrokerage : Brokerage
                 OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
                 { Status = OrderStatus.Submitted });
             }
+        }
         }
         return response;
     }
@@ -825,6 +872,39 @@ public partial class TradeStationBrokerage : Brokerage
         return tradeAction.ToStringInvariant().ToUpperInvariant();
     }
 
+    /// <summary>
+    /// Attempts to retrieve an original order from the cache using the specified order ID.
+    /// </summary>
+    /// <param name="orderId">The unique identifier of the order to retrieve.</param>
+    /// <returns>
+    /// The original <see cref="Order"/> if found; otherwise, <c>null</c>.
+    /// </returns>
+    private Order TryGetOrder(int orderId)
+    {
+        _pendingGroupOrders.TryGetValue(orderId, out var order);
+        return order;
+    }
+
+    /// <summary>
+    /// Caches an original order in the internal dictionary for future retrieval.
+    /// </summary>
+    /// <param name="order">The <see cref="Order"/> object to cache.</param>
+    private void CacheOrder(Order order)
+    {
+        _pendingGroupOrders[order.Id] = order;
+    }
+
+    /// <summary>
+    /// Removes a list of orders from the internal cache.
+    /// </summary>
+    /// <param name="orders">The list of <see cref="Order"/> objects to remove from the cache.</param>
+    private void RemoveCachedOrders(List<Order> orders)
+    {
+        for (var i = 0; i < orders.Count; i++)
+        {
+            _pendingGroupOrders.TryRemove(orders[i].Id, out _);
+        }
+    }
 
     private class ModulesReadLicenseRead : QuantConnect.Api.RestResponse
     {

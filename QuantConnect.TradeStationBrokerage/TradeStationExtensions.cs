@@ -80,6 +80,7 @@ public static class TradeStationExtensions
         OrderType.Limit => TradeStationOrderType.Limit,
         OrderType.StopMarket => TradeStationOrderType.StopMarket,
         OrderType.StopLimit => TradeStationOrderType.StopLimit,
+        OrderType.ComboMarket => TradeStationOrderType.Market,
         _ => throw new NotSupportedException($"{nameof(TradeStationBrokerage)}.{nameof(ConvertLeanOrderTypeToTradeStation)}:" +
             $" The order type '{orderType}' is not supported for conversion to TradeStation order type.")
     };
