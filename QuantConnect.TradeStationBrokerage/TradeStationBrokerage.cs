@@ -482,7 +482,7 @@ public partial class TradeStationBrokerage : Brokerage
         else
         {
             var orderLegs = CreateOrderLegs(orders);
-            response = _tradeStationApiClient.PlaceOrderConfirmation(orderLegs.Legs, orderType, timeInForce, orderLegs.GroupLimitPrice).SynchronouslyAwaitTaskResult();
+            response = _tradeStationApiClient.PlaceOrder(orderLegs.Legs, orderType, timeInForce, orderLegs.GroupLimitPrice).SynchronouslyAwaitTaskResult();
             }
 
         foreach (var brokerageOrder in response.Orders)
