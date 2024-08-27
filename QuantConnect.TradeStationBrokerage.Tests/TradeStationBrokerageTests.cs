@@ -388,22 +388,67 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         [Test]
         public void PlaceComboMarketOrder()
         {
-            var aaplUnderlying = Symbols.AAPL;
+            var comboOrders = PlaceComboOrder(
+                Symbols.AAPL,
+                orderPrice: null, // No price for market orders
+                orderType: (optionContract, quantity, _, groupOrderManager) =>
+                    new ComboMarketOrder(optionContract, quantity, DateTime.UtcNow, groupOrderManager)
+            );
+            AssertComboOrderPlacedSuccessfully(comboOrders);
+        }
 
-            var aaplOptionContracts = new List<Symbol>
+        [Test]
+        public void PlaceComboLimitOrder()
+        {
+            var comboOrders = PlaceComboOrder(
+                Symbols.AAPL,
+                orderPrice: 100m,
+                orderType: (optionContract, quantity, price, groupOrderManager) =>
+                    new ComboLimitOrder(optionContract, quantity, price.Value, DateTime.UtcNow, groupOrderManager)
+            );
+            AssertComboOrderPlacedSuccessfully(comboOrders);
+        }
+
+        private List<T> PlaceComboOrder<T>(
+            Symbol underlyingSymbol,
+            decimal? orderPrice,
+            Func<Symbol, decimal, decimal?, GroupOrderManager, T> orderType
+        ) where T : ComboOrder
+        {
+            var optionContracts = new List<Symbol>
             {
-                Symbol.CreateOption(aaplUnderlying, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 100m, new DateTime(2024, 8, 30)),
-                Symbol.CreateOption(aaplUnderlying, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 125m, new DateTime(2024, 8, 30))
+                Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 100m, new DateTime(2024, 8, 30)),
+                Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 125m, new DateTime(2024, 8, 30))
             };
 
-            var groupOrderManager = new GroupOrderManager(1, legCount: aaplOptionContracts.Count, quantity: 5);
+            var groupOrderManager = new GroupOrderManager(1, legCount: optionContracts.Count, quantity: 5);
 
-            var comboOrders = new List<ComboMarketOrder>(aaplOptionContracts.Count);
+            var comboOrders = optionContracts
+                .Select(optionContract => orderType(optionContract, 1m.GetOrderLegGroupQuantity(groupOrderManager), orderPrice, groupOrderManager))
+                .ToList();
 
-            foreach (var optionContract in aaplOptionContracts)
+            var events = new List<OrderEvent>();
+            using var manualResetEvent = new ManualResetEvent(false);
+            Brokerage.OrdersStatusChanged += (_, orderEvents) =>
             {
-                comboOrders.Add(new ComboMarketOrder(optionContract, 1m.GetOrderLegGroupQuantity(groupOrderManager), DateTime.UtcNow, groupOrderManager));
-            }
+                events.AddRange(orderEvents);
+
+                foreach (var order in comboOrders)
+                {
+                    foreach (var orderEvent in orderEvents)
+                    {
+                        if (orderEvent.OrderId == order.Id)
+                        {
+                            order.Status = orderEvent.Status;
+                        }
+                    }
+
+                    if (comboOrders.All(o => o.Status.IsClosed()) || comboOrders.All(o => o.Status == OrderStatus.Submitted))
+                    {
+                        manualResetEvent.Set();
+                    }
+                }
+            };
 
             foreach (var comboOrder in comboOrders)
             {
@@ -411,6 +456,14 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 groupOrderManager.OrderIds.Add(comboOrder.Id);
                 Assert.IsTrue(Brokerage.PlaceOrder(comboOrder));
             }
+
+            Assert.IsTrue(manualResetEvent.WaitOne(TimeSpan.FromSeconds(60)));
+            return comboOrders;
+        }
+
+        private void AssertComboOrderPlacedSuccessfully<T>(List<T> comboOrders) where T : ComboOrder
+        {
+            Assert.IsTrue(comboOrders.All(o => o.Status.IsClosed() || o.Status == OrderStatus.Submitted));
         }
 
         /// <summary>
