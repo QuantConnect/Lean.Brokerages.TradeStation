@@ -411,16 +411,22 @@ public partial class TradeStationBrokerage : Brokerage
     private TradeStationPlaceOrderResponse? PlaceTradeStationOrder(IReadOnlyCollection<Order> orders, decimal holdingQuantity, bool isSubmittedEvent = true)
     {
         var order = orders.First();
-        if (orders.Count == 1)
+        switch (order.Type)
         {
+            case OrderType.ComboMarket:
+            case OrderType.ComboLimit:
+                return PlaceOrderCommon(orders, order.Type, order.TimeInForce, 0m, "", "", 0m, 0m, isSubmittedEvent);
+            case OrderType.Market:
+            case OrderType.Limit:
+            case OrderType.StopMarket:
+            case OrderType.StopLimit:
         var symbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
         var tradeAction = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity);
             return PlaceOrderCommon(orders, order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, symbol, order.GetLimitPrice(), order.GetStopPrice(), isSubmittedEvent);
-    }
-        else
-        {
-            return PlaceOrderCommon(orders, order.Type, order.TimeInForce, order.AbsoluteQuantity, "", "", order.GetLimitPrice(), order.GetStopPrice(), isSubmittedEvent);
-        }
+            default:
+                throw new NotSupportedException($"{nameof(TradeStationBrokerage)}.{nameof(PlaceTradeStationOrder)}:" +
+                    $" The order type '{order.Type}' is not supported for conversion to TradeStation order type.");
+        };
     }
 
     /// <summary>
@@ -465,7 +471,8 @@ public partial class TradeStationBrokerage : Brokerage
     /// <param name="stopPrice">The stop price for the order, if applicable.</param>
     /// <param name="isSubmittedEvent">Indicates if the order submission event should be triggered.</param>
     /// <returns>A response from TradeStation after placing the order.</returns>
-    private TradeStationPlaceOrderResponse? PlaceOrderCommon(IReadOnlyCollection<Order> orders, OrderType orderType, TimeInForce timeInForce, decimal quantity, string tradeAction, string symbol, decimal? limitPrice, decimal? stopPrice, bool isSubmittedEvent)
+    private TradeStationPlaceOrderResponse? PlaceOrderCommon(IReadOnlyCollection<Order> orders, OrderType orderType, TimeInForce timeInForce, decimal quantity, string tradeAction,
+        string symbol, decimal? limitPrice, decimal? stopPrice, bool isSubmittedEvent)
     {
         var response = default(TradeStationPlaceOrderResponse);
         if (orders.Count == 1)
@@ -474,17 +481,9 @@ public partial class TradeStationBrokerage : Brokerage
         }
         else
         {
-            var legs = new List<TradeStationPlaceOrderLeg>();
-            foreach (var order in orders)
-    {
-                var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol);
-                var brokerageSymbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
-                var tradeActionMultiple = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity);
-                legs.Add(new TradeStationPlaceOrderLeg(order.AbsoluteQuantity.ToStringInvariant(), brokerageSymbol, tradeActionMultiple));
+            var orderLegs = CreateOrderLegs(orders);
+            response = _tradeStationApiClient.PlaceOrderConfirmation(orderLegs.Legs, orderType, timeInForce, orderLegs.GroupLimitPrice).SynchronouslyAwaitTaskResult();
             }
-
-            response = _tradeStationApiClient.PlaceOrder(legs, orderType, timeInForce, limitPrice).SynchronouslyAwaitTaskResult();
-        }
 
         foreach (var brokerageOrder in response.Orders)
         {
@@ -904,6 +903,32 @@ public partial class TradeStationBrokerage : Brokerage
         {
             _pendingGroupOrders.TryRemove(orders[i].Id, out _);
         }
+    }
+
+    /// <summary>
+    /// Creates a collection of TradeStation order legs and determines the group limit price for the orders.
+    /// </summary>
+    /// <param name="orders">
+    /// A collection of <see cref="Order"/> objects representing the orders to be processed.
+    /// </param>
+    /// <returns>
+    /// A tuple containing a read-only collection of <see cref="TradeStationPlaceOrderLeg"/> representing the order legs,
+    /// and a <see cref="decimal"/> value representing the group limit price for the orders.
+    /// </returns>
+    private (IReadOnlyCollection<TradeStationPlaceOrderLeg> Legs, decimal GroupLimitPrice) CreateOrderLegs(IReadOnlyCollection<Order> orders)
+    {
+        var legs = new List<TradeStationPlaceOrderLeg>();
+        var groupLimitPrice = default(decimal);
+        foreach (var order in orders)
+        {
+            groupLimitPrice = order.GroupOrderManager.LimitPrice;
+            var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol);
+            var brokerageSymbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
+            var tradeActionMultiple = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity);
+            legs.Add(new TradeStationPlaceOrderLeg(order.AbsoluteQuantity.ToStringInvariant(), brokerageSymbol, tradeActionMultiple));
+        }
+
+        return (legs, groupLimitPrice);
     }
 
     private class ModulesReadLicenseRead : QuantConnect.Api.RestResponse

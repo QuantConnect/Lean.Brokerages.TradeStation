@@ -202,6 +202,13 @@ public class TradeStationApiClient
 
         var tradeStationOrder = new TradeStationPlaceOrderRequest(_accountID.Value, orderType, legs, new Models.TimeInForce(duration, expiryDateTime));
 
+        switch (leanOrderType)
+        {
+            case OrderType.ComboLimit:
+                tradeStationOrder.LimitPrice = limitPrice.ToStringInvariant();
+                break;
+        }
+
         return await RequestAsync<TradeStationPlaceOrderResponse>(_baseUrl, $"/v3/orderexecution/orders", HttpMethod.Post,
             JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
     }
