@@ -103,7 +103,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 orderQuantity,
                 orderDirection,
                 ticker,
-                Math.Round(quoteLastPrice - 0.5m, 2));
+                limitPrice: Math.Round(quoteLastPrice - 0.5m, 2));
 
             Assert.IsNotNull(orderResponse);
             Assert.IsNull(orderResponse.Errors);

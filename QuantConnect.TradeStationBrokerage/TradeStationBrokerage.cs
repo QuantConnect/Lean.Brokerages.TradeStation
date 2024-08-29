@@ -526,14 +526,15 @@ public partial class TradeStationBrokerage : Brokerage
         string symbol, decimal? limitPrice, decimal? stopPrice, bool isSubmittedEvent)
     {
         var response = default(TradeStationPlaceOrderResponse);
+        var properties = orders.First().Properties as TradeStationOrderProperties;
         if (orders.Count == 1)
         {
-            response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, quantity, tradeAction, symbol, limitPrice, stopPrice).SynchronouslyAwaitTaskResult();
+            response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, quantity, tradeAction, symbol, limitPrice: limitPrice, stopPrice: stopPrice, tradeStationOrderProperties: properties).SynchronouslyAwaitTaskResult();
         }
         else
         {
             var orderLegs = CreateOrderLegs(orders);
-            response = _tradeStationApiClient.PlaceOrder(orderLegs.Legs, orderType, timeInForce, orderLegs.GroupLimitPrice).SynchronouslyAwaitTaskResult();
+            response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, legs: orderLegs.Legs, limitPrice: orderLegs.GroupLimitPrice, tradeStationOrderProperties: properties).SynchronouslyAwaitTaskResult();
         }
 
         foreach (var brokerageOrder in response.Orders)

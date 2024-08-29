@@ -156,61 +156,65 @@ public class TradeStationApiClient
     }
 
     /// <summary>
-    /// Places an order in TradeStation based on the provided Lean order and symbol.
+    /// Places an order in TradeStation based on the provided Lean order and symbol or legs.
     /// </summary>
     /// <param name="leanOrderType">The type of Lean order to be placed.</param>
     /// <param name="leanTimeInForce">The Lean time-in-force for the order.</param>
     /// <param name="leanAbsoluteQuantity">The absolute quantity of the Lean order.</param>
     /// <param name="tradeAction">The action to be taken for the trade: <see cref="TradeStationTradeActionType"/> </param>
     /// <param name="symbol">The symbol for which the order is being placed.</param>
+    /// <param name="legs">The collection of order legs for combo orders.</param>
     /// <param name="limitPrice">The limit price for the order (optional).</param>
     /// <param name="stopPrice">The stop price for the order (optional).</param>
+    /// <param name="tradeStationOrderProperties">Additional TradeStation order properties (optional).</param>
     /// <returns>A <see cref="TradeStationPlaceOrderResponse"/> containing the result of the order placement.</returns>
-    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(OrderType leanOrderType, Lean.TimeInForce leanTimeInForce, decimal leanAbsoluteQuantity,
-        string tradeAction, string symbol, decimal? limitPrice = null, decimal? stopPrice = null)
+    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(
+        OrderType leanOrderType,
+        Lean.TimeInForce leanTimeInForce,
+        decimal? leanAbsoluteQuantity = null,
+        string tradeAction = null,
+        string symbol = null,
+        IReadOnlyCollection<TradeStationPlaceOrderLeg> legs = null,
+        decimal? limitPrice = null,
+        decimal? stopPrice = null,
+        TradeStationOrderProperties tradeStationOrderProperties = null)
     {
         var orderType = leanOrderType.ConvertLeanOrderTypeToTradeStation();
-
         var (duration, expiryDateTime) = leanTimeInForce.GetBrokerageTimeInForce();
 
-        var tradeStationOrder = new TradeStationPlaceOrderRequest(_accountID.Value, orderType, leanAbsoluteQuantity.ToStringInvariant(), symbol,
-                    new Models.TimeInForce(duration, expiryDateTime), tradeAction);
+        var tradeStationOrder = new TradeStationPlaceOrderRequest(
+            _accountID.Value,
+            orderType,
+            leanAbsoluteQuantity?.ToStringInvariant(),
+            symbol,
+            new Models.TimeInForce(duration, expiryDateTime),
+            tradeAction,
+            legs
+        );
+
+        if (tradeStationOrderProperties != null)
+        {
+            tradeStationOrder.AdvancedOptions = new TradeStationAdvancedOptions(tradeStationOrderProperties.AllOrNone);
+        }
 
         switch (leanOrderType)
         {
             case OrderType.Limit:
-                tradeStationOrder.LimitPrice = limitPrice.Value.ToStringInvariant();
+            case OrderType.ComboLimit:
+                tradeStationOrder.LimitPrice = limitPrice?.ToStringInvariant();
                 break;
             case OrderType.StopMarket:
-                tradeStationOrder.StopPrice = stopPrice.Value.ToStringInvariant();
+                tradeStationOrder.StopPrice = stopPrice?.ToStringInvariant();
                 break;
             case OrderType.StopLimit:
-                tradeStationOrder.LimitPrice = limitPrice.Value.ToStringInvariant();
-                tradeStationOrder.StopPrice = stopPrice.Value.ToStringInvariant();
-                break;
-        }
-        return await RequestAsync<TradeStationPlaceOrderResponse>(_baseUrl, $"/v3/orderexecution/orders", HttpMethod.Post,
-            JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
-    }
-
-    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(IReadOnlyCollection<TradeStationPlaceOrderLeg> legs,
-        OrderType leanOrderType, Lean.TimeInForce leanTimeInForce, decimal? limitPrice = null)
-    {
-        var orderType = leanOrderType.ConvertLeanOrderTypeToTradeStation();
-
-        var (duration, expiryDateTime) = leanTimeInForce.GetBrokerageTimeInForce();
-
-        var tradeStationOrder = new TradeStationPlaceOrderRequest(_accountID.Value, orderType, legs, new Models.TimeInForce(duration, expiryDateTime));
-
-        switch (leanOrderType)
-        {
-            case OrderType.ComboLimit:
-                tradeStationOrder.LimitPrice = limitPrice.ToStringInvariant();
+                tradeStationOrder.LimitPrice = limitPrice?.ToStringInvariant();
+                tradeStationOrder.StopPrice = stopPrice?.ToStringInvariant();
                 break;
         }
 
-        return await RequestAsync<TradeStationPlaceOrderResponse>(_baseUrl, $"/v3/orderexecution/orders", HttpMethod.Post,
-            JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
+        return await RequestAsync<TradeStationPlaceOrderResponse>(_baseUrl, "/v3/orderexecution/orders", HttpMethod.Post,
+            JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings)
+        );
     }
 
     /// <summary>

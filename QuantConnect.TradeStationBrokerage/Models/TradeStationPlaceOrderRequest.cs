@@ -76,9 +76,9 @@ public class TradeStationPlaceOrderRequest
     public string TradeAction { get; }
 
     /// <summary>
-    /// 
+    /// Gets or sets the collection of order legs to be placed through TradeStation.
     /// </summary>
-    public IReadOnlyCollection<TradeStationPlaceOrderLeg> Legs { get; set; }
+    public IReadOnlyCollection<TradeStationPlaceOrderLeg> Legs { get; }
 
     /// <summary>
     /// The limit price for this order.
@@ -91,7 +91,12 @@ public class TradeStationPlaceOrderRequest
     public string StopPrice { get; set; }
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="TradeStationPlaceOrderRequest"/> struct.
+    /// The TradeStation Advanced Options of Orders
+    /// </summary>
+    public TradeStationAdvancedOptions? AdvancedOptions { get; set; } = null;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TradeStationPlaceOrderRequest"/> class for single leg orders.
     /// </summary>
     /// <param name="accountID">The TradeStation Account ID.</param>
     /// <param name="orderType">The type of the order.</param>
@@ -100,8 +105,17 @@ public class TradeStationPlaceOrderRequest
     /// <param name="timeInForce">The time in force for the order.</param>
     /// <param name="tradeAction">The trade action for the order.</param>
     [JsonConstructor]
-    public TradeStationPlaceOrderRequest(string accountID, TradeStationOrderType orderType, string quantity, string symbol, TimeInForce timeInForce,
-        string tradeAction)
+    public TradeStationPlaceOrderRequest(
+        string accountID,
+        TradeStationOrderType orderType,
+        string quantity,
+        string symbol,
+        TimeInForce timeInForce,
+        string tradeAction,
+        IReadOnlyCollection<TradeStationPlaceOrderLeg> legs = null,
+        string limitPrice = null,
+        string stopPrice = null,
+        TradeStationAdvancedOptions? advancedOptions = null)
     {
         AccountID = accountID;
         OrderType = orderType;
@@ -109,14 +123,10 @@ public class TradeStationPlaceOrderRequest
         Symbol = symbol;
         TimeInForce = timeInForce;
         TradeAction = tradeAction;
-    }
-
-    public TradeStationPlaceOrderRequest(string accountID, TradeStationOrderType orderType, IReadOnlyCollection<TradeStationPlaceOrderLeg> legs, TimeInForce timeInForce)
-    {
-        AccountID = accountID;
-        OrderType = orderType;
         Legs = legs;
-        TimeInForce = timeInForce;
+        LimitPrice = limitPrice;
+        StopPrice = stopPrice;
+        AdvancedOptions = advancedOptions;
     }
 }
 
@@ -147,6 +157,14 @@ public readonly struct TimeInForce
     }
 }
 
+/// <summary>
+/// Represents a single leg of an order to be placed through TradeStation.
+/// </summary>
+/// <remarks>
+/// This struct encapsulates the necessary information for executing an individual leg of a combo order
+/// on TradeStation. Each leg includes the quantity of the asset, the symbol representing the asset,
+/// and the specific trade action to be performed.
+/// </remarks>
 public readonly struct TradeStationPlaceOrderLeg
 {
     /// <summary>
@@ -180,6 +198,40 @@ public readonly struct TradeStationPlaceOrderLeg
     /// </remarks>
     public string TradeAction { get; }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TradeStationPlaceOrderLeg"/> struct.
+    /// </summary>
+    /// <param name="quantity">The quantity of the asset to be traded.</param>
+    /// <param name="symbol">The symbol for the asset.</param>
+    /// <param name="tradeAction">The trade action to be executed.</param>
     [JsonConstructor]
     public TradeStationPlaceOrderLeg(string quantity, string symbol, string tradeAction) => (Quantity, Symbol, TradeAction) = (quantity, symbol, tradeAction);
+}
+
+/// <summary>
+/// Represents advanced options for orders placed through TradeStation.
+/// </summary>
+public readonly struct TradeStationAdvancedOptions
+{
+    /// <summary>
+    /// Gets a value indicating whether the "All or None" feature is enabled.
+    /// </summary>
+    /// <value>
+    /// A boolean value that, when set to true, ensures the order will only be filled completely or not at all. 
+    /// If set to false, the order can be partially filled. This option is applicable to both equities and options.
+    /// </value>
+    /// <remarks>
+    /// The "All or None" feature is particularly useful when the trader wants to avoid partial executions, 
+    /// which can result in multiple transactions and potentially higher fees.
+    /// </remarks>
+    public bool AllOrNone { get; }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TradeStationAdvancedOptions"/> struct.
+    /// </summary>
+    /// <param name="allOrNone">Specifies whether to enable the "All or None" feature for the order.</param>
+    public TradeStationAdvancedOptions(bool allOrNone)
+    {
+        AllOrNone = allOrNone;
+    }
 }

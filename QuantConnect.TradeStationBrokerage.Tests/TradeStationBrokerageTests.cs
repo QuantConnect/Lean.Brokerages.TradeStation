@@ -431,7 +431,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 optionContracts,
                 comboLimitPrice,
                 (optionContract, quantity, price, groupOrderManager) =>
-                    new ComboLimitOrder(optionContract, quantity, price.Value, DateTime.UtcNow, groupOrderManager),
+                    new ComboLimitOrder(optionContract, quantity, price.Value, DateTime.UtcNow, groupOrderManager, properties: new TradeStationOrderProperties() { AllOrNone = true }),
                 groupOrderManager);
 
             AssertComboOrderPlacedSuccessfully(comboOrders);
