@@ -838,33 +838,32 @@ public partial class TradeStationBrokerage : Brokerage
 
                 foreach (var leanOrder in leanOrders)
                 {
-                    foreach (var leg in brokerageOrder.Legs)
+                    var leg = brokerageOrder.Legs[0];
+
+                    // TradeStation sends the accumulative filled quantity but we need the partial amount for our event
+                    _orderIdToFillQuantity.TryGetValue(leanOrder.Id, out var previousExecutionAmount);
+                    var accumulativeFilledQuantity = _orderIdToFillQuantity[leanOrder.Id] = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.ExecQuantity) : leg.ExecQuantity;
+
+                    if (leanOrderStatus.IsClosed())
                     {
-                        // TradeStation sends the accumulative filled quantity but we need the partial amount for our event
-                        _orderIdToFillQuantity.TryGetValue(leanOrder.Id, out var previousExecutionAmount);
-                        var accumulativeFilledQuantity = _orderIdToFillQuantity[leanOrder.Id] = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.ExecQuantity) : leg.ExecQuantity;
+                        _orderIdToFillQuantity.TryRemove(leanOrder.Id, out _);
+                    }
 
-                        if (leanOrderStatus.IsClosed())
-                        {
-                            _orderIdToFillQuantity.TryRemove(leanOrder.Id, out _);
-                        }
+                    var orderEvent = new OrderEvent(
+                        leanOrder,
+                        DateTime.UtcNow,
+                        new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD)),
+                        brokerageOrder.RejectReason)
+                    {
+                        Status = leanOrderStatus,
+                        FillPrice = leg.ExecutionPrice,
+                        FillQuantity = accumulativeFilledQuantity - previousExecutionAmount
+                    };
 
-                        var orderEvent = new OrderEvent(
-                            leanOrder,
-                            DateTime.UtcNow,
-                            new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD)),
-                            brokerageOrder.RejectReason)
-                        {
-                            Status = leanOrderStatus,
-                            FillPrice = leg.ExecutionPrice,
-                            FillQuantity = accumulativeFilledQuantity - previousExecutionAmount
-                        };
-
-                        // if we filled the order and have another contingent order waiting, submit it
-                        if (!TryHandleRemainingCrossZeroOrder(crossZeroLeanOrder, orderEvent))
-                        {
-                            OnOrderEvent(orderEvent);
-                        }
+                    // if we filled the order and have another contingent order waiting, submit it
+                    if (!TryHandleRemainingCrossZeroOrder(crossZeroLeanOrder, orderEvent))
+                    {
+                        OnOrderEvent(orderEvent);
                     }
                 }
             }
