@@ -972,10 +972,22 @@ public partial class TradeStationBrokerage : Brokerage
         var groupLimitPrice = default(decimal);
         foreach (var order in orders)
         {
-            groupLimitPrice = order.GroupOrderManager.LimitPrice;
+            if (groupLimitPrice == default)
+            {
+                groupLimitPrice = order.Direction == OrderDirection.Buy ? order.GroupOrderManager.LimitPrice : decimal.Negate(order.GroupOrderManager.LimitPrice);
+            }
             var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol);
             var brokerageSymbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
-            var tradeActionMultiple = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity);
+
+            var tradeActionMultiple = default(string);
+            if (order.Symbol.SecurityType == SecurityType.Equity)
+            {
+                tradeActionMultiple = GetOrderPosition(order.Direction, holdingQuantity).ToStringInvariant().ToUpperInvariant();
+            }
+            else
+            {
+                tradeActionMultiple = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity);
+            }
             legs.Add(new TradeStationPlaceOrderLeg(order.AbsoluteQuantity.ToStringInvariant(), brokerageSymbol, tradeActionMultiple));
         }
 
