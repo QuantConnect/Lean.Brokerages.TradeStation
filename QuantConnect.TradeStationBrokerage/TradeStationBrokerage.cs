@@ -836,9 +836,25 @@ public partial class TradeStationBrokerage : Brokerage
                     return;
                 }
 
-                foreach (var leanOrder in leanOrders)
+                foreach (var leg in brokerageOrder.Legs)
                 {
-                    var leg = brokerageOrder.Legs[0];
+                    var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
+                        leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
+
+                    // Ensure there is an order with the specific symbol in leanOrders.
+                    var leanOrder = leanOrders.FirstOrDefault(order => order.Symbol == leanSymbol);
+
+                    if (leanOrder == null)
+                    {
+                        Log.Error($"Error in {nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}: " +
+                            $"Could not find order with symbol '{leanSymbol}' in leanOrders. " +
+                            $"Brokerage Order ID: {brokerageOrder.OrderID}. " +
+                            $"Leg details - Symbol: {leg.Symbol}, Underlying: {leg.Underlying}, " +
+                            $"Asset Type: {leg.AssetType}, Expiration Date: {leg.ExpirationDate}, " +
+                            $"Strike Price: {leg.StrikePrice}, Option Type: {leg.OptionType}. " +
+                            $"Please verify that the order was correctly added to leanOrders.");
+                        return;
+                    }
 
                     // TradeStation sends the accumulative filled quantity but we need the partial amount for our event
                     _orderIdToFillQuantity.TryGetValue(leanOrder.Id, out var previousExecutionAmount);
