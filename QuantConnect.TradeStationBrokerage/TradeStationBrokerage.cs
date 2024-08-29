@@ -830,8 +830,6 @@ public partial class TradeStationBrokerage : Brokerage
 
                 if (leanOrders == null || leanOrders.Count == 0)
                 {
-                    // If the lean order is still null, wait for up to 10 seconds before trying again to get the order from the cache.
-                    // This is necessary when a CrossZeroOrder was placed successfully and we need to ensure the order is available.
                     Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}. order id not found: {brokerageOrder.OrderID}");
                     return;
                 }
