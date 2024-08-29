@@ -267,37 +267,37 @@ public partial class TradeStationBrokerage : Brokerage
             var leanOrder = default(Order);
             if (order.Legs.Count == 1)
             {
-            var leg = order.Legs.First();
+                var leg = order.Legs.First();
                 var orderQuantity = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.QuantityOrdered) : leg.QuantityOrdered;
 
-            var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
-                leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
+                var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
+                    leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
 
-            switch (order.OrderType)
-            {
-                case TradeStationOrderType.Market:
+                switch (order.OrderType)
+                {
+                    case TradeStationOrderType.Market:
                         leanOrder = new MarketOrder(leanSymbol, orderQuantity, order.OpenedDateTime);
-                    break;
-                case TradeStationOrderType.Limit:
+                        break;
+                    case TradeStationOrderType.Limit:
                         leanOrder = new LimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime);
-                    break;
-                case TradeStationOrderType.StopMarket:
+                        break;
+                    case TradeStationOrderType.StopMarket:
                         leanOrder = new StopMarketOrder(leanSymbol, orderQuantity, order.StopPrice, order.OpenedDateTime);
-                    break;
-                case TradeStationOrderType.StopLimit:
+                        break;
+                    case TradeStationOrderType.StopLimit:
                         leanOrder = new StopLimitOrder(leanSymbol, orderQuantity, order.StopPrice, order.LimitPrice, order.OpenedDateTime);
-                    break;
-            }
+                        break;
+                }
 
-            leanOrder.Status = OrderStatus.Submitted;
-            if (leg.ExecQuantity > 0m && leg.ExecQuantity != leg.QuantityOrdered)
-            {
-                leanOrder.Status = OrderStatus.PartiallyFilled;
-            }
+                leanOrder.Status = OrderStatus.Submitted;
+                if (leg.ExecQuantity > 0m && leg.ExecQuantity != leg.QuantityOrdered)
+                {
+                    leanOrder.Status = OrderStatus.PartiallyFilled;
+                }
 
-            leanOrder.BrokerId.Add(order.OrderID);
-            leanOrders.Add(leanOrder);
-        }
+                leanOrder.BrokerId.Add(order.OrderID);
+                leanOrders.Add(leanOrder);
+            }
             else
             {
                 var totalLegShares = order.Legs.Sum(leg => leg.QuantityOrdered);
@@ -471,9 +471,9 @@ public partial class TradeStationBrokerage : Brokerage
             case OrderType.Limit:
             case OrderType.StopMarket:
             case OrderType.StopLimit:
-        var symbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
-        var tradeAction = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity);
-            return PlaceOrderCommon(orders, order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, symbol, order.GetLimitPrice(), order.GetStopPrice(), isSubmittedEvent);
+                var symbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
+                var tradeAction = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity);
+                return PlaceOrderCommon(orders, order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, symbol, order.GetLimitPrice(), order.GetStopPrice(), isSubmittedEvent);
             default:
                 throw new NotSupportedException($"{nameof(TradeStationBrokerage)}.{nameof(PlaceTradeStationOrder)}:" +
                     $" The order type '{order.Type}' is not supported for conversion to TradeStation order type.");
@@ -534,44 +534,44 @@ public partial class TradeStationBrokerage : Brokerage
         {
             var orderLegs = CreateOrderLegs(orders);
             response = _tradeStationApiClient.PlaceOrder(orderLegs.Legs, orderType, timeInForce, orderLegs.GroupLimitPrice).SynchronouslyAwaitTaskResult();
-            }
+        }
 
         foreach (var brokerageOrder in response.Orders)
         {
             var exceptOneFailed = default(bool);
             foreach (var order in orders)
             {
-            // Check if the order failed due to an existing position. Reason: [EC601,EC602,EC701,EC702]: You are long/short N shares.
-            if (brokerageOrder.Message.Contains("Order failed", StringComparison.InvariantCultureIgnoreCase))
-            {
-                OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
-                { Status = OrderStatus.Invalid, Message = brokerageOrder.Message });
+                // Check if the order failed due to an existing position. Reason: [EC601,EC602,EC701,EC702]: You are long/short N shares.
+                if (brokerageOrder.Message.Contains("Order failed", StringComparison.InvariantCultureIgnoreCase))
+                {
+                    OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
+                    { Status = OrderStatus.Invalid, Message = brokerageOrder.Message });
                     exceptOneFailed = true;
                     continue;
-            }
+                }
 
-            if (string.IsNullOrEmpty(brokerageOrder.OrderID))
-            {
-                // die
-                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"Brokerage OrderId not found for {order.Id}: {brokerageOrder.Message}"));
-            }
+                if (string.IsNullOrEmpty(brokerageOrder.OrderID))
+                {
+                    // die
+                    OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"Brokerage OrderId not found for {order.Id}: {brokerageOrder.Message}"));
+                }
 
-            if (!order.BrokerId.Contains(brokerageOrder.OrderID))
-            {
-                order.BrokerId.Add(brokerageOrder.OrderID);
-            }
+                if (!order.BrokerId.Contains(brokerageOrder.OrderID))
+                {
+                    order.BrokerId.Add(brokerageOrder.OrderID);
+                }
 
-            if (isSubmittedEvent)
-            {
-                OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
-                { Status = OrderStatus.Submitted });
+                if (isSubmittedEvent)
+                {
+                    OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
+                    { Status = OrderStatus.Submitted });
+                }
             }
-        }
 
             if (exceptOneFailed)
             {
                 return null;
-        }
+            }
         }
 
         return response;
