@@ -538,6 +538,7 @@ public partial class TradeStationBrokerage : Brokerage
 
         foreach (var brokerageOrder in response.Orders)
         {
+            var exceptOneFailed = default(bool);
             foreach (var order in orders)
             {
             // Check if the order failed due to an existing position. Reason: [EC601,EC602,EC701,EC702]: You are long/short N shares.
@@ -545,7 +546,8 @@ public partial class TradeStationBrokerage : Brokerage
             {
                 OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
                 { Status = OrderStatus.Invalid, Message = brokerageOrder.Message });
-                return null;
+                    exceptOneFailed = true;
+                    continue;
             }
 
             if (string.IsNullOrEmpty(brokerageOrder.OrderID))
@@ -565,7 +567,13 @@ public partial class TradeStationBrokerage : Brokerage
                 { Status = OrderStatus.Submitted });
             }
         }
+
+            if (exceptOneFailed)
+            {
+                return null;
         }
+        }
+
         return response;
     }
 
