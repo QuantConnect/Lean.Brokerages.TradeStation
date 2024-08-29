@@ -264,24 +264,28 @@ public partial class TradeStationBrokerage : Brokerage
         var leanOrders = new List<Order>();
         foreach (var order in orders.Orders.Where(o => o.Status is TradeStationOrderStatusType.Ack or TradeStationOrderStatusType.Don))
         {
+            var leanOrder = default(Order);
+            if (order.Legs.Count == 1)
+            {
             var leg = order.Legs.First();
+                var orderQuantity = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.QuantityOrdered) : leg.QuantityOrdered;
+
             var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
                 leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
 
-            var leanOrder = default(Order);
             switch (order.OrderType)
             {
                 case TradeStationOrderType.Market:
-                    leanOrder = new MarketOrder(leanSymbol, leg.QuantityOrdered, order.OpenedDateTime);
+                        leanOrder = new MarketOrder(leanSymbol, orderQuantity, order.OpenedDateTime);
                     break;
                 case TradeStationOrderType.Limit:
-                    leanOrder = new LimitOrder(leanSymbol, leg.QuantityOrdered, order.LimitPrice, order.OpenedDateTime);
+                        leanOrder = new LimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime);
                     break;
                 case TradeStationOrderType.StopMarket:
-                    leanOrder = new StopMarketOrder(leanSymbol, leg.QuantityOrdered, order.StopPrice, order.OpenedDateTime);
+                        leanOrder = new StopMarketOrder(leanSymbol, orderQuantity, order.StopPrice, order.OpenedDateTime);
                     break;
                 case TradeStationOrderType.StopLimit:
-                    leanOrder = new StopLimitOrder(leanSymbol, leg.QuantityOrdered, order.StopPrice, order.LimitPrice, order.OpenedDateTime);
+                        leanOrder = new StopLimitOrder(leanSymbol, orderQuantity, order.StopPrice, order.LimitPrice, order.OpenedDateTime);
                     break;
             }
 
@@ -293,6 +297,42 @@ public partial class TradeStationBrokerage : Brokerage
 
             leanOrder.BrokerId.Add(order.OrderID);
             leanOrders.Add(leanOrder);
+        }
+            else
+            {
+                var totalLegShares = order.Legs.Sum(leg => leg.QuantityOrdered);
+                var sign = order.Legs.Sum(leg => leg.BuyOrSell.IsShort() ? decimal.Negate(leg.QuantityOrdered) : leg.QuantityOrdered) > 0 ? 1 : -1;
+
+                var groupOrderManager = new GroupOrderManager(Algorithm.Transactions.GetIncrementGroupOrderManagerId(), order.Legs.Count, totalLegShares * sign);
+
+                for (var i = 0; i < order.Legs.Count; i++)
+                {
+                    var leg = order.Legs[i];
+                    var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
+                        leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
+
+                    var orderQuantity = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.QuantityOrdered) : leg.QuantityOrdered;
+
+                    switch (order.OrderType)
+                    {
+                        case TradeStationOrderType.Market:
+                            leanOrder = new ComboMarketOrder(leanSymbol, orderQuantity, order.OpenedDateTime, groupOrderManager);
+                            break;
+                        case TradeStationOrderType.Limit:
+                            leanOrder = new ComboLimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime, groupOrderManager);
+                            break;
+                    }
+
+                    leanOrder.Status = OrderStatus.Submitted;
+                    if (leg.ExecQuantity > 0m && leg.ExecQuantity != leg.QuantityOrdered)
+                    {
+                        leanOrder.Status = OrderStatus.PartiallyFilled;
+                    }
+
+                    leanOrder.BrokerId.Add(order.OrderID);
+                    leanOrders.Add(leanOrder);
+                }
+            }
         }
         return leanOrders;
     }
