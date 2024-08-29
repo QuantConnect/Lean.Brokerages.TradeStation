@@ -613,6 +613,14 @@ public partial class TradeStationBrokerage : Brokerage
     /// <returns>True if the request was made for the order to be canceled, false otherwise</returns>
     public override bool CancelOrder(Order order)
     {
+        if (!order.TryGetGroupOrders(TryGetOrder, out var orders))
+        {
+            // some order of the group is missing but cache the new one
+            CacheOrder(order);
+            return true;
+        }
+        RemoveCachedOrders(orders);
+
         var brokerageOrderId = order.BrokerId.Last();
 
         var result = default(bool);
