@@ -875,7 +875,7 @@ public partial class TradeStationBrokerage : Brokerage
                     };
 
                     // if we filled the order and have another contingent order waiting, submit it
-                    if (!TryHandleRemainingCrossZeroOrder(crossZeroLeanOrder, orderEvent))
+                    if (!TryHandleRemainingCrossZeroOrder(leanOrder, orderEvent))
                     {
                         OnOrderEvent(orderEvent);
                     }
