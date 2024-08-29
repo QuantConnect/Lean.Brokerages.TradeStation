@@ -818,12 +818,17 @@ public partial class TradeStationBrokerage : Brokerage
                         return;
                 };
 
-                if (!TryGetOrRemoveCrossZeroOrder(brokerageOrder.OrderID, leanOrderStatus, out var leanOrder))
+                var leanOrders = new List<Order>();
+                if (!TryGetOrRemoveCrossZeroOrder(brokerageOrder.OrderID, leanOrderStatus, out var crossZeroLeanOrder))
                 {
-                    leanOrder = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID)?.SingleOrDefault();
+                    leanOrders = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID);
+                }
+                else
+                {
+                    leanOrders.Add(crossZeroLeanOrder);
                 }
 
-                if (leanOrder == null)
+                if (leanOrders == null || leanOrders.Count == 0)
                 {
                     // If the lean order is still null, wait for up to 10 seconds before trying again to get the order from the cache.
                     // This is necessary when a CrossZeroOrder was placed successfully and we need to ensure the order is available.
@@ -831,32 +836,36 @@ public partial class TradeStationBrokerage : Brokerage
                     return;
                 }
 
-                var leg = brokerageOrder.Legs.First();
-
-                // TradeStation sends the accumulative filled quantity but we need the partial amount for our event
-                _orderIdToFillQuantity.TryGetValue(leanOrder.Id, out var previousExecutionAmount);
-                var accumulativeFilledQuantity = _orderIdToFillQuantity[leanOrder.Id] = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.ExecQuantity) : leg.ExecQuantity;
-
-                if (leanOrderStatus.IsClosed())
+                foreach (var leanOrder in leanOrders)
                 {
-                    _orderIdToFillQuantity.TryRemove(leanOrder.Id, out _);
-                }
+                    foreach (var leg in brokerageOrder.Legs)
+                    {
+                        // TradeStation sends the accumulative filled quantity but we need the partial amount for our event
+                        _orderIdToFillQuantity.TryGetValue(leanOrder.Id, out var previousExecutionAmount);
+                        var accumulativeFilledQuantity = _orderIdToFillQuantity[leanOrder.Id] = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.ExecQuantity) : leg.ExecQuantity;
 
-                var orderEvent = new OrderEvent(
-                    leanOrder,
-                    DateTime.UtcNow,
-                    new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD)),
-                    brokerageOrder.RejectReason)
-                {
-                    Status = leanOrderStatus,
-                    FillPrice = leg.ExecutionPrice,
-                    FillQuantity = accumulativeFilledQuantity - previousExecutionAmount
-                };
+                        if (leanOrderStatus.IsClosed())
+                        {
+                            _orderIdToFillQuantity.TryRemove(leanOrder.Id, out _);
+                        }
 
-                // if we filled the order and have another contingent order waiting, submit it
-                if (!TryHandleRemainingCrossZeroOrder(leanOrder, orderEvent))
-                {
-                    OnOrderEvent(orderEvent);
+                        var orderEvent = new OrderEvent(
+                            leanOrder,
+                            DateTime.UtcNow,
+                            new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD)),
+                            brokerageOrder.RejectReason)
+                        {
+                            Status = leanOrderStatus,
+                            FillPrice = leg.ExecutionPrice,
+                            FillQuantity = accumulativeFilledQuantity - previousExecutionAmount
+                        };
+
+                        // if we filled the order and have another contingent order waiting, submit it
+                        if (!TryHandleRemainingCrossZeroOrder(crossZeroLeanOrder, orderEvent))
+                        {
+                            OnOrderEvent(orderEvent);
+                        }
+                    }
                 }
             }
             else if (jObj["StreamStatus"] != null)
