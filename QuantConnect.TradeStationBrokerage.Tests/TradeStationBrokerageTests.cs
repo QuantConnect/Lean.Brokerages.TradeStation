@@ -393,48 +393,62 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         [Test]
         public void PlaceComboMarketOrder()
         {
-            var comboOrders = PlaceComboOrder(
-                Symbols.AAPL,
-                orderPrice: null, // No price for market orders
-                orderType: (optionContract, quantity, _, groupOrderManager) =>
-                    new ComboMarketOrder(optionContract, quantity, DateTime.UtcNow, groupOrderManager)
-            );
-            AssertComboOrderPlacedSuccessfully(comboOrders);
-        }
-
-        [Test]
-        public void PlaceComboLimitOrder()
-        {
-            var comboOrders = PlaceComboOrder(
-                Symbols.AAPL,
-                orderPrice: 100m,
-                orderType: (optionContract, quantity, price, groupOrderManager) =>
-                    new ComboLimitOrder(optionContract, quantity, price.Value, DateTime.UtcNow, groupOrderManager)
-            );
-            AssertComboOrderPlacedSuccessfully(comboOrders);
-        }
-
-        private List<T> PlaceComboOrder<T>(
-            Symbol underlyingSymbol,
-            decimal? orderPrice,
-            Func<Symbol, decimal, decimal?, GroupOrderManager, T> orderType
-        ) where T : ComboOrder
-        {
-            var optionContracts = new List<Symbol>
+            var underlyingSymbol = Symbols.AAPL;
+            var legs = new List<(Symbol symbol, decimal quantity)>
             {
-                Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 100m, new DateTime(2024, 8, 30)),
-                Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 125m, new DateTime(2024, 8, 30))
+                (underlyingSymbol, 65),
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 100m, new DateTime(2024, 8, 30)), -1),
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 125m, new DateTime(2024, 8, 30)), 1)
             };
 
-            var groupOrderManager = new GroupOrderManager(1, legCount: optionContracts.Count, quantity: 5);
+            var groupOrderManager = new GroupOrderManager(1, legCount: legs.Count, quantity: 8);
 
-            var comboOrders = optionContracts
-                .Select(optionContract => orderType(optionContract, 1m.GetOrderLegGroupQuantity(groupOrderManager), orderPrice, groupOrderManager))
-                .ToList();
+            var comboOrders = PlaceComboOrder(
+                legs,
+                null,
+                (optionContract, quantity, price, groupOrderManager) =>
+                new ComboMarketOrder(optionContract, quantity, DateTime.UtcNow, groupOrderManager),
+                groupOrderManager);
+
+            AssertComboOrderPlacedSuccessfully(comboOrders);
+        }
+
+        [TestCase(70)]
+        public void PlaceComboLimitOrder(decimal comboLimitPrice)
+        {
+            var underlyingSymbol = Symbols.AAPL;
+            var optionContracts = new List<(Symbol symbol, decimal quantity)>
+            {
+                // (underlyingSymbol, -16),
+                // (Symbols.SPY, 1),
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 100m, new DateTime(2024, 8, 30)), -1),
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 125m, new DateTime(2024, 8, 30)), 1)
+            };
+
+            var groupOrderManager = new GroupOrderManager(1, legCount: optionContracts.Count, quantity: 8);
+
+            var comboOrders = PlaceComboOrder(
+                optionContracts,
+                comboLimitPrice,
+                (optionContract, quantity, price, groupOrderManager) =>
+                    new ComboLimitOrder(optionContract, quantity, price.Value, DateTime.UtcNow, groupOrderManager),
+                groupOrderManager);
+
+            AssertComboOrderPlacedSuccessfully(comboOrders);
+        }
+
+        private IReadOnlyCollection<T> PlaceComboOrder<T>(
+            IReadOnlyCollection<(Symbol symbol, decimal quantity)> legs,
+            decimal? orderLimitPrice,
+            Func<Symbol, decimal, decimal?, GroupOrderManager, T> orderType, GroupOrderManager groupOrderManager) where T : ComboOrder
+        {
+            var comboOrders = legs
+                .Select(optionContract => orderType(optionContract.symbol, optionContract.quantity, orderLimitPrice, groupOrderManager))
+                .ToList().AsReadOnly();
 
             var events = new List<OrderEvent>();
             using var manualResetEvent = new ManualResetEvent(false);
-            Brokerage.OrdersStatusChanged += (_, orderEvents) =>
+            EventHandler<List<OrderEvent>> orderStatusCallback = (_, orderEvents) =>
             {
                 events.AddRange(orderEvents);
 
@@ -455,6 +469,8 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 }
             };
 
+            Brokerage.OrdersStatusChanged += orderStatusCallback;
+
             foreach (var comboOrder in comboOrders)
             {
                 OrderProvider.Add(comboOrder);
@@ -463,10 +479,13 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             }
 
             Assert.IsTrue(manualResetEvent.WaitOne(TimeSpan.FromSeconds(60)));
+
+            Brokerage.OrdersStatusChanged -= orderStatusCallback;
+
             return comboOrders;
         }
 
-        private void AssertComboOrderPlacedSuccessfully<T>(List<T> comboOrders) where T : ComboOrder
+        private void AssertComboOrderPlacedSuccessfully<T>(IReadOnlyCollection<T> comboOrders) where T : ComboOrder
         {
             Assert.IsTrue(comboOrders.All(o => o.Status.IsClosed() || o.Status == OrderStatus.Submitted));
         }
