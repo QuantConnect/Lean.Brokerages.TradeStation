@@ -416,6 +416,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         [TestCase(70)]
         public void PlaceComboLimitOrder(decimal comboLimitPrice)
         {
+            using var manualResetEvent = new ManualResetEvent(false);
             var underlyingSymbol = Symbols.AAPL;
             var optionContracts = new List<(Symbol symbol, decimal quantity)>
             {
@@ -435,6 +436,37 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 groupOrderManager);
 
             AssertComboOrderPlacedSuccessfully(comboOrders);
+
+            EventHandler<List<OrderEvent>> orderStatusCallback = (_, orderEvents) =>
+            {
+                foreach (var order in comboOrders)
+                {
+                    foreach (var orderEvent in orderEvents)
+                    {
+                        if (orderEvent.OrderId == order.Id)
+                        {
+                            order.Status = orderEvent.Status;
+                        }
+                    }
+
+                    if (comboOrders.All(o => o.Status.IsClosed()) || comboOrders.All(o => o.Status == OrderStatus.Canceled))
+                    {
+                        manualResetEvent.Set();
+                    }
+                }
+            };
+
+            Brokerage.OrdersStatusChanged += orderStatusCallback;
+
+            var openOrders = OrderProvider.GetOpenOrders();
+            foreach (var openOrder in openOrders)
+            {
+                Assert.IsTrue(Brokerage.CancelOrder(openOrder));
+            }
+
+            Assert.IsTrue(manualResetEvent.WaitOne(TimeSpan.FromSeconds(60)));
+
+            Brokerage.OrdersStatusChanged -= orderStatusCallback;
         }
 
         private IReadOnlyCollection<T> PlaceComboOrder<T>(
