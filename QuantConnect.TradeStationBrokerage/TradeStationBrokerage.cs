@@ -256,47 +256,18 @@ public partial class TradeStationBrokerage : Brokerage
     /// Gets all open orders on the account.
     /// NOTE: The order objects returned do not have QC order IDs.
     /// </summary>
-    /// <returns>The open orders returned from IB</returns>
+    /// <returns>The open orders returned from TradeStation</returns>
     public override List<Order> GetOpenOrders()
     {
         var orders = _tradeStationApiClient.GetOrders().SynchronouslyAwaitTaskResult();
-
         var leanOrders = new List<Order>();
+
         foreach (var order in orders.Orders.Where(o => o.Status is TradeStationOrderStatusType.Ack or TradeStationOrderStatusType.Don))
         {
-            var leanOrder = default(Order);
             if (order.Legs.Count == 1)
             {
                 var leg = order.Legs.First();
-                var orderQuantity = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.QuantityOrdered) : leg.QuantityOrdered;
-
-                var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
-                    leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
-
-                switch (order.OrderType)
-                {
-                    case TradeStationOrderType.Market:
-                        leanOrder = new MarketOrder(leanSymbol, orderQuantity, order.OpenedDateTime);
-                        break;
-                    case TradeStationOrderType.Limit:
-                        leanOrder = new LimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime);
-                        break;
-                    case TradeStationOrderType.StopMarket:
-                        leanOrder = new StopMarketOrder(leanSymbol, orderQuantity, order.StopPrice, order.OpenedDateTime);
-                        break;
-                    case TradeStationOrderType.StopLimit:
-                        leanOrder = new StopLimitOrder(leanSymbol, orderQuantity, order.StopPrice, order.LimitPrice, order.OpenedDateTime);
-                        break;
-                }
-
-                leanOrder.Status = OrderStatus.Submitted;
-                if (leg.ExecQuantity > 0m && leg.ExecQuantity != leg.QuantityOrdered)
-                {
-                    leanOrder.Status = OrderStatus.PartiallyFilled;
-                }
-
-                leanOrder.BrokerId.Add(order.OrderID);
-                leanOrders.Add(leanOrder);
+                leanOrders.Add(CreateLeanOrder(order, leg));
             }
             else
             {
@@ -305,32 +276,9 @@ public partial class TradeStationBrokerage : Brokerage
 
                 var groupOrderManager = new GroupOrderManager(Algorithm.Transactions.GetIncrementGroupOrderManagerId(), order.Legs.Count, totalLegShares * sign);
 
-                for (var i = 0; i < order.Legs.Count; i++)
+                foreach (var leg in order.Legs)
                 {
-                    var leg = order.Legs[i];
-                    var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
-                        leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
-
-                    var orderQuantity = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.QuantityOrdered) : leg.QuantityOrdered;
-
-                    switch (order.OrderType)
-                    {
-                        case TradeStationOrderType.Market:
-                            leanOrder = new ComboMarketOrder(leanSymbol, orderQuantity, order.OpenedDateTime, groupOrderManager);
-                            break;
-                        case TradeStationOrderType.Limit:
-                            leanOrder = new ComboLimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime, groupOrderManager);
-                            break;
-                    }
-
-                    leanOrder.Status = OrderStatus.Submitted;
-                    if (leg.ExecQuantity > 0m && leg.ExecQuantity != leg.QuantityOrdered)
-                    {
-                        leanOrder.Status = OrderStatus.PartiallyFilled;
-                    }
-
-                    leanOrder.BrokerId.Add(order.OrderID);
-                    leanOrders.Add(leanOrder);
+                    leanOrders.Add(CreateComboLeanOrder(order, leg, groupOrderManager));
                 }
             }
         }
@@ -1031,6 +979,55 @@ public partial class TradeStationBrokerage : Brokerage
         }
 
         return (legs, groupLimitPrice);
+    }
+    
+    /// <summary>
+    /// Creates a Lean order based on the given TradeStation order and leg details.
+    /// </summary>
+    /// <param name="order">The TradeStation order containing overall order information.</param>
+    /// <param name="leg">The specific leg of the order, representing the individual component of a multi-leg order.</param>
+    /// <returns>A Lean <see cref="Order"/> object that corresponds to the provided TradeStation order and leg.</returns>
+    /// <exception cref="NotSupportedException">Thrown when the TradeStation order type is not supported by this method.</exception>
+    private Order CreateLeanOrder(TradeStationOrder order, Models.Leg leg)
+    {
+        var orderQuantity = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.QuantityOrdered) : leg.QuantityOrdered;
+        var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
+                                                      leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
+
+        Order leanOrder = order.OrderType switch
+        {
+            TradeStationOrderType.Market => new MarketOrder(leanSymbol, orderQuantity, order.OpenedDateTime),
+            TradeStationOrderType.Limit => new LimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime),
+            TradeStationOrderType.StopMarket => new StopMarketOrder(leanSymbol, orderQuantity, order.StopPrice, order.OpenedDateTime),
+            TradeStationOrderType.StopLimit => new StopLimitOrder(leanSymbol, orderQuantity, order.StopPrice, order.LimitPrice, order.OpenedDateTime),
+            _ => throw new NotSupportedException($"Unsupported order type: {order.OrderType}")
+        };
+
+        return leanOrder.SetOrderStatusAndBrokerId(order, leg);
+    }
+
+    /// <summary>
+    /// Creates a combo Lean order based on the given TradeStation order, leg details, and group order manager.
+    /// </summary>
+    /// <param name="order">The TradeStation order containing overall order information.</param>
+    /// <param name="leg">The specific leg of the order, representing the individual component of a multi-leg order.</param>
+    /// <param name="groupOrderManager">The manager responsible for coordinating multi-leg group orders.</param>
+    /// <returns>A Lean <see cref="Order"/> object that corresponds to the provided TradeStation order, leg, and group order manager.</returns>
+    /// <exception cref="NotSupportedException">Thrown when the TradeStation order type is not supported for combo orders.</exception>
+    private Order CreateComboLeanOrder(TradeStationOrder order, Models.Leg leg, GroupOrderManager groupOrderManager)
+    {
+        var orderQuantity = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.QuantityOrdered) : leg.QuantityOrdered;
+        var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
+                                                      leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
+
+        Order leanOrder = order.OrderType switch
+        {
+            TradeStationOrderType.Market => new ComboMarketOrder(leanSymbol, orderQuantity, order.OpenedDateTime, groupOrderManager),
+            TradeStationOrderType.Limit => new ComboLimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime, groupOrderManager),
+            _ => throw new NotSupportedException($"Unsupported combo order type: {order.OrderType}")
+        };
+
+        return leanOrder.SetOrderStatusAndBrokerId(order, leg);
     }
 
     private class ModulesReadLicenseRead : QuantConnect.Api.RestResponse

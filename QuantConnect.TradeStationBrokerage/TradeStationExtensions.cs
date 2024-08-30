@@ -20,6 +20,7 @@ using System.Threading.Tasks;
 using QuantConnect.Securities;
 using System.Collections.Generic;
 using QuantConnect.Orders.TimeInForces;
+using QuantConnect.Brokerages.TradeStation.Models;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
 
 namespace QuantConnect.Brokerages.TradeStation;
@@ -238,4 +239,21 @@ public static class TradeStationExtensions
     /// </remarks>
     public static NodaTime.DateTimeZone GetSymbolExchangeTimeZone(this Symbol symbol)
         => MarketHoursDatabase.FromDataFolder().GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType).TimeZone;
+
+    /// <summary>
+    /// Sets the status of the Lean order and associates it with the corresponding TradeStation broker ID.
+    /// </summary>
+    /// <param name="leanOrder">The Lean <see cref="Order"/> object whose status and broker ID are to be set.</param>
+    /// <param name="order">The TradeStation order providing the status and broker ID information.</param>
+    /// <param name="leg">The specific leg of the order, used to determine the execution quantity and final status.</param>
+    public static Order SetOrderStatusAndBrokerId(this Order leanOrder, TradeStationOrder order, Models.Leg leg)
+    {
+        leanOrder.Status = leg.ExecQuantity > 0m && leg.ExecQuantity != leg.QuantityOrdered
+            ? OrderStatus.PartiallyFilled
+            : OrderStatus.Submitted;
+
+        leanOrder.BrokerId.Add(order.OrderID);
+
+        return leanOrder;
+    }
 }
