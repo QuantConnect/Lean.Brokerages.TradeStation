@@ -278,7 +278,7 @@ public partial class TradeStationBrokerage : Brokerage
 
                 foreach (var leg in order.Legs)
                 {
-                    leanOrders.Add(CreateComboLeanOrder(order, leg, groupOrderManager));
+                    leanOrders.Add(CreateLeanOrder(order, leg, groupOrderManager));
                 }
             }
         }
@@ -980,15 +980,16 @@ public partial class TradeStationBrokerage : Brokerage
 
         return (legs, groupLimitPrice);
     }
-    
+
     /// <summary>
     /// Creates a Lean order based on the given TradeStation order and leg details.
     /// </summary>
     /// <param name="order">The TradeStation order containing overall order information.</param>
     /// <param name="leg">The specific leg of the order, representing the individual component of a multi-leg order.</param>
+    /// <param name="groupOrderManager">The manager responsible for coordinating multi-leg group orders.</param>
     /// <returns>A Lean <see cref="Order"/> object that corresponds to the provided TradeStation order and leg.</returns>
     /// <exception cref="NotSupportedException">Thrown when the TradeStation order type is not supported by this method.</exception>
-    private Order CreateLeanOrder(TradeStationOrder order, Models.Leg leg)
+    private Order CreateLeanOrder(TradeStationOrder order, Models.Leg leg, GroupOrderManager groupOrderManager = null)
     {
         var orderQuantity = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.QuantityOrdered) : leg.QuantityOrdered;
         var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
@@ -996,35 +997,13 @@ public partial class TradeStationBrokerage : Brokerage
 
         Order leanOrder = order.OrderType switch
         {
-            TradeStationOrderType.Market => new MarketOrder(leanSymbol, orderQuantity, order.OpenedDateTime),
-            TradeStationOrderType.Limit => new LimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime),
+            TradeStationOrderType.Market when groupOrderManager == null => new MarketOrder(leanSymbol, orderQuantity, order.OpenedDateTime),
+            TradeStationOrderType.Market when groupOrderManager != null => new ComboMarketOrder(leanSymbol, orderQuantity, order.OpenedDateTime, groupOrderManager),
+            TradeStationOrderType.Limit when groupOrderManager == null => new LimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime),
+            TradeStationOrderType.Limit when groupOrderManager != null => new ComboLimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime, groupOrderManager),
             TradeStationOrderType.StopMarket => new StopMarketOrder(leanSymbol, orderQuantity, order.StopPrice, order.OpenedDateTime),
             TradeStationOrderType.StopLimit => new StopLimitOrder(leanSymbol, orderQuantity, order.StopPrice, order.LimitPrice, order.OpenedDateTime),
             _ => throw new NotSupportedException($"Unsupported order type: {order.OrderType}")
-        };
-
-        return leanOrder.SetOrderStatusAndBrokerId(order, leg);
-    }
-
-    /// <summary>
-    /// Creates a combo Lean order based on the given TradeStation order, leg details, and group order manager.
-    /// </summary>
-    /// <param name="order">The TradeStation order containing overall order information.</param>
-    /// <param name="leg">The specific leg of the order, representing the individual component of a multi-leg order.</param>
-    /// <param name="groupOrderManager">The manager responsible for coordinating multi-leg group orders.</param>
-    /// <returns>A Lean <see cref="Order"/> object that corresponds to the provided TradeStation order, leg, and group order manager.</returns>
-    /// <exception cref="NotSupportedException">Thrown when the TradeStation order type is not supported for combo orders.</exception>
-    private Order CreateComboLeanOrder(TradeStationOrder order, Models.Leg leg, GroupOrderManager groupOrderManager)
-    {
-        var orderQuantity = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.QuantityOrdered) : leg.QuantityOrdered;
-        var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
-                                                      leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
-
-        Order leanOrder = order.OrderType switch
-        {
-            TradeStationOrderType.Market => new ComboMarketOrder(leanSymbol, orderQuantity, order.OpenedDateTime, groupOrderManager),
-            TradeStationOrderType.Limit => new ComboLimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime, groupOrderManager),
-            _ => throw new NotSupportedException($"Unsupported combo order type: {order.OrderType}")
         };
 
         return leanOrder.SetOrderStatusAndBrokerId(order, leg);
