@@ -256,9 +256,8 @@ public partial class TradeStationBrokerage : Brokerage
             else
             {
                 var totalLegShares = order.Legs.Sum(leg => leg.QuantityOrdered);
-                var sign = order.Legs.Sum(leg => leg.BuyOrSell.IsShort() ? decimal.Negate(leg.QuantityOrdered) : leg.QuantityOrdered) > 0 ? 1 : -1;
 
-                var groupOrderManager = new GroupOrderManager(Algorithm.Transactions.GetIncrementGroupOrderManagerId(), order.Legs.Count, totalLegShares * sign);
+                var groupOrderManager = new GroupOrderManager(order.Legs.Count, totalLegShares);
 
                 foreach (var leg in order.Legs)
                 {
