@@ -100,14 +100,9 @@ public partial class TradeStationBrokerage : Brokerage
     private ConcurrentDictionary<int, decimal> _orderIdToFillQuantity = new();
 
     /// <summary>
-    /// A thread-safe dictionary that caches original orders when they are part of a group.
+    /// Provides a thread-safe service for caching and managing original orders when they are part of a group.
     /// </summary>
-    /// <remarks>
-    /// The dictionary uses the order ID as the key and stores the original <see cref="Order"/> objects as values.
-    /// This allows for the modification of the original orders, such as setting the brokerage ID, 
-    /// without retrieving a cloned instance from the order provider.
-    /// </remarks>
-    private readonly ConcurrentDictionary<int, Order> _pendingGroupOrders = new();
+    private GroupOrderCacheManager _groupOrderCacheManager = new();
 
     /// <summary>
     /// Specifies the type of account on TradeStation in current session.
@@ -369,14 +364,14 @@ public partial class TradeStationBrokerage : Brokerage
 
             if (isPlaceCrossOrder == null)
             {
-                if (!order.TryGetGroupOrders(TryGetOrder, out var orders))
+                if (!order.TryGetGroupOrders(_groupOrderCacheManager.TryGetOrder, out var orders))
                 {
                     // some order of the group is missing but cache the new one
-                    CacheOrder(order);
+                    _groupOrderCacheManager.CacheOrder(order);
                     result = true;
                     return;
                 }
-                RemoveCachedOrders(orders);
+                _groupOrderCacheManager.RemoveCachedOrders(orders);
 
                 var response = PlaceTradeStationOrder(orders, holdingQuantity);
                 result = response != null && response.Value.Orders.Count > 0;
@@ -559,13 +554,13 @@ public partial class TradeStationBrokerage : Brokerage
     /// <returns>True if the request was made for the order to be canceled, false otherwise</returns>
     public override bool CancelOrder(Order order)
     {
-        if (!order.TryGetGroupOrders(TryGetOrder, out var orders))
+        if (!order.TryGetGroupOrders(_groupOrderCacheManager.TryGetOrder, out var orders))
         {
             // some order of the group is missing but cache the new one
-            CacheOrder(order);
+            _groupOrderCacheManager.CacheOrder(order);
             return true;
         }
-        RemoveCachedOrders(orders);
+        _groupOrderCacheManager.RemoveCachedOrders(orders);
 
         var brokerageOrderId = order.BrokerId.Last();
 
@@ -896,40 +891,6 @@ public partial class TradeStationBrokerage : Brokerage
                 break;
         }
         return tradeAction.ToStringInvariant().ToUpperInvariant();
-    }
-
-    /// <summary>
-    /// Attempts to retrieve an original order from the cache using the specified order ID.
-    /// </summary>
-    /// <param name="orderId">The unique identifier of the order to retrieve.</param>
-    /// <returns>
-    /// The original <see cref="Order"/> if found; otherwise, <c>null</c>.
-    /// </returns>
-    private Order TryGetOrder(int orderId)
-    {
-        _pendingGroupOrders.TryGetValue(orderId, out var order);
-        return order;
-    }
-
-    /// <summary>
-    /// Caches an original order in the internal dictionary for future retrieval.
-    /// </summary>
-    /// <param name="order">The <see cref="Order"/> object to cache.</param>
-    private void CacheOrder(Order order)
-    {
-        _pendingGroupOrders[order.Id] = order;
-    }
-
-    /// <summary>
-    /// Removes a list of orders from the internal cache.
-    /// </summary>
-    /// <param name="orders">The list of <see cref="Order"/> objects to remove from the cache.</param>
-    private void RemoveCachedOrders(List<Order> orders)
-    {
-        for (var i = 0; i < orders.Count; i++)
-        {
-            _pendingGroupOrders.TryRemove(orders[i].Id, out _);
-        }
     }
 
     /// <summary>
