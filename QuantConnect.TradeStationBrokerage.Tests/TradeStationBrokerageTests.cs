@@ -459,7 +459,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 110m, new DateTime(2024, 9, 6)), 1)
             };
 
-            symbolQuantityContractsByGroupOrderManager[(new GroupOrderManager(1, legCount: secondOptionContracts.Count, quantity: 8), secondLimitPrice)] = secondOptionContracts;
+            symbolQuantityContractsByGroupOrderManager[(new GroupOrderManager(2, legCount: secondOptionContracts.Count, quantity: 8), secondLimitPrice)] = secondOptionContracts;
 
             foreach (var ((groupOrderManager, limitPrice), optionContracts) in symbolQuantityContractsByGroupOrderManager)
             {
