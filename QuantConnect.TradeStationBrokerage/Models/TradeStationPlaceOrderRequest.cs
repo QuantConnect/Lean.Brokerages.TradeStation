@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -94,6 +94,11 @@ public class TradeStationPlaceOrderRequest
     /// The TradeStation Advanced Options of Orders
     /// </summary>
     public TradeStationAdvancedOptions? AdvancedOptions { get; set; } = null;
+
+    /// <summary>
+    /// The route of the order. For Stocks and Options, Route value will default to Intelligent if no value is set.
+    /// </summary>
+    public string Route { get; set; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TradeStationPlaceOrderRequest"/> class for single leg orders.

@@ -77,6 +77,14 @@ public class TradeStationApiClient
     private readonly string _baseUrl;
 
     /// <summary>
+    /// Containing the available trading routes.
+    /// </summary>
+    /// <remarks>
+    /// The routes are only loaded when accessed for the first time, ensuring efficient resource usage.
+    /// </remarks>
+    private readonly Lazy<HashSet<Route>> _routes;
+
+    /// <summary>
     /// Initializes a new instance of the TradeStationApiClient class with the specified API Key, API Key Secret, REST API URL, redirect URI, account type, and optional parameters.
     /// </summary>
     /// <param name="clientId">The API Key used by the client application to authenticate requests.</param>
@@ -102,6 +110,10 @@ public class TradeStationApiClient
             var accountId = GetAccountIDByAccountType(tradeStationAccountType).SynchronouslyAwaitTaskResult();
             Log.Trace($"TradeStationApiClient(): will use account id: {accountId}");
             return accountId;
+        });
+        _routes = new Lazy<HashSet<Route>>(() =>
+        {
+            return GetRoutes().SynchronouslyAwaitTaskResult().Routes.ToHashSet();
         });
     }
 
@@ -195,6 +207,21 @@ public class TradeStationApiClient
         if (tradeStationOrderProperties != null)
         {
             tradeStationOrder.AdvancedOptions = new TradeStationAdvancedOptions(tradeStationOrderProperties.AllOrNone);
+
+            if (tradeStationOrderProperties.Exchange != null)
+            {
+                try
+                {
+                    tradeStationOrder.Route = _routes.Value.Single(route => route.Name == tradeStationOrderProperties.Exchange?.Name).Id;
+                }
+                catch (Exception)
+                {
+                    return new TradeStationPlaceOrderResponse(null, new()
+                    { 
+                        new Models.OrderResponse($"Order failed. The specified exchange '{tradeStationOrderProperties.Exchange?.Name}' could not be matched with any TradeStation route.", string.Empty)
+                    });
+                }
+            }
         }
 
         switch (leanOrderType)
@@ -523,6 +550,17 @@ public class TradeStationApiClient
     private async Task<TradeStationBalance> GetBalanceByID(string accountID)
     {
         return await RequestAsync<TradeStationBalance>(_baseUrl, $"/v3/brokerage/accounts/{accountID}/balances", HttpMethod.Get);
+    }
+
+    /// <summary>
+    /// Retrieves a list of valid trading routes that a client can use when posting an order to TradeStation.
+    /// </summary>
+    /// <returns>
+    /// A <see cref="TradeStationRoute"/> object containing the available routes for order execution.
+    /// </returns>
+    private async Task<TradeStationRoute> GetRoutes()
+    {
+        return await RequestAsync<TradeStationRoute>(_baseUrl, "/v3/orderexecution/routes", HttpMethod.Get);
     }
 
     /// <summary>
