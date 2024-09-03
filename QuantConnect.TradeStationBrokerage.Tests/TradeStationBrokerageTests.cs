@@ -43,13 +43,6 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
         protected override IBrokerage CreateBrokerage(IOrderProvider orderProvider, ISecurityProvider securityProvider)
         {
-            var securityManager = new SecurityManager(new TimeKeeper(DateTime.UtcNow, TimeZones.NewYork));
-
-            var algorithm = new Mock<IAlgorithm>();
-
-            var transactions = new SecurityTransactionManager(null, securityManager);
-            algorithm.Setup(a => a.Transactions).Returns(transactions);
-
             var clientId = Config.Get("trade-station-client-id");
             var clientSecret = Config.Get("trade-station-client-secret");
             var restApiUrl = Config.Get("trade-station-api-url");
@@ -67,10 +60,10 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 }
 
                 return new TradeStationBrokerageTest(clientId, clientSecret, restApiUrl, redirectUrl, authorizationCode, string.Empty,
-                    accountType, orderProvider, securityProvider, algorithm.Object);
+                    accountType, orderProvider, securityProvider);
             }
 
-            return new TradeStationBrokerageTest(clientId, clientSecret, restApiUrl, string.Empty, string.Empty, refreshToken, accountType, orderProvider, securityProvider, algorithm.Object);
+            return new TradeStationBrokerageTest(clientId, clientSecret, restApiUrl, string.Empty, string.Empty, refreshToken, accountType, orderProvider, securityProvider);
         }
         protected override bool IsAsync()
         {
@@ -634,10 +627,9 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             /// For <see cref="TradeStationAccountType.Cash"/> or <seealso cref="TradeStationAccountType.Margin"/> accounts, it is used for trading <seealso cref="SecurityType.Equity"/> and <seealso cref="SecurityType.Option"/>.
             /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
             /// <param name="orderProvider">The order provider.</param>
-            /// <param name="algorithm">The algorithm instance is required to retrieve account type</param>
             public TradeStationBrokerageTest(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl,
-                string authorizationCode, string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider, IAlgorithm algorithm)
-                : base(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider, algorithm)
+                string authorizationCode, string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
+                : base(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider)
             { }
 
             /// <summary>

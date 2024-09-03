@@ -120,15 +120,6 @@ public partial class TradeStationBrokerage : Brokerage
     protected ISecurityProvider SecurityProvider { get; private set; }
 
     /// <summary>
-    /// Gets the instance of the <see cref="IAlgorithm"/> interface that holds the current algorithm's information.
-    /// </summary>
-    /// <remarks>
-    /// The <see cref="IAlgorithm"/> interface provides access to key components such as the security portfolio management, 
-    /// which offers a wrapper and helper methods for managing <see cref="Security"/> instances.
-    /// </remarks>
-    protected IAlgorithm Algorithm { get; private set; }
-
-    /// <summary>
     /// Brokerage helper class to lock message stream while executing an action, for example placing an order
     /// </summary>
     private BrokerageConcurrentMessageHandler<string> _messageHandler;
@@ -168,7 +159,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// <param name="algorithm">The algorithm instance is required to retrieve account type</param>
     public TradeStationBrokerage(string clientId, string apiKeySecret, string restApiUrl, string redirectUrl, string authorizationCode,
         string accountType, IAlgorithm algorithm)
-        : this(clientId, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, string.Empty, accountType, algorithm?.Portfolio?.Transactions, algorithm?.Portfolio, algorithm)
+        : this(clientId, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, string.Empty, accountType, algorithm?.Portfolio?.Transactions, algorithm?.Portfolio)
     { }
 
     /// <summary>
@@ -187,7 +178,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
     /// <param name="algorithm">The algorithm instance is required to retrieve account type</param>
     public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string refreshToken, string accountType, IAlgorithm algorithm)
-        : this(apiKey, apiKeySecret, restApiUrl, string.Empty, string.Empty, refreshToken, accountType, algorithm?.Portfolio?.Transactions, algorithm?.Portfolio, algorithm)
+        : this(apiKey, apiKeySecret, restApiUrl, string.Empty, string.Empty, refreshToken, accountType, algorithm?.Portfolio?.Transactions, algorithm?.Portfolio)
     { }
 
     /// <summary>
@@ -207,23 +198,21 @@ public partial class TradeStationBrokerage : Brokerage
     /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
     /// <param name="orderProvider">The order provider.</param>
     /// <param name="securityProvider">The type capable of fetching the holdings for the specified symbol</param>
-    /// <param name="algorithm">The algorithm instance is required to retrieve account type</param>
     public TradeStationBrokerage(string clientId, string clientSecret, string restApiUrl, string redirectUrl,
-        string authorizationCode, string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider, IAlgorithm algorithm)
+        string authorizationCode, string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
         : base("TradeStation")
     {
-        Initialize(clientId, clientSecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider, algorithm);
+        Initialize(clientId, clientSecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider);
     }
 
     protected void Initialize(string clientId, string clientSecret, string restApiUrl, string redirectUrl, string authorizationCode,
-        string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider, IAlgorithm algorithm)
+        string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
     {
         if (_isInitialized)
         {
             return;
         }
         _isInitialized = true;
-        Algorithm = algorithm;
         SecurityProvider = securityProvider;
         OrderProvider = orderProvider;
         _symbolMapper = new TradeStationSymbolMapper();

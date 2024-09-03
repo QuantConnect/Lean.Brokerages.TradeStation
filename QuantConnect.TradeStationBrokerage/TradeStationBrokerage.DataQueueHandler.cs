@@ -114,8 +114,7 @@ public partial class TradeStationBrokerage : IDataQueueHandler
             refreshToken: job.BrokerageData.TryGetValue("trade-station-refresh-token", out var refreshToken) ? refreshToken : string.Empty,
             accountType: job.BrokerageData["trade-station-account-type"],
             orderProvider: null,
-            securityProvider: null,
-            algorithm: null
+            securityProvider: null
         );
 
         if (!IsConnected)
