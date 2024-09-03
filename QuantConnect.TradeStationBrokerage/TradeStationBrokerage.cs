@@ -386,7 +386,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// <summary>
     /// Places an order using TradeStation.
     /// </summary>
-    /// <param name="order">The order to be placed.</param>
+    /// <param name="orders">The collection orders to be placed.</param>
     /// <param name="holdingQuantity">The holding quantity associated with the order.</param>
     /// <param name="isSubmittedEvent">Indicates if the order submission event should be triggered.</param>
     /// <returns>A response from TradeStation after placing the order.</returns>
@@ -443,7 +443,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// <summary>
     /// Places a common order.
     /// </summary>
-    /// <param name="order">The order to be placed.</param>
+    /// <param name="orders">The collection orders to be placed.</param>
     /// <param name="orderType">The type of the order.</param>
     /// <param name="timeInForce">The time in force for the order.</param>
     /// <param name="quantity">The quantity of the order.</param>
