@@ -134,7 +134,7 @@ public class TradeStationApiClient
         });
         _routes = new Lazy<Dictionary<string, string>>(() =>
         {
-            return GetRoutes().SynchronouslyAwaitTaskResult().Routes.GroupBy(route => route.Name).ToDictionary(group => group.Key, group => group.First().Id, StringComparer.InvariantCultureIgnoreCase);
+            return GetRoutes().SynchronouslyAwaitTaskResult().Routes.ToDictionary(r => r.Id, r => r.Name, StringComparer.InvariantCultureIgnoreCase);
         });
     }
 
@@ -236,7 +236,7 @@ public class TradeStationApiClient
 
                 try
                 {
-                    tradeStationOrder.Route = _routes.Value[exchangeName];
+                    tradeStationOrder.Route = _routes.Value.FirstOrDefault(r => r.Value.Equals(exchangeName, StringComparison.CurrentCultureIgnoreCase)).Key;
                 }
                 catch (Exception)
                 {
