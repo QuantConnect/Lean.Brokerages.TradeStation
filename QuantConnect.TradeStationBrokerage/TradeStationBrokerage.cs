@@ -394,7 +394,7 @@ public partial class TradeStationBrokerage : Brokerage
         {
             case OrderType.ComboMarket:
             case OrderType.ComboLimit:
-                return PlaceOrderCommon(orders, order.Type, order.TimeInForce, 0m, "", "", 0m, 0m, isSubmittedEvent);
+                return PlaceOrderCommon(orders, order.Type, order.TimeInForce, 0m, "", "", order.GetLimitPrice(), 0m, isSubmittedEvent);
             case OrderType.Market:
             case OrderType.Limit:
             case OrderType.StopMarket:
@@ -462,7 +462,7 @@ public partial class TradeStationBrokerage : Brokerage
         else
         {
             var orderLegs = CreateOrderLegs(orders);
-            response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, legs: orderLegs.Legs, limitPrice: orderLegs.GroupLimitPrice, tradeStationOrderProperties: properties).SynchronouslyAwaitTaskResult();
+            response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, legs: orderLegs, limitPrice: limitPrice, tradeStationOrderProperties: properties).SynchronouslyAwaitTaskResult();
         }
 
         foreach (var brokerageOrder in response.Orders)
@@ -893,19 +893,13 @@ public partial class TradeStationBrokerage : Brokerage
     /// A collection of <see cref="Order"/> objects representing the orders to be processed.
     /// </param>
     /// <returns>
-    /// A tuple containing a read-only collection of <see cref="TradeStationPlaceOrderLeg"/> representing the order legs,
-    /// and a <see cref="decimal"/> value representing the group limit price for the orders.
+    /// A tuple containing a read-only collection of <see cref="TradeStationPlaceOrderLeg"/> representing the order legs.
     /// </returns>
-    private (IReadOnlyCollection<TradeStationPlaceOrderLeg> Legs, decimal GroupLimitPrice) CreateOrderLegs(IReadOnlyCollection<Order> orders)
+    private IReadOnlyCollection<TradeStationPlaceOrderLeg> CreateOrderLegs(IReadOnlyCollection<Order> orders)
     {
         var legs = new List<TradeStationPlaceOrderLeg>();
-        var groupLimitPrice = default(decimal);
         foreach (var order in orders)
         {
-            if (groupLimitPrice == default)
-            {
-                groupLimitPrice = order.Direction == OrderDirection.Buy ? order.GroupOrderManager.LimitPrice : decimal.Negate(order.GroupOrderManager.LimitPrice);
-            }
             var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol);
             var brokerageSymbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
 
@@ -921,7 +915,7 @@ public partial class TradeStationBrokerage : Brokerage
             legs.Add(new TradeStationPlaceOrderLeg(order.AbsoluteQuantity.ToStringInvariant(), brokerageSymbol, tradeActionMultiple));
         }
 
-        return (legs, groupLimitPrice);
+        return legs;
     }
 
     /// <summary>

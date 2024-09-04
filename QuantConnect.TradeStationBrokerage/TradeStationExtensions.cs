@@ -166,6 +166,7 @@ public static class TradeStationExtensions
     {
         LimitOrder lo => lo.LimitPrice,
         StopLimitOrder slo => slo.LimitPrice,
+        ComboLimitOrder clo => order.Direction == OrderDirection.Buy ? clo.GroupOrderManager.LimitPrice : decimal.Negate(clo.GroupOrderManager.LimitPrice),
         _ => null
     };
 
