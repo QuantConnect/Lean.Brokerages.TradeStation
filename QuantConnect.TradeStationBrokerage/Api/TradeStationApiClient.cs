@@ -236,7 +236,7 @@ public class TradeStationApiClient
 
                 try
                 {
-                    tradeStationOrder.Route = _routes.Value.Single(route => route.Name.Contains(exchangeName, StringComparison.InvariantCultureIgnoreCase)).Id;
+                    tradeStationOrder.Route = _routes.Value.Single(route => route.Name.Equals(exchangeName, StringComparison.InvariantCultureIgnoreCase)).Id;
                 }
                 catch (Exception)
                 {

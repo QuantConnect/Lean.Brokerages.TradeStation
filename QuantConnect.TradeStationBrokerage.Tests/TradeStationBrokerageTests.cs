@@ -300,6 +300,37 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             PlaceOrderWaitForStatus(marketOrder.CreateLongMarketOrder(-1797), OrderStatus.Filled, secondsTimeout: 120);
         }
 
+        private static IEnumerable<TestCaseData> ExchangesTestParameters
+        {
+            get
+            {
+                yield return new TestCaseData(Symbols.AAPL, Exchange.CBOE, true);
+                yield return new TestCaseData(Symbols.AAPL, Exchange.AMEX, false);
+                yield return new TestCaseData(Symbols.AAPL, Exchange.IEX, false);
+                yield return new TestCaseData(Symbols.AAPL, Exchange.SPHR, true);
+                yield return new TestCaseData(Symbols.AAPL, Exchange.ISE_GEMINI, true);
+                var option = Symbol.CreateOption(Symbols.AAPL, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 100m, new DateTime(2024, 9, 6));
+                yield return new TestCaseData(option, Exchange.ISE_GEMINI, false);
+                yield return new TestCaseData(option, Exchange.AMEX_Options, false);
+                yield return new TestCaseData(option, Exchange.AMEX, true);
+            }
+        }
+
+        [TestCaseSource(nameof(ExchangesTestParameters))]
+        public void PlaceMarketOrderWithDifferentExchanges(Symbol symbol, Exchange exchange, bool isShouldThrow)
+        {
+            var marketOrder = new MarketOrderTestParameters(symbol, properties: new TradeStationOrderProperties() { Exchange = exchange });
+
+            if (isShouldThrow)
+            {
+                Assert.Throws<AssertionException>(() => PlaceOrderWaitForStatus(marketOrder.CreateLongMarketOrder(1), OrderStatus.Invalid));
+            }
+            else
+            {
+                PlaceOrderWaitForStatus(marketOrder.CreateLongMarketOrder(1), OrderStatus.Filled);
+            }
+        }
+
         [Test]
         public void PlaceLimitOrderAndUpdate()
         {
@@ -467,7 +498,10 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                     optionContracts,
                     limitPrice,
                     (optionContract, quantity, price, groupOrderManager) =>
-                    new ComboLimitOrder(optionContract, quantity, price.Value, DateTime.UtcNow, groupOrderManager, properties: new TradeStationOrderProperties() { AllOrNone = true }),
+                    new ComboLimitOrder(optionContract, quantity, price.Value, DateTime.UtcNow, groupOrderManager, properties: new TradeStationOrderProperties()
+                    {
+                        Exchange = Exchange.CBOE
+                    }),
                     groupOrderManager);
 
                 AssertComboOrderPlacedSuccessfully(comboOrders);
