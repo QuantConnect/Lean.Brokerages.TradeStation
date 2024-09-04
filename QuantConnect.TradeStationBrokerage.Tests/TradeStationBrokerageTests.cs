@@ -134,7 +134,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 yield return new TestCaseData(new StopMarketOrderTestParameters(INTL, 23m, 22m)).SetCategory("Equity").SetName("INTL|EQUITY|STOPMARKET");
                 yield return new TestCaseData(new StopLimitOrderTestParameters(INTL, 23m, 23m)).SetCategory("Equity").SetName("INTL|EQUITY|STOPLIMIT");
 
-                var AAPLOption = Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 235m, new DateTime(2024, 8, 30));
+                var AAPLOption = Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 100m, new DateTime(2024, 9, 6));
                 yield return new TestCaseData(new LimitOrderTestParameters(AAPLOption, 15.85m, 14.85m)).SetCategory("Option").SetName("AAPL|OPTION|LIMIT");
                 yield return new TestCaseData(new StopMarketOrderTestParameters(AAPLOption, 15.1m, 15.1m)).SetCategory("Option").SetName("AAPL|OPTION|STOPMARKET");
                 yield return new TestCaseData(new StopLimitOrderTestParameters(AAPLOption, 15.1m, 15.1m)).SetCategory("Option").SetName("AAPL|OPTION|STOPLIMIT");
@@ -460,6 +460,45 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             CancelComboOpenOrders(comboOrders);
         }
 
+        [TestCase(70, 80)]
+        public void PlaceComboLimitOrderAndUpdateLimitPrice(decimal comboLimitPrice, decimal newComboLimitPrice)
+        {
+            var underlyingSymbol = Symbols.AAPL;
+            var optionContracts = new List<(Symbol symbol, decimal quantity)>
+            {
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 100m, new DateTime(2024, 9, 6)), -1),
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 125m, new DateTime(2024, 9, 6)), 1)
+            };
+
+            var groupOrderManager = new GroupOrderManager(1, legCount: optionContracts.Count, quantity: 8);
+
+            var comboOrders = PlaceComboOrder(
+                optionContracts,
+                comboLimitPrice,
+                (optionContract, quantity, price, groupOrderManager) =>
+                    new ComboLimitOrder(optionContract, quantity, price.Value, DateTime.UtcNow, groupOrderManager, properties: new TradeStationOrderProperties() { AllOrNone = true }),
+                groupOrderManager);
+
+            AssertComboOrderPlacedSuccessfully(comboOrders);
+
+            using var manualResetEvent = new ManualResetEvent(false);
+            var orderStatusCallback = HandleComboOrderStatusChange(comboOrders, manualResetEvent, OrderStatus.UpdateSubmitted);
+
+            Brokerage.OrdersStatusChanged += orderStatusCallback;
+
+            foreach (var comboOrder in comboOrders)
+            {
+                comboOrder.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, comboOrder.Id, new() { LimitPrice = newComboLimitPrice }));
+                Assert.IsTrue(Brokerage.UpdateOrder(comboOrder));
+            }
+
+            Assert.IsTrue(manualResetEvent.WaitOne(TimeSpan.FromSeconds(60)));
+
+            Brokerage.OrdersStatusChanged -= orderStatusCallback;
+
+            CancelComboOpenOrders(comboOrders);
+        }
+
         [TestCase(70, 10)]
         public void PlaceSeveralComboLimitOrder(decimal firstLimitPrice, decimal secondLimitPrice)
         {
@@ -512,28 +551,8 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 .Select(optionContract => orderType(optionContract.symbol, optionContract.quantity, orderLimitPrice, groupOrderManager))
                 .ToList().AsReadOnly();
 
-            var events = new List<OrderEvent>();
             using var manualResetEvent = new ManualResetEvent(false);
-            EventHandler<List<OrderEvent>> orderStatusCallback = (_, orderEvents) =>
-            {
-                events.AddRange(orderEvents);
-
-                foreach (var order in comboOrders)
-                {
-                    foreach (var orderEvent in orderEvents)
-                    {
-                        if (orderEvent.OrderId == order.Id)
-                        {
-                            order.Status = orderEvent.Status;
-                        }
-                    }
-
-                    if (comboOrders.All(o => o.Status.IsClosed()) || comboOrders.All(o => o.Status == OrderStatus.Submitted))
-                    {
-                        manualResetEvent.Set();
-                    }
-                }
-            };
+            var orderStatusCallback = HandleComboOrderStatusChange(comboOrders, manualResetEvent, OrderStatus.Submitted);
 
             Brokerage.OrdersStatusChanged += orderStatusCallback;
 
@@ -555,24 +574,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             using var manualResetEvent = new ManualResetEvent(false);
 
-            EventHandler<List<OrderEvent>> orderStatusCallback = (_, orderEvents) =>
-            {
-                foreach (var order in comboLimitOrders)
-                {
-                    foreach (var orderEvent in orderEvents)
-                    {
-                        if (orderEvent.OrderId == order.Id)
-                        {
-                            order.Status = orderEvent.Status;
-                        }
-                    }
-
-                    if (comboLimitOrders.All(o => o.Status.IsClosed()) || comboLimitOrders.All(o => o.Status == OrderStatus.Canceled))
-                    {
-                        manualResetEvent.Set();
-                    }
-                }
-            };
+            var orderStatusCallback = HandleComboOrderStatusChange(comboLimitOrders, manualResetEvent, OrderStatus.Canceled);
 
             Brokerage.OrdersStatusChanged += orderStatusCallback;
 
@@ -590,6 +592,32 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         private void AssertComboOrderPlacedSuccessfully<T>(IReadOnlyCollection<T> comboOrders) where T : ComboOrder
         {
             Assert.IsTrue(comboOrders.All(o => o.Status.IsClosed() || o.Status == OrderStatus.Submitted));
+        }
+
+        private static EventHandler<List<OrderEvent>> HandleComboOrderStatusChange<T>(
+            IReadOnlyCollection<T> comboOrders,
+            ManualResetEvent manualResetEvent,
+            OrderStatus expectedOrderStatus) where T : ComboOrder
+        {
+            return (_, orderEvents) =>
+            {
+
+                foreach (var order in comboOrders)
+                {
+                    foreach (var orderEvent in orderEvents)
+                    {
+                        if (orderEvent.OrderId == order.Id)
+                        {
+                            order.Status = orderEvent.Status;
+                        }
+                    }
+
+                    if (comboOrders.All(o => o.Status.IsClosed()) || comboOrders.All(o => o.Status == expectedOrderStatus))
+                    {
+                        manualResetEvent.Set();
+                    }
+                }
+            };
         }
 
         /// <summary>

@@ -521,18 +521,31 @@ public partial class TradeStationBrokerage : Brokerage
             return false;
         }
 
+        if (!_groupOrderCacheManager.TryGetGroupCachedOrders(order, out var orders))
+        {
+            return true;
+        }
+
+        // Always use the first order in the group, as combo orders determine direction based on the first order's details.
+        order = orders.First();
+        var brokerageOrderId = order.BrokerId.Last();
+
         var response = default(bool);
         _messageHandler.WithLockedStream(() =>
         {
             try
             {
-                var result = _tradeStationApiClient.ReplaceOrder(order.BrokerId.Last(), order.Type, Math.Abs(orderQuantity), order.GetLimitPrice(), order.GetStopPrice()).SynchronouslyAwaitTaskResult();
-                OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)}.{nameof(UpdateOrder)} Order Event")
+                var result = _tradeStationApiClient.ReplaceOrder(brokerageOrderId, order.Type, Math.Abs(orderQuantity), order.GetLimitPrice(), order.GetStopPrice()).SynchronouslyAwaitTaskResult();
+
+                foreach (var order in orders)
                 {
-                    Status = OrderStatus.UpdateSubmitted
-                });
+                    OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)}.{nameof(UpdateOrder)} Order Event")
+                    {
+                        Status = OrderStatus.UpdateSubmitted
+                    });
+                }
                 response = true;
-                _updateSubmittedResponseResultByBrokerageID[order.BrokerId.Last()] = true;
+                _updateSubmittedResponseResultByBrokerageID[brokerageOrderId] = true;
             }
             catch (Exception exception)
             {
