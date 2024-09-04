@@ -363,14 +363,11 @@ public partial class TradeStationBrokerage : Brokerage
 
             if (isPlaceCrossOrder == null)
             {
-                if (!order.TryGetGroupOrders(_groupOrderCacheManager.TryGetOrder, out var orders))
+                if (!_groupOrderCacheManager.TryGetGroupCachedOrders(order, out var orders))
                 {
-                    // some order of the group is missing but cache the new one
-                    _groupOrderCacheManager.CacheOrder(order);
                     result = true;
                     return;
                 }
-                _groupOrderCacheManager.RemoveCachedOrders(orders);
 
                 var response = PlaceTradeStationOrder(orders, holdingQuantity);
                 result = response != null && response.Value.Orders.Count > 0;
@@ -553,13 +550,10 @@ public partial class TradeStationBrokerage : Brokerage
     /// <returns>True if the request was made for the order to be canceled, false otherwise</returns>
     public override bool CancelOrder(Order order)
     {
-        if (!order.TryGetGroupOrders(_groupOrderCacheManager.TryGetOrder, out var orders))
+        if (!_groupOrderCacheManager.TryGetGroupCachedOrders(order, out var orders))
         {
-            // some order of the group is missing but cache the new one
-            _groupOrderCacheManager.CacheOrder(order);
             return true;
         }
-        _groupOrderCacheManager.RemoveCachedOrders(orders);
 
         var brokerageOrderId = order.BrokerId.Last();
 
