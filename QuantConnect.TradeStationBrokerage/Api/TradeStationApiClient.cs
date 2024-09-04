@@ -82,7 +82,7 @@ public class TradeStationApiClient
     /// <remarks>
     /// The routes are only loaded when accessed for the first time, ensuring efficient resource usage.
     /// </remarks>
-    private readonly Lazy<HashSet<Route>> _routes;
+    private readonly Lazy<Dictionary<string, string>> _routes;
 
     /// <summary>
     /// Maps various exchanges to their corresponding routing codes.
@@ -132,9 +132,9 @@ public class TradeStationApiClient
             Log.Trace($"TradeStationApiClient(): will use account id: {accountId}");
             return accountId;
         });
-        _routes = new Lazy<HashSet<Route>>(() =>
+        _routes = new Lazy<Dictionary<string, string>>(() =>
         {
-            return GetRoutes().SynchronouslyAwaitTaskResult().Routes.ToHashSet();
+            return GetRoutes().SynchronouslyAwaitTaskResult().Routes.GroupBy(route => route.Name).ToDictionary(group => group.Key, group => group.First().Id, StringComparer.InvariantCultureIgnoreCase);
         });
     }
 
@@ -236,7 +236,7 @@ public class TradeStationApiClient
 
                 try
                 {
-                    tradeStationOrder.Route = _routes.Value.Single(route => route.Name.Equals(exchangeName, StringComparison.InvariantCultureIgnoreCase)).Id;
+                    tradeStationOrder.Route = _routes.Value[exchangeName];
                 }
                 catch (Exception)
                 {
