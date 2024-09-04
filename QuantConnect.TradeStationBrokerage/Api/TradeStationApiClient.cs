@@ -85,6 +85,27 @@ public class TradeStationApiClient
     private readonly Lazy<HashSet<Route>> _routes;
 
     /// <summary>
+    /// Maps various exchanges to their corresponding routing codes.
+    /// </summary>
+    /// <remarks>
+    /// This dictionary is used to convert exchange identifiers to their specific routing strings 
+    /// required for order placement or other exchange-specific operations.
+    /// </remarks>
+    private readonly Dictionary<Exchange, string> _leanExchangeToTradeStationRoute = new ()
+    { 
+        { Exchange.BOSTON, "NQBX" },
+        { Exchange.NASDAQ, "NSDQ" },
+        { Exchange.ARCA_Options, "NYSE Arca" },
+        { Exchange.ISE_MERCURY, "ISE Mercury" },
+        { Exchange.MIAX_PEARL, "MPRL" },
+        { Exchange.MEMX, "MXOP" },
+        { Exchange.NASDAQ_BX, "Nasdaq BX" },
+        { Exchange.MIAX_EMERALD, "EMLD" },
+        { Exchange.ISE_GEMINI, "GMNI" },
+        { Exchange.AMEX_Options, "NYSE Amex" }
+    };
+
+    /// <summary>
     /// Initializes a new instance of the TradeStationApiClient class with the specified API Key, API Key Secret, REST API URL, redirect URI, account type, and optional parameters.
     /// </summary>
     /// <param name="clientId">The API Key used by the client application to authenticate requests.</param>
@@ -210,15 +231,18 @@ public class TradeStationApiClient
 
             if (tradeStationOrderProperties.Exchange != null)
             {
+                var exchangeName = _leanExchangeToTradeStationRoute.TryGetValue(tradeStationOrderProperties.Exchange, out var mappedExchangeName)
+                    ? mappedExchangeName : tradeStationOrderProperties.Exchange.Name;
+
                 try
                 {
-                    tradeStationOrder.Route = _routes.Value.Single(route => route.Name == tradeStationOrderProperties.Exchange?.Name).Id;
+                    tradeStationOrder.Route = _routes.Value.Single(route => route.Name.Contains(exchangeName, StringComparison.InvariantCultureIgnoreCase)).Id;
                 }
                 catch (Exception)
                 {
                     return new TradeStationPlaceOrderResponse(null, new()
                     { 
-                        new Models.OrderResponse($"Order failed. The specified exchange '{tradeStationOrderProperties.Exchange?.Name}' could not be matched with any TradeStation route.", string.Empty)
+                        new Models.OrderResponse($"Order failed. The specified exchange '{exchangeName}' could not be matched with any TradeStation route.", string.Empty)
                     });
                 }
             }
