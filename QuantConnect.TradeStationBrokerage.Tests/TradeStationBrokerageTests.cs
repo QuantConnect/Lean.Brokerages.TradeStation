@@ -449,15 +449,6 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
             var groupOrderManager = new GroupOrderManager(1, legCount: optionContracts.Count, quantity: 8);
 
-            var optionContracts2 = new List<(Symbol symbol, decimal quantity)>
-            {
-                (underlyingSymbol, 16),
-                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 105m, new DateTime(2024, 9, 6)), -1),
-                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 110m, new DateTime(2024, 9, 6)), 1)
-            };
-
-            var groupOrderManager2 = new GroupOrderManager(1, legCount: optionContracts2.Count, quantity: 8);
-
             var comboOrders = PlaceComboOrder(
                 optionContracts,
                 comboLimitPrice,
