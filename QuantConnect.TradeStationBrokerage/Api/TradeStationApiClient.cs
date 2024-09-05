@@ -26,6 +26,7 @@ using QuantConnect.Logging;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using Lean = QuantConnect.Orders;
+using System.Collections.ObjectModel;
 using System.Runtime.CompilerServices;
 using QuantConnect.Brokerages.TradeStation.Models;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
@@ -82,7 +83,7 @@ public class TradeStationApiClient
     /// <remarks>
     /// The routes are only loaded when accessed for the first time, ensuring efficient resource usage.
     /// </remarks>
-    private readonly Lazy<Dictionary<string, string>> _routes;
+    private readonly Lazy<Dictionary<SecurityType, ReadOnlyCollection<Route>>> _routes;
 
     /// <summary>
     /// Maps various exchanges to their corresponding routing codes.
@@ -98,6 +99,8 @@ public class TradeStationApiClient
         { Exchange.ARCA_Options, "NYSE Arca" },
         { Exchange.ISE_MERCURY, "ISE Mercury" },
         { Exchange.MIAX_PEARL, "MPRL" },
+        { Exchange.MIAX_SAPPHIRE, "SPHR"},
+        { Exchange.BATS_Y, "BYX" },
         { Exchange.MEMX, "MXOP" },
         { Exchange.NASDAQ_BX, "Nasdaq BX" },
         { Exchange.MIAX_EMERALD, "EMLD" },
@@ -132,9 +135,12 @@ public class TradeStationApiClient
             Log.Trace($"TradeStationApiClient(): will use account id: {accountId}");
             return accountId;
         });
-        _routes = new Lazy<Dictionary<string, string>>(() =>
+        _routes = new Lazy<Dictionary<SecurityType, ReadOnlyCollection<Route>>>(() =>
         {
-            return GetRoutes().SynchronouslyAwaitTaskResult().Routes.ToDictionary(r => r.Id, r => r.Name, StringComparer.InvariantCultureIgnoreCase);
+            return GetRoutes().SynchronouslyAwaitTaskResult().Routes
+            .SelectMany(route => route.AssetTypes.Select(assetType => new { AssetType = assetType.ConvertAssetTypeToSecurityType(), Route = route }))
+            .GroupBy(x => x.AssetType)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.Route).ToList().AsReadOnly());
         });
     }
 
@@ -231,18 +237,15 @@ public class TradeStationApiClient
 
             if (tradeStationOrderProperties.Exchange != null)
             {
-                var exchangeName = _leanExchangeToTradeStationRoute.TryGetValue(tradeStationOrderProperties.Exchange, out var mappedExchangeName)
-                    ? mappedExchangeName : tradeStationOrderProperties.Exchange.Name;
-
                 try
                 {
-                    tradeStationOrder.Route = _routes.Value.FirstOrDefault(r => r.Value.Equals(exchangeName, StringComparison.CurrentCultureIgnoreCase)).Key;
+                    tradeStationOrder.Route = GetTradeStationOrderRoute(tradeStationOrderProperties.Exchange);
                 }
                 catch (Exception)
                 {
                     return new TradeStationPlaceOrderResponse(null, new()
                     { 
-                        new Models.OrderResponse($"Order failed. The specified exchange '{exchangeName}' could not be matched with any TradeStation route.", string.Empty)
+                        new Models.OrderResponse($"Order failed. The specified exchange '{tradeStationOrderProperties.Exchange.Name}' could not be matched with any TradeStation route.", string.Empty)
                     });
                 }
             }
@@ -700,5 +703,20 @@ public class TradeStationApiClient
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Retrieves the TradeStation order route for the specified exchange.
+    /// </summary>
+    /// <param name="exchange">The exchange for which to retrieve the TradeStation order route.</param>
+    /// <returns>
+    /// The TradeStation route ID corresponding to the provided exchange. If no route is found, 
+    /// it returns a default value based on the first available match in the route list.
+    /// </returns>
+    private string GetTradeStationOrderRoute(Exchange exchange)
+    {
+        var exchangeName = _leanExchangeToTradeStationRoute.TryGetValue(exchange, out var mappedExchangeName) ? mappedExchangeName : exchange.Name;
+        return _routes.Value[exchange.SecurityTypes[0]]
+                        .FirstOrDefault(r => r.Name.Equals(exchangeName, StringComparison.CurrentCultureIgnoreCase)).Id;
     }
 }

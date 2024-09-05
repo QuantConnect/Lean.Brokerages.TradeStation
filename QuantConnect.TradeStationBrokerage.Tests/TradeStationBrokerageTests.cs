@@ -307,7 +307,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 yield return new TestCaseData(Symbols.AAPL, Exchange.CBOE, true);
                 yield return new TestCaseData(Symbols.AAPL, Exchange.AMEX, false);
                 yield return new TestCaseData(Symbols.AAPL, Exchange.IEX, false);
-                yield return new TestCaseData(Symbols.AAPL, Exchange.SPHR, true);
+                yield return new TestCaseData(Symbols.AAPL, Exchange.MIAX_SAPPHIRE, true);
                 yield return new TestCaseData(Symbols.AAPL, Exchange.ISE_GEMINI, true);
                 var option = Symbol.CreateOption(Symbols.AAPL, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 100m, new DateTime(2024, 9, 6));
                 yield return new TestCaseData(option, Exchange.ISE_GEMINI, false);

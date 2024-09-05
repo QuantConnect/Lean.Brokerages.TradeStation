@@ -26,13 +26,13 @@ public readonly struct TradeStationRoute
     /// <summary>
     /// Gets the collection of routes associated with this TradeStation route.
     /// </summary>
-    public IEnumerable<Route> Routes { get; }
+    public IReadOnlyList<Route> Routes { get; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TradeStationRoute"/> struct with the specified routes.
     /// </summary>
     /// <param name="routes">The collection of routes to be associated with this TradeStation route.</param>
-    public TradeStationRoute(IEnumerable<Route> routes) => Routes = routes;
+    public TradeStationRoute(IReadOnlyList<Route> routes) => Routes = routes;
 }
 
 /// <summary>
@@ -48,7 +48,7 @@ public readonly struct Route
     /// <summary>
     /// The asset type of the route. Valid Values are: STOCK, FUTURE, STOCKOPTION, and INDEXOPTION.
     /// </summary>
-    public IEnumerable<TradeStationAssetType> AssetTypes { get; }
+    public IReadOnlyList<TradeStationAssetType> AssetTypes { get; }
 
     /// <summary>
     /// The name of the route.
@@ -61,5 +61,5 @@ public readonly struct Route
     /// <param name="id">The ID of the route.</param>
     /// <param name="assetTypes">The asset types associated with this route.</param>
     /// <param name="name">The name of the route.</param>
-    public Route(string id, IEnumerable<TradeStationAssetType> assetTypes, string name) => (Id, AssetTypes, Name) = (id, assetTypes, name);
+    public Route(string id, IReadOnlyList<TradeStationAssetType> assetTypes, string name) => (Id, AssetTypes, Name) = (id, assetTypes, name);
 }
