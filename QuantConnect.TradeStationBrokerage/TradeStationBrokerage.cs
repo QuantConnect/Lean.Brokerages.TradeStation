@@ -783,13 +783,13 @@ public partial class TradeStationBrokerage : Brokerage
 
                     if (leanOrder == null)
                     {
-                        Log.Error($"Error in {nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}: " +
+                        OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"Error in {nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}: " +
                             $"Could not find order with symbol '{leanSymbol}' in leanOrders. " +
                             $"Brokerage Order ID: {brokerageOrder.OrderID}. " +
                             $"Leg details - Symbol: {leg.Symbol}, Underlying: {leg.Underlying}, " +
                             $"Asset Type: {leg.AssetType}, Expiration Date: {leg.ExpirationDate}, " +
                             $"Strike Price: {leg.StrikePrice}, Option Type: {leg.OptionType}. " +
-                            $"Please verify that the order was correctly added to leanOrders.");
+                            $"Please verify that the order was correctly added to leanOrders."));
                         return;
                     }
 
