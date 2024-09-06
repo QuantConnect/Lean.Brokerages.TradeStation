@@ -78,37 +78,6 @@ public class TradeStationApiClient
     private readonly string _baseUrl;
 
     /// <summary>
-    /// Containing the available trading routes.
-    /// </summary>
-    /// <remarks>
-    /// The routes are only loaded when accessed for the first time, ensuring efficient resource usage.
-    /// </remarks>
-    private readonly Lazy<Dictionary<SecurityType, ReadOnlyCollection<Route>>> _routes;
-
-    /// <summary>
-    /// Maps various exchanges to their corresponding routing codes.
-    /// </summary>
-    /// <remarks>
-    /// This dictionary is used to convert exchange identifiers to their specific routing strings 
-    /// required for order placement or other exchange-specific operations.
-    /// </remarks>
-    private readonly Dictionary<Exchange, string> _leanExchangeToTradeStationRoute = new ()
-    { 
-        { Exchange.BOSTON, "NQBX" },
-        { Exchange.NASDAQ, "NSDQ" },
-        { Exchange.ARCA_Options, "NYSE Arca" },
-        { Exchange.ISE_MERCURY, "ISE Mercury" },
-        { Exchange.MIAX_PEARL, "MPRL" },
-        { Exchange.MIAX_SAPPHIRE, "SPHR"},
-        { Exchange.BATS_Y, "BYX" },
-        { Exchange.MEMX, "MXOP" },
-        { Exchange.NASDAQ_BX, "Nasdaq BX" },
-        { Exchange.MIAX_EMERALD, "EMLD" },
-        { Exchange.ISE_GEMINI, "GMNI" },
-        { Exchange.AMEX_Options, "NYSE Amex" }
-    };
-
-    /// <summary>
     /// Initializes a new instance of the TradeStationApiClient class with the specified API Key, API Key Secret, REST API URL, redirect URI, account type, and optional parameters.
     /// </summary>
     /// <param name="clientId">The API Key used by the client application to authenticate requests.</param>
@@ -134,13 +103,6 @@ public class TradeStationApiClient
             var accountId = GetAccountIDByAccountType(tradeStationAccountType).SynchronouslyAwaitTaskResult();
             Log.Trace($"TradeStationApiClient(): will use account id: {accountId}");
             return accountId;
-        });
-        _routes = new Lazy<Dictionary<SecurityType, ReadOnlyCollection<Route>>>(() =>
-        {
-            return GetRoutes().SynchronouslyAwaitTaskResult().Routes
-            .SelectMany(route => route.AssetTypes.Select(assetType => new { AssetType = assetType.ConvertAssetTypeToSecurityType(), Route = route }))
-            .GroupBy(x => x.AssetType)
-            .ToDictionary(g => g.Key, g => g.Select(x => x.Route).ToList().AsReadOnly());
         });
     }
 
@@ -205,6 +167,7 @@ public class TradeStationApiClient
     /// <param name="legs">The collection of order legs for combo orders.</param>
     /// <param name="limitPrice">The limit price for the order (optional).</param>
     /// <param name="stopPrice">The stop price for the order (optional).</param>
+    /// <param name="routeId">The identifier for the trading route associated with the specified exchange that supports TradeStation.</param>
     /// <param name="tradeStationOrderProperties">Additional TradeStation order properties (optional).</param>
     /// <returns>A <see cref="TradeStationPlaceOrderResponse"/> containing the result of the order placement.</returns>
     public async Task<TradeStationPlaceOrderResponse> PlaceOrder(
@@ -216,6 +179,7 @@ public class TradeStationApiClient
         IReadOnlyCollection<TradeStationPlaceOrderLeg> legs = null,
         decimal? limitPrice = null,
         decimal? stopPrice = null,
+        string routeId = null,
         TradeStationOrderProperties tradeStationOrderProperties = null)
     {
         var orderType = leanOrderType.ConvertLeanOrderTypeToTradeStation();
@@ -234,21 +198,11 @@ public class TradeStationApiClient
         if (tradeStationOrderProperties != null)
         {
             tradeStationOrder.AdvancedOptions = new TradeStationAdvancedOptions(tradeStationOrderProperties.AllOrNone);
+        }
 
-            if (tradeStationOrderProperties.Exchange != null)
-            {
-                try
-                {
-                    tradeStationOrder.Route = GetTradeStationOrderRoute(tradeStationOrderProperties.Exchange);
-                }
-                catch (Exception)
-                {
-                    return new TradeStationPlaceOrderResponse(null, new()
-                    { 
-                        new Models.OrderResponse($"Order failed. The specified exchange '{tradeStationOrderProperties.Exchange.Name}' could not be matched with any TradeStation route.", string.Empty)
-                    });
-                }
-            }
+        if (!string.IsNullOrEmpty(routeId))
+        {
+            tradeStationOrder.Route = routeId;
         }
 
         switch (leanOrderType)
@@ -466,6 +420,17 @@ public class TradeStationApiClient
     }
 
     /// <summary>
+    /// Retrieves a list of valid trading routes that a client can use when posting an order to TradeStation.
+    /// </summary>
+    /// <returns>
+    /// A <see cref="TradeStationRoute"/> object containing the available routes for order execution.
+    /// </returns>
+    public async Task<TradeStationRoute> GetRoutes()
+    {
+        return await RequestAsync<TradeStationRoute>(_baseUrl, "/v3/orderexecution/routes", HttpMethod.Get);
+    }
+
+    /// <summary>
     /// Fetches marketdata bars for the given symbol, interval, and timeframe. 
     /// The maximum amount of intraday bars a user can fetch is 57,500 per request.
     /// </summary>
@@ -577,17 +542,6 @@ public class TradeStationApiClient
     private async Task<TradeStationBalance> GetBalanceByID(string accountID)
     {
         return await RequestAsync<TradeStationBalance>(_baseUrl, $"/v3/brokerage/accounts/{accountID}/balances", HttpMethod.Get);
-    }
-
-    /// <summary>
-    /// Retrieves a list of valid trading routes that a client can use when posting an order to TradeStation.
-    /// </summary>
-    /// <returns>
-    /// A <see cref="TradeStationRoute"/> object containing the available routes for order execution.
-    /// </returns>
-    private async Task<TradeStationRoute> GetRoutes()
-    {
-        return await RequestAsync<TradeStationRoute>(_baseUrl, "/v3/orderexecution/routes", HttpMethod.Get);
     }
 
     /// <summary>
@@ -703,20 +657,5 @@ public class TradeStationApiClient
                 }
             }
         }
-    }
-
-    /// <summary>
-    /// Retrieves the TradeStation order route for the specified exchange.
-    /// </summary>
-    /// <param name="exchange">The exchange for which to retrieve the TradeStation order route.</param>
-    /// <returns>
-    /// The TradeStation route ID corresponding to the provided exchange. If no route is found, 
-    /// it returns a default value based on the first available match in the route list.
-    /// </returns>
-    private string GetTradeStationOrderRoute(Exchange exchange)
-    {
-        var exchangeName = _leanExchangeToTradeStationRoute.TryGetValue(exchange, out var mappedExchangeName) ? mappedExchangeName : exchange.Name;
-        return _routes.Value[exchange.SecurityTypes[0]]
-                        .FirstOrDefault(r => r.Name.Equals(exchangeName, StringComparison.CurrentCultureIgnoreCase)).Id;
     }
 }

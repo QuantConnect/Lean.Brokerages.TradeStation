@@ -37,6 +37,7 @@ using QuantConnect.Configuration;
 using System.Security.Cryptography;
 using System.Collections.Concurrent;
 using System.Net.NetworkInformation;
+using System.Collections.ObjectModel;
 using QuantConnect.Brokerages.CrossZero;
 using QuantConnect.Brokerages.TradeStation.Api;
 using QuantConnect.Brokerages.TradeStation.Models;
@@ -108,6 +109,37 @@ public partial class TradeStationBrokerage : Brokerage
     /// Specifies the type of account on TradeStation in current session.
     /// </summary>
     private TradeStationAccountType _tradeStationAccountType;
+
+    /// <summary>
+    /// Containing the available trading routes.
+    /// </summary>
+    /// <remarks>
+    /// The routes are only loaded when accessed for the first time, ensuring efficient resource usage.
+    /// </remarks>
+    private Lazy<Dictionary<SecurityType, ReadOnlyCollection<Route>>> _routes;
+
+    /// <summary>
+    /// Maps various exchanges to their corresponding routing codes.
+    /// </summary>
+    /// <remarks>
+    /// This dictionary is used to convert exchange identifiers to their specific routing strings 
+    /// required for order placement or other exchange-specific operations.
+    /// </remarks>
+    private readonly Dictionary<Exchange, string> _leanExchangeToTradeStationRoute = new()
+    {
+        { Exchange.BOSTON, "NQBX" },
+        { Exchange.NASDAQ, "NSDQ" },
+        { Exchange.ARCA_Options, "NYSE Arca" },
+        { Exchange.ISE_MERCURY, "ISE Mercury" },
+        { Exchange.MIAX_PEARL, "MPRL" },
+        { Exchange.MIAX_SAPPHIRE, "SPHR"},
+        { Exchange.BATS_Y, "BYX" },
+        { Exchange.MEMX, "MXOP" },
+        { Exchange.NASDAQ_BX, "Nasdaq BX" },
+        { Exchange.MIAX_EMERALD, "EMLD" },
+        { Exchange.ISE_GEMINI, "GMNI" },
+        { Exchange.AMEX_Options, "NYSE Amex" }
+    };
 
     /// <summary>
     /// Represents a type capable of fetching the holdings for the specified symbol
@@ -230,6 +262,14 @@ public partial class TradeStationBrokerage : Brokerage
             Log.Trace($"AlpacaBrokerage.AlpacaBrokerage(): found no data aggregator instance, creating {aggregatorName}");
             _aggregator = Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(aggregatorName);
         }
+
+        _routes = new Lazy<Dictionary<SecurityType, ReadOnlyCollection<Route>>>(() =>
+        {
+            return _tradeStationApiClient.GetRoutes().SynchronouslyAwaitTaskResult().Routes
+            .SelectMany(route => route.AssetTypes.Select(assetType => new { SecurityType = assetType.ConvertAssetTypeToSecurityType(), Route = route }))
+            .GroupBy(x => x.SecurityType)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.Route).ToList().AsReadOnly());
+        });
 
         ValidateSubscription();
     }
@@ -453,15 +493,25 @@ public partial class TradeStationBrokerage : Brokerage
         string symbol, decimal? limitPrice, decimal? stopPrice, bool isSubmittedEvent)
     {
         var response = default(TradeStationPlaceOrderResponse);
-        var properties = orders.First().Properties as TradeStationOrderProperties;
+
+        var tradeStationOrderProperties = orders.First().Properties as TradeStationOrderProperties;
+
+        if (!GetTradeStationOrderRouteIdByOrderSecurityTypes(tradeStationOrderProperties, orders.Select(x => x.SecurityType).ToList(), out var routeId))
+        {
+            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1,
+                $"Failed to find a valid TradeStation route for exchange '{tradeStationOrderProperties.Exchange.Name}' with the security types: {string.Join(", ", orders.Select(order => order.SecurityType))}." +
+                $"Please verify that the exchange and security types are supported."));
+            return null;
+        }
+
         if (orders.Count == 1)
         {
-            response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, quantity, tradeAction, symbol, limitPrice: limitPrice, stopPrice: stopPrice, tradeStationOrderProperties: properties).SynchronouslyAwaitTaskResult();
+            response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, quantity, tradeAction, symbol, limitPrice: limitPrice, stopPrice: stopPrice, routeId: routeId, tradeStationOrderProperties: tradeStationOrderProperties).SynchronouslyAwaitTaskResult();
         }
         else
         {
             var orderLegs = CreateOrderLegs(orders);
-            response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, legs: orderLegs, limitPrice: limitPrice, tradeStationOrderProperties: properties).SynchronouslyAwaitTaskResult();
+            response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, legs: orderLegs, limitPrice: limitPrice, routeId: routeId, tradeStationOrderProperties: tradeStationOrderProperties).SynchronouslyAwaitTaskResult();
         }
 
         foreach (var brokerageOrder in response.Orders)
@@ -965,6 +1015,59 @@ public partial class TradeStationBrokerage : Brokerage
         };
 
         return leanOrder.SetOrderStatusAndBrokerId(order, leg);
+    }
+
+    /// <summary>
+    /// Attempts to retrieve the TradeStation route ID based on the specified exchange and security types.
+    /// </summary>
+    /// <param name="tradeStationOrderProperties">
+    /// The order properties containing information about the TradeStation exchange.
+    /// If no exchange is provided, the method will return <c>true</c> as no specific routing is required.
+    /// </param>
+    /// <param name="securityTypes">
+    /// A collection of security types to be used for determining the correct TradeStation route.
+    /// The route ID is determined by matching the exchange with one of the security types.
+    /// </param>
+    /// <param name="routeId">
+    /// When this method returns, contains the route ID for the specified exchange and security types, 
+    /// or <c>null</c> if no matching route was found.
+    /// </param>
+    /// <returns>
+    /// <c>true</c> if either the exchange is not provided, indicating that no routing is required, 
+    /// or if a valid route ID is found; otherwise, <c>false</c>.
+    /// </returns>
+    /// <remarks>
+    /// This method will return <c>true</c> when no exchange is set in the <paramref name="tradeStationOrderProperties"/>, 
+    /// since this implies that no specific routing is needed. The route ID is determined by attempting to match 
+    /// the provided exchange with a route for one of the security types.
+    /// </remarks>
+    private bool GetTradeStationOrderRouteIdByOrderSecurityTypes(TradeStationOrderProperties tradeStationOrderProperties, IReadOnlyCollection<SecurityType> securityTypes, out string routeId)
+    {
+        routeId = default;
+
+        // If no exchange is set in tradeStationOrderProperties, return true.
+        // This indicates that the user didn't specify an exchange, so no specific routing is required.
+        if (tradeStationOrderProperties?.Exchange == null)
+        {
+            return true;
+        }
+
+        if (!_leanExchangeToTradeStationRoute.TryGetValue(tradeStationOrderProperties.Exchange, out var mappedExchangeName))
+        {
+            mappedExchangeName = tradeStationOrderProperties.Exchange.Name;
+        }
+
+        foreach (var securityType in securityTypes)
+        {
+            routeId = _routes.Value[securityType].FirstOrDefault(r => r.Name.Equals(mappedExchangeName, StringComparison.InvariantCultureIgnoreCase)).Id;
+
+            if (routeId != null)
+            {
+                break;
+            }
+        }
+
+        return !string.IsNullOrEmpty(routeId);
     }
 
     private class ModulesReadLicenseRead : QuantConnect.Api.RestResponse
