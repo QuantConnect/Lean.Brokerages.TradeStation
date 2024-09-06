@@ -812,6 +812,15 @@ public partial class TradeStationBrokerage : Brokerage
                         FillQuantity = accumulativeFilledQuantity - previousExecutionAmount
                     };
 
+                    // When updating a combo order with multiple legs, each leg's update is received separately via WebSocket.
+                    // However, it's possible for one leg to be partially filled while another leg is still waiting to be filled.
+                    // In these cases, to avoid generating unnecessary events in Lean (and causing spam),
+                    // we skip processing if the current leg's update does not include any new fill quantity (i.e., the leg has not had any additional quantity filled).
+                    if (leanOrderStatus == OrderStatus.PartiallyFilled && orderEvent.FillQuantity == 0)
+                    {
+                        continue;
+                    }
+
                     // if we filled the order and have another contingent order waiting, submit it
                     if (!TryHandleRemainingCrossZeroOrder(leanOrder, orderEvent))
                     {
