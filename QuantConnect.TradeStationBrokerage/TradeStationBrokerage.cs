@@ -255,9 +255,9 @@ public partial class TradeStationBrokerage : Brokerage
             }
             else
             {
-                var totalLegShares = order.Legs.Sum(leg => leg.QuantityOrdered);
-
-                var groupOrderManager = new GroupOrderManager(order.Legs.Count, totalLegShares);
+                // Determine the position side based on the first leg of the order.
+                var sign = order.Legs[0].BuyOrSell.IsShort() ? -1 : 1;
+                var groupOrderManager = new GroupOrderManager(order.Legs.Count, order.Legs.Count * sign);
 
                 foreach (var leg in order.Legs)
                 {
