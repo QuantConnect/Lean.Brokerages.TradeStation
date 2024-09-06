@@ -166,7 +166,7 @@ public static class TradeStationExtensions
     {
         LimitOrder lo => lo.LimitPrice,
         StopLimitOrder slo => slo.LimitPrice,
-        ComboLimitOrder clo => order.Direction == OrderDirection.Buy ? clo.GroupOrderManager.LimitPrice : decimal.Negate(clo.GroupOrderManager.LimitPrice),
+        ComboLimitOrder clo => clo.GroupOrderManager.LimitPrice,
         _ => null
     };
 
@@ -257,4 +257,12 @@ public static class TradeStationExtensions
 
         return leanOrder;
     }
+
+    /// <summary>
+    /// Calculates the greatest common divisor (GCD) of two decimal numbers using the Euclidean algorithm.
+    /// </summary>
+    /// <param name="a">The first decimal number.</param>
+    /// <param name="b">The second decimal number. If this value is 0, the method returns the first number.</param>
+    /// <returns>The greatest common divisor of <paramref name="a"/> and <paramref name="b"/>.</returns>
+    public static decimal GreatestCommonDivisor(decimal a, decimal b) => b == 0 ? a : GreatestCommonDivisor(b, a % b);
 }
