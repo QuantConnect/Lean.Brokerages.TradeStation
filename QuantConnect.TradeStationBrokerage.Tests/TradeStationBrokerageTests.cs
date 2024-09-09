@@ -716,6 +716,40 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             return Math.Round(result, 2);
         }
 
+        [TestCase("CBOE", SecurityType.Equity, new SecurityType[] { SecurityType.Equity, SecurityType.Option }, "CBOE")]
+        [TestCase("IEX", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "IEXG")]
+        [TestCase("BOSTON", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "NQBX")]
+        [TestCase("NASDAQ", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "NSDQ")]
+        [TestCase("ARCX", SecurityType.Option, new SecurityType[] { SecurityType.Option }, "NYOP")]
+        [TestCase("ISE MERCURY", SecurityType.Option, new SecurityType[] { SecurityType.Option }, "MCRY")]
+        [TestCase("MIAX_PEARL", SecurityType.Option, new SecurityType[] { SecurityType.Option }, "MPRL")]
+        [TestCase("MIAX_SAPPHIRE", SecurityType.Option, new SecurityType[] { SecurityType.Option }, "SPHR")]
+        [TestCase("BATS_Y", SecurityType.Equity, new SecurityType[] { SecurityType.Option }, "SPHR")]
+        [TestCase("BYX", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "BYX")]
+        [TestCase("MEMX", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "MXOP")]
+        [TestCase("NASDAQ_BX", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "NOBO")]
+        [TestCase("NASDAQ_BX", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "NOBO")]
+        [TestCase("MIAX_EMERALD", SecurityType.Option, new SecurityType[] { SecurityType.Option }, "EMLD")]
+        [TestCase("MIAX_EMERALD", SecurityType.Option, new SecurityType[] { SecurityType.Option }, "EMLD")]
+        [TestCase("ISE_GEMINI", SecurityType.Option, new SecurityType[] { SecurityType.Option }, "GMNI")]
+        [TestCase("AMEX", SecurityType.Option, new SecurityType[] { SecurityType.Option }, "AMOP")]
+        [TestCase("TWAP-ALGO", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "TWAP", true)]
+        [TestCase("SweepPI-ALGO", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "WEEB", true)]
+        [TestCase("NQBX", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "NQBX", true)]
+        public void GetCorrectRouteIdWithExchangeNameAndSecurityTypes(string exchangeName, SecurityType exchangeSecurityType, SecurityType[] orderSecurityTypes, string expectedRouteId, bool useCustomExchange = false)
+        {
+            var exchange = useCustomExchange
+                ? new Exchange(exchangeName, exchangeName, exchangeName, exchangeSecurityType.ToString())
+                : Exchanges.GetPrimaryExchange(exchangeName, exchangeSecurityType);
+
+            var tradeStationOrderProperties = new TradeStationOrderProperties() { Exchange = exchange };
+
+            if (_brokerage.GetTradeStationOrderRouteIdByOrder(tradeStationOrderProperties, orderSecurityTypes, out var routeId))
+            {
+                Assert.That(routeId, Is.EqualTo(expectedRouteId));
+            }
+        }
+
         public class TradeStationBrokerageTest : TradeStationBrokerage
         {
             /// <summary>
@@ -747,6 +781,12 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             public Models.Quote GetPrice(Symbol symbol)
             {
                 return GetQuote(symbol).Quotes.Single();
+            }
+
+            public bool GetTradeStationOrderRouteIdByOrder(TradeStationOrderProperties tradeStationOrderProperties, IReadOnlyCollection<SecurityType> securityTypes, out string routeId)
+            {
+                routeId = default;
+                return GetTradeStationOrderRouteIdByOrderSecurityTypes(tradeStationOrderProperties, securityTypes, out routeId);
             }
         }
     }

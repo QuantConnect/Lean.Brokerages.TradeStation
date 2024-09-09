@@ -1041,7 +1041,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// since this implies that no specific routing is needed. The route ID is determined by attempting to match 
     /// the provided exchange with a route for one of the security types.
     /// </remarks>
-    private bool GetTradeStationOrderRouteIdByOrderSecurityTypes(TradeStationOrderProperties tradeStationOrderProperties, IReadOnlyCollection<SecurityType> securityTypes, out string routeId)
+    protected bool GetTradeStationOrderRouteIdByOrderSecurityTypes(TradeStationOrderProperties tradeStationOrderProperties, IReadOnlyCollection<SecurityType> securityTypes, out string routeId)
     {
         routeId = default;
 
