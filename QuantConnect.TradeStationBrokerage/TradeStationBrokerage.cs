@@ -768,7 +768,7 @@ public partial class TradeStationBrokerage : Brokerage
             {
                 var brokerageOrder = jObj.ToObject<TradeStationOrder>();
 
-                var leanOrderStatus = default(OrderStatus);
+                var globalLeanOrderStatus = default(OrderStatus);
                 switch (brokerageOrder.Status)
                 {
                     case TradeStationOrderStatusType.Ack:
@@ -779,16 +779,16 @@ public partial class TradeStationBrokerage : Brokerage
                     // Subsequently, another event is received with the ClosedDateTime property correctly populated.
                     case TradeStationOrderStatusType.Fll when brokerageOrder.ClosedDateTime != default:
                     case TradeStationOrderStatusType.Brf:
-                        leanOrderStatus = OrderStatus.Filled;
+                        globalLeanOrderStatus = OrderStatus.Filled;
                         break;
                     case TradeStationOrderStatusType.Fpr:
-                        leanOrderStatus = OrderStatus.PartiallyFilled;
+                        globalLeanOrderStatus = OrderStatus.PartiallyFilled;
                         break;
                     case TradeStationOrderStatusType.Rej:
                     case TradeStationOrderStatusType.Tsc:
                     case TradeStationOrderStatusType.Rjr:
                     case TradeStationOrderStatusType.Bro:
-                        leanOrderStatus = OrderStatus.Invalid;
+                        globalLeanOrderStatus = OrderStatus.Invalid;
                         break;
                     // Sometimes, a Out event is received without the ClosedDateTime property set. 
                     // Subsequently, another event is received with the ClosedDateTime property correctly populated.
@@ -799,7 +799,7 @@ public partial class TradeStationBrokerage : Brokerage
                         {
                             return;
                         }
-                        leanOrderStatus = OrderStatus.Canceled;
+                        globalLeanOrderStatus = OrderStatus.Canceled;
                         break;
                     default:
                         Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}.TradeStationStreamStatus: {json}");
@@ -807,7 +807,7 @@ public partial class TradeStationBrokerage : Brokerage
                 };
 
                 var leanOrders = new List<Order>();
-                if (!TryGetOrRemoveCrossZeroOrder(brokerageOrder.OrderID, leanOrderStatus, out var crossZeroLeanOrder))
+                if (!TryGetOrRemoveCrossZeroOrder(brokerageOrder.OrderID, globalLeanOrderStatus, out var crossZeroLeanOrder))
                 {
                     leanOrders = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID);
                 }
@@ -825,19 +825,19 @@ public partial class TradeStationBrokerage : Brokerage
                 var sendFeesOnce = default(bool);
                 foreach (var leg in brokerageOrder.Legs)
                 {
+                    var legOrderStatus = globalLeanOrderStatus;
+                    // Manually update the order status to 'Filled' because one of the combo order legs is fully filled.
+                    // This prevents excessive event generation in Lean by avoiding repeated 'PartiallyFilled' updates.
+                    if (legOrderStatus != OrderStatus.Filled && legOrderStatus == OrderStatus.PartiallyFilled && leg.QuantityRemaining == 0)
+                    {
+                        legOrderStatus = OrderStatus.Filled;
+                    }
+
                     var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
                         leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
 
                     // Ensure there is an order with the specific symbol in leanOrders.
                     var leanOrder = leanOrders.FirstOrDefault(order => order.Symbol == leanSymbol);
-
-                    // When updating a combo order with multiple legs, each leg's status is received individually through the WebSocket.
-                    // It's possible for one leg to be fully filled while other legs are still partially filled.
-                    // Note: OrderProvider does not return orders that are already filled.
-                    if (leanOrder == null && leg.QuantityRemaining == 0 && leg.ExecQuantity == leg.QuantityOrdered)
-                    {
-                        continue;
-                    }
 
                     if (leanOrder == null)
                     {
@@ -855,7 +855,7 @@ public partial class TradeStationBrokerage : Brokerage
                     _orderIdToFillQuantity.TryGetValue(leanOrder.Id, out var previousExecutionAmount);
                     var accumulativeFilledQuantity = _orderIdToFillQuantity[leanOrder.Id] = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.ExecQuantity) : leg.ExecQuantity;
 
-                    if (leanOrderStatus.IsClosed())
+                    if (legOrderStatus.IsClosed())
                     {
                         _orderIdToFillQuantity.TryRemove(leanOrder.Id, out _);
                     }
@@ -866,7 +866,7 @@ public partial class TradeStationBrokerage : Brokerage
                         OrderFee.Zero,
                         brokerageOrder.RejectReason)
                     {
-                        Status = leanOrderStatus,
+                        Status = legOrderStatus,
                         FillPrice = leg.ExecutionPrice,
                         FillQuantity = accumulativeFilledQuantity - previousExecutionAmount
                     };
@@ -875,7 +875,7 @@ public partial class TradeStationBrokerage : Brokerage
                     // However, it's possible for one leg to be partially filled while another leg is still waiting to be filled.
                     // In these cases, to avoid generating unnecessary events in Lean (and causing spam),
                     // we skip processing if the current leg's update does not include any new fill quantity (i.e., the leg has not had any additional quantity filled).
-                    if (leanOrderStatus == OrderStatus.PartiallyFilled && orderEvent.FillQuantity == 0)
+                    if ((legOrderStatus == OrderStatus.PartiallyFilled || leanOrder.Status == OrderStatus.Filled) && orderEvent.FillQuantity == 0)
                     {
                         continue;
                     }
@@ -883,17 +883,20 @@ public partial class TradeStationBrokerage : Brokerage
                     // Fees should only be sent once when the order is fully filled.
                     // The sendFeesOnce flag ensures that we don't send the OrderFee multiple times,
                     // especially for ComboOrders with multiple legs where each leg might trigger an update.
-                    if (!sendFeesOnce && leanOrderStatus == OrderStatus.Filled)
+                    if (legOrderStatus == OrderStatus.Filled)
                     {
-                        sendFeesOnce = true;
                         orderEvent.OrderFee = new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD));
                     }
 
-                    // Manually update the order status to 'Filled' because one of the combo order legs is fully filled.
-                    // This prevents excessive event generation in Lean by avoiding repeated 'PartiallyFilled' updates.
-                    if (leanOrderStatus != OrderStatus.Filled && leanOrderStatus == OrderStatus.PartiallyFilled && leg.QuantityRemaining == 0)
+                    var _hashSet = new HashSet<int>();
+
+                    // Fees should only be sent once when the order is fully filled.
+                    // The sendFeesOnce flag ensures that we don't send the OrderFee multiple times,
+                    // especially for ComboOrders with multiple legs where each leg might trigger an update.
+                    if (!sendFeesOnce && globalLeanOrderStatus == OrderStatus.Filled)
                     {
-                        orderEvent.Status = OrderStatus.Filled;
+                        sendFeesOnce = true;
+                        orderEvent.OrderFee = new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD));
                     }
 
                     // if we filled the order and have another contingent order waiting, submit it
