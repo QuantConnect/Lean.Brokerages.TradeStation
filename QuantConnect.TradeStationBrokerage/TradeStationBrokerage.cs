@@ -822,6 +822,7 @@ public partial class TradeStationBrokerage : Brokerage
                     return;
                 }
 
+                var sendFeesOnce = default(bool);
                 foreach (var leg in brokerageOrder.Legs)
                 {
                     var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
@@ -829,6 +830,14 @@ public partial class TradeStationBrokerage : Brokerage
 
                     // Ensure there is an order with the specific symbol in leanOrders.
                     var leanOrder = leanOrders.FirstOrDefault(order => order.Symbol == leanSymbol);
+
+                    // When updating a combo order with multiple legs, each leg's status is received individually through the WebSocket.
+                    // It's possible for one leg to be fully filled while other legs are still partially filled.
+                    // Note: OrderProvider does not return orders that are already filled.
+                    if (leanOrder == null && leg.QuantityRemaining == 0 && leg.ExecQuantity == leg.QuantityOrdered)
+                    {
+                        continue;
+                    }
 
                     if (leanOrder == null)
                     {
@@ -854,7 +863,7 @@ public partial class TradeStationBrokerage : Brokerage
                     var orderEvent = new OrderEvent(
                         leanOrder,
                         DateTime.UtcNow,
-                        new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD)),
+                        OrderFee.Zero,
                         brokerageOrder.RejectReason)
                     {
                         Status = leanOrderStatus,
@@ -869,6 +878,22 @@ public partial class TradeStationBrokerage : Brokerage
                     if (leanOrderStatus == OrderStatus.PartiallyFilled && orderEvent.FillQuantity == 0)
                     {
                         continue;
+                    }
+
+                    // Fees should only be sent once when the order is fully filled.
+                    // The sendFeesOnce flag ensures that we don't send the OrderFee multiple times,
+                    // especially for ComboOrders with multiple legs where each leg might trigger an update.
+                    if (!sendFeesOnce && leanOrderStatus == OrderStatus.Filled)
+                    {
+                        sendFeesOnce = true;
+                        orderEvent.OrderFee = new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD));
+                    }
+
+                    // Manually update the order status to 'Filled' because one of the combo order legs is fully filled.
+                    // This prevents excessive event generation in Lean by avoiding repeated 'PartiallyFilled' updates.
+                    if (leanOrderStatus != OrderStatus.Filled && leanOrderStatus == OrderStatus.PartiallyFilled && leg.QuantityRemaining == 0)
+                    {
+                        orderEvent.Status = OrderStatus.Filled;
                     }
 
                     // if we filled the order and have another contingent order waiting, submit it
