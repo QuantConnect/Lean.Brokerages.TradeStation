@@ -860,7 +860,7 @@ public partial class TradeStationBrokerage : Brokerage
                     _orderIdToFillQuantity.TryGetValue(leanOrder.Id, out var previousExecutionAmount);
                     var accumulativeFilledQuantity = _orderIdToFillQuantity[leanOrder.Id] = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.ExecQuantity) : leg.ExecQuantity;
 
-                    if (legOrderStatus.IsClosed())
+                    if (globalLeanOrderStatus.IsClosed())
                     {
                         _orderIdToFillQuantity.TryRemove(leanOrder.Id, out _);
                     }
