@@ -888,16 +888,6 @@ public partial class TradeStationBrokerage : Brokerage
                     // Fees should only be sent once when the order is fully filled.
                     // The sendFeesOnce flag ensures that we don't send the OrderFee multiple times,
                     // especially for ComboOrders with multiple legs where each leg might trigger an update.
-                    if (legOrderStatus == OrderStatus.Filled)
-                    {
-                        orderEvent.OrderFee = new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD));
-                    }
-
-                    var _hashSet = new HashSet<int>();
-
-                    // Fees should only be sent once when the order is fully filled.
-                    // The sendFeesOnce flag ensures that we don't send the OrderFee multiple times,
-                    // especially for ComboOrders with multiple legs where each leg might trigger an update.
                     if (!sendFeesOnce && globalLeanOrderStatus == OrderStatus.Filled)
                     {
                         sendFeesOnce = true;
