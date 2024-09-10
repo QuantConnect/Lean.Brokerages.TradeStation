@@ -504,6 +504,11 @@ public partial class TradeStationBrokerage : Brokerage
             return null;
         }
 
+        if (!string.IsNullOrEmpty(routeId))
+        {
+            Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(PlaceOrderCommon)}: Using Route ID '{routeId}' for the following Order(s): {string.Join(',', orders.Select(x => x.ToString()))}");
+        }
+
         if (orders.Count == 1)
         {
             response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, quantity, tradeAction, symbol, limitPrice: limitPrice, stopPrice: stopPrice, routeId: routeId, tradeStationOrderProperties: tradeStationOrderProperties).SynchronouslyAwaitTaskResult();

@@ -202,7 +202,6 @@ public class TradeStationApiClient
 
         if (!string.IsNullOrEmpty(routeId))
         {
-            Log.Trace($"{nameof(TradeStationApiClient)}.{nameof(PlaceOrder)}.Route Id = {routeId}");
             tradeStationOrder.Route = routeId;
         }
 
