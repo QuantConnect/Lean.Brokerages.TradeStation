@@ -464,7 +464,7 @@ public class TradeStationApiClient
         }
         catch (Exception ex)
         {
-            Log.Error($"{nameof(TradeStationApiClient)}.{nameof(GetBarsAsync)}.error: {ex.Message}");
+            Log.Error($"{nameof(TradeStationApiClient)}.{nameof(GetBarsAsync)}: Failed to retrieve bars for symbol '{symbol}' with time interval '{unitOfTime}'. Start: {firstDate}, End: {lastDate}. Exception: {ex.Message}");
             yield break;
         }
 
