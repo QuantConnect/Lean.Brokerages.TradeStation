@@ -1056,7 +1056,8 @@ public partial class TradeStationBrokerage : Brokerage
                         orderProperties.AllOrNone = true;
                         break;
                     default:
-                        throw new NotImplementedException($"{nameof(TradeStationBrokerage)}.{nameof(CreateLeanOrder)}.option: '{option}' is not implemented.");
+                        Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(CreateLeanOrder)}: Detected unsupported: {option}, ignoring");
+                        break;
                 }
             }
         }

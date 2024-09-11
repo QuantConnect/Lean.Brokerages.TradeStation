@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -125,13 +125,21 @@ public static class TradeStationExtensions
     /// <exception cref="NotImplementedException">
     /// Thrown when the provided <paramref name="brokerageOrderDuration"/> is not supported.
     /// </exception>
-    public static Orders.TimeInForce GetLeanTimeInForce(this string brokerageOrderDuration, DateTime goodTilDateTime) => brokerageOrderDuration switch
+    public static Orders.TimeInForce GetLeanTimeInForce(this string brokerageOrderDuration, DateTime goodTilDateTime)
     {
-        "DAY" => Orders.TimeInForce.Day,
-        "GTD" => Orders.TimeInForce.GoodTilDate(goodTilDateTime),
-        "GTC" => Orders.TimeInForce.GoodTilCanceled,
-        _ => throw new NotImplementedException($"{nameof(TradeStationExtensions)}.{nameof(GetLeanTimeInForce)}: The duration '{brokerageOrderDuration}' is not implemented. Supported values are 'DAY', 'GTD', and 'GTC'.")
-    };
+        switch (brokerageOrderDuration)
+        {
+            case "DAY":
+                return Orders.TimeInForce.Day;
+            case "GTD":
+                return Orders.TimeInForce.GoodTilDate(goodTilDateTime);
+            case "GTC":
+                return Orders.TimeInForce.GoodTilCanceled;
+            default:
+                Logging.Log.Error($"{nameof(TradeStationExtensions)}.{nameof(GetLeanTimeInForce)}: Detected unsupported duration '{brokerageOrderDuration}', ignoring. Using default: TimeInForce.GoodTilCanceled");
+                return Orders.TimeInForce.GoodTilCanceled;
+        };
+    }
 
     /// <summary>
     /// Determines whether the specified trade action type is a short sell action.
