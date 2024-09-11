@@ -863,6 +863,13 @@ public partial class TradeStationBrokerage : Brokerage
                         return;
                     }
 
+                    // TradeStation may occasionally send duplicate event messages where the only difference is the order of the legs.
+                    // If the order status is 'Filled', skip processing this message to avoid handling the same event multiple times.
+                    if (leanOrder.Status == OrderStatus.Filled)
+                    {
+                        continue;
+                    }
+
                     // TradeStation sends the accumulative filled quantity but we need the partial amount for our event
                     _orderIdToFillQuantity.TryGetValue(leanOrder.Id, out var previousExecutionAmount);
                     var accumulativeFilledQuantity = _orderIdToFillQuantity[leanOrder.Id] = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.ExecQuantity) : leg.ExecQuantity;
