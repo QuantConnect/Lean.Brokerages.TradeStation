@@ -115,6 +115,25 @@ public static class TradeStationExtensions
     }
 
     /// <summary>
+    /// Converts a brokerage order duration string to the corresponding Lean <see cref="Orders.TimeInForce"/> type.
+    /// </summary>
+    /// <param name="brokerageOrderDuration">The brokerage order duration as a string. Supported values are 'DAY', 'GTD', and 'GTC'.</param>
+    /// <param name="goodTilDateTime">The expiration date and time for a Good 'Til Date (GTD) order.</param>
+    /// <returns>
+    /// The corresponding <see cref="Orders.TimeInForce"/> value based on the brokerage order duration.
+    /// </returns>
+    /// <exception cref="NotImplementedException">
+    /// Thrown when the provided <paramref name="brokerageOrderDuration"/> is not supported.
+    /// </exception>
+    public static Orders.TimeInForce GetLeanTimeInForce(this string brokerageOrderDuration, DateTime goodTilDateTime) => brokerageOrderDuration switch
+    {
+        "DAY" => Orders.TimeInForce.Day,
+        "GTD" => Orders.TimeInForce.GoodTilDate(goodTilDateTime),
+        "GTC" => Orders.TimeInForce.GoodTilCanceled,
+        _ => throw new NotImplementedException($"{nameof(TradeStationExtensions)}.{nameof(GetLeanTimeInForce)}: The duration '{brokerageOrderDuration}' is not implemented. Supported values are 'DAY', 'GTD', and 'GTC'.")
+    };
+
+    /// <summary>
     /// Determines whether the specified trade action type is a short sell action.
     /// </summary>
     /// <param name="buyOrSell">The trade action type to evaluate.</param>

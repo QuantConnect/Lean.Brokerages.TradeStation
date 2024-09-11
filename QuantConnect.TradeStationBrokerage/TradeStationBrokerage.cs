@@ -142,6 +142,11 @@ public partial class TradeStationBrokerage : Brokerage
     };
 
     /// <summary>
+    /// Maps TradeStation routing codes to Lean Exchange ones.
+    /// </summary>
+    private readonly Dictionary<string, Exchange> _tradeStationRouteToLeanExchange = new();
+
+    /// <summary>
     /// Represents a type capable of fetching the holdings for the specified symbol
     /// </summary>
     protected ISecurityProvider SecurityProvider { get; private set; }
@@ -230,6 +235,7 @@ public partial class TradeStationBrokerage : Brokerage
         : base("TradeStation")
     {
         Initialize(clientId, clientSecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider);
+        _leanExchangeToTradeStationRoute.DoForEach(l => _tradeStationRouteToLeanExchange.Add(l.Value, l.Key));
     }
 
     protected void Initialize(string clientId, string clientSecret, string restApiUrl, string redirectUrl, string authorizationCode,
@@ -1026,14 +1032,45 @@ public partial class TradeStationBrokerage : Brokerage
         var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
                                                       leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
 
+        var orderProperties = new TradeStationOrderProperties()
+        {
+            TimeInForce = order.Duration.GetLeanTimeInForce(order.GoodTillDate)
+        };
+
+        if (!string.IsNullOrEmpty(order.AdvancedOptions))
+        {
+            var advancedOptions = order.AdvancedOptions.Split(';', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var option in advancedOptions)
+            {
+                switch (option)
+                {
+                    case "AON":
+                        orderProperties.AllOrNone = true;
+                        break;
+                    default:
+                        throw new NotImplementedException($"{nameof(TradeStationBrokerage)}.{nameof(CreateLeanOrder)}.option: '{option}' is not implemented.");
+                }
+            }
+        }
+
+        // "Intelligent" is the default routing strategy for TradeStation orders.
+        if (!string.IsNullOrEmpty(order.Routing) && !order.Routing.Equals("Intelligent", StringComparison.InvariantCultureIgnoreCase))
+        {
+            if (!_tradeStationRouteToLeanExchange.TryGetValue(order.Routing, out var mappedExchangeName))
+            {
+                mappedExchangeName = Exchanges.GetPrimaryExchange(order.Routing, leanSymbol.SecurityType);
+            }
+            orderProperties.Exchange = mappedExchangeName;
+        }
+
         Order leanOrder = order.OrderType switch
         {
-            TradeStationOrderType.Market when groupOrderManager == null => new MarketOrder(leanSymbol, orderQuantity, order.OpenedDateTime),
-            TradeStationOrderType.Market when groupOrderManager != null => new ComboMarketOrder(leanSymbol, orderQuantity, order.OpenedDateTime, groupOrderManager),
-            TradeStationOrderType.Limit when groupOrderManager == null => new LimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime),
-            TradeStationOrderType.Limit when groupOrderManager != null => new ComboLimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime, groupOrderManager),
-            TradeStationOrderType.StopMarket => new StopMarketOrder(leanSymbol, orderQuantity, order.StopPrice, order.OpenedDateTime),
-            TradeStationOrderType.StopLimit => new StopLimitOrder(leanSymbol, orderQuantity, order.StopPrice, order.LimitPrice, order.OpenedDateTime),
+            TradeStationOrderType.Market when groupOrderManager == null => new MarketOrder(leanSymbol, orderQuantity, order.OpenedDateTime, properties: orderProperties),
+            TradeStationOrderType.Market when groupOrderManager != null => new ComboMarketOrder(leanSymbol, orderQuantity, order.OpenedDateTime, groupOrderManager, properties: orderProperties),
+            TradeStationOrderType.Limit when groupOrderManager == null => new LimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime, properties: orderProperties),
+            TradeStationOrderType.Limit when groupOrderManager != null => new ComboLimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime, groupOrderManager, properties: orderProperties),
+            TradeStationOrderType.StopMarket => new StopMarketOrder(leanSymbol, orderQuantity, order.StopPrice, order.OpenedDateTime, properties: orderProperties),
+            TradeStationOrderType.StopLimit => new StopLimitOrder(leanSymbol, orderQuantity, order.StopPrice, order.LimitPrice, order.OpenedDateTime, properties: orderProperties),
             _ => throw new NotSupportedException($"Unsupported order type: {order.OrderType}")
         };
 
