@@ -1043,7 +1043,7 @@ public partial class TradeStationBrokerage : Brokerage
         var orderProperties = new TradeStationOrderProperties();
         if (!orderProperties.GetLeanTimeInForce(order.Duration, order.GoodTillDate))
         {
-            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $"Detected unsupported duration '{order.Duration}', ignoring. Using default: TimeInForce.GoodTilCanceled"));
+            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $"Detected unsupported Lean TimeInForce of '{order.Duration}', ignoring. Using default: TimeInForce.GoodTilCanceled"));
         }
 
         if (!string.IsNullOrEmpty(order.AdvancedOptions))
@@ -1057,7 +1057,7 @@ public partial class TradeStationBrokerage : Brokerage
                         orderProperties.AllOrNone = true;
                         break;
                     default:
-                        OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $" Detected unsupported: {option}, ignoring"));
+                        OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $" Detected unsupported Lean.TradeStationOrderProperties: {option}, ignoring"));
                         break;
                 }
             }
