@@ -399,30 +399,31 @@ public partial class TradeStationBrokerage : Brokerage
             return false;
         }
 
-        var result = default(bool);
-        _messageHandler.WithLockedStream(() =>
+        try
         {
-            var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol);
-
-            var isPlaceCrossOrder = TryCrossZeroPositionOrder(order, holdingQuantity);
-
-            if (isPlaceCrossOrder == null)
+            _messageHandler.WithLockedStream(() =>
             {
-                if (!_groupOrderCacheManager.TryGetGroupCachedOrders(order, out var orders))
+                var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol);
+
+                var isPlaceCrossOrder = TryCrossZeroPositionOrder(order, holdingQuantity);
+
+                if (isPlaceCrossOrder == null)
                 {
-                    result = true;
-                    return;
-                }
+                    if (!_groupOrderCacheManager.TryGetGroupCachedOrders(order, out var orders))
+                    {
+                        return;
+                    }
 
-                var response = PlaceTradeStationOrder(orders, holdingQuantity);
-                result = response != null && response.Value.Orders.Count > 0;
-            }
-            else
-            {
-                result = isPlaceCrossOrder.Value;
-            }
-        });
-        return result;
+                    var response = PlaceTradeStationOrder(orders, holdingQuantity);
+                }
+            });
+            return true;
+        }
+        catch (Exception error)
+        {
+            Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(PlaceOrder)}: " + error);
+        }
+        return false;
     }
 
     /// <summary>
