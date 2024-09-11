@@ -501,7 +501,7 @@ public partial class TradeStationBrokerage : Brokerage
     {
         var response = default(TradeStationPlaceOrderResponse);
 
-        var tradeStationOrderProperties = orders.First().Properties as TradeStationOrderProperties;
+        var tradeStationOrderProperties = orders.First().Properties as OrderProperties;
 
         if (!GetTradeStationOrderRouteIdByOrderSecurityTypes(tradeStationOrderProperties, orders.Select(x => x.SecurityType).ToList(), out var routeId))
         {
@@ -518,12 +518,12 @@ public partial class TradeStationBrokerage : Brokerage
 
         if (orders.Count == 1)
         {
-            response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, quantity, tradeAction, symbol, limitPrice: limitPrice, stopPrice: stopPrice, routeId: routeId, tradeStationOrderProperties: tradeStationOrderProperties).SynchronouslyAwaitTaskResult();
+            response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, quantity, tradeAction, symbol, limitPrice: limitPrice, stopPrice: stopPrice, routeId: routeId, tradeStationOrderProperties: tradeStationOrderProperties as TradeStationOrderProperties).SynchronouslyAwaitTaskResult();
         }
         else
         {
             var orderLegs = CreateOrderLegs(orders);
-            response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, legs: orderLegs, limitPrice: limitPrice, routeId: routeId, tradeStationOrderProperties: tradeStationOrderProperties).SynchronouslyAwaitTaskResult();
+            response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, legs: orderLegs, limitPrice: limitPrice, routeId: routeId, tradeStationOrderProperties: tradeStationOrderProperties as TradeStationOrderProperties).SynchronouslyAwaitTaskResult();
         }
 
         foreach (var brokerageOrder in response.Orders)
@@ -1088,7 +1088,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// <summary>
     /// Attempts to retrieve the TradeStation route ID based on the specified exchange and security types.
     /// </summary>
-    /// <param name="tradeStationOrderProperties">
+    /// <param name="orderProperties">
     /// The order properties containing information about the TradeStation exchange.
     /// If no exchange is provided, the method will return <c>true</c> as no specific routing is required.
     /// </param>
@@ -1105,24 +1105,24 @@ public partial class TradeStationBrokerage : Brokerage
     /// or if a valid route ID is found; otherwise, <c>false</c>.
     /// </returns>
     /// <remarks>
-    /// This method will return <c>true</c> when no exchange is set in the <paramref name="tradeStationOrderProperties"/>, 
+    /// This method will return <c>true</c> when no exchange is set in the <paramref name="orderProperties"/>, 
     /// since this implies that no specific routing is needed. The route ID is determined by attempting to match 
     /// the provided exchange with a route for one of the security types.
     /// </remarks>
-    protected bool GetTradeStationOrderRouteIdByOrderSecurityTypes(TradeStationOrderProperties tradeStationOrderProperties, IReadOnlyCollection<SecurityType> securityTypes, out string routeId)
+    protected bool GetTradeStationOrderRouteIdByOrderSecurityTypes(OrderProperties orderProperties, IReadOnlyCollection<SecurityType> securityTypes, out string routeId)
     {
         routeId = default;
 
         // If no exchange is set in tradeStationOrderProperties, return true.
         // This indicates that the user didn't specify an exchange, so no specific routing is required.
-        if (tradeStationOrderProperties?.Exchange == null)
+        if (orderProperties?.Exchange == null)
         {
             return true;
         }
 
-        if (!_leanExchangeToTradeStationRoute.TryGetValue(tradeStationOrderProperties.Exchange, out var mappedExchangeName))
+        if (!_leanExchangeToTradeStationRoute.TryGetValue(orderProperties.Exchange, out var mappedExchangeName))
         {
-            mappedExchangeName = tradeStationOrderProperties.Exchange.Name;
+            mappedExchangeName = orderProperties.Exchange.Name;
         }
 
         foreach (var securityType in securityTypes)
