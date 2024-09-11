@@ -115,29 +115,48 @@ public static class TradeStationExtensions
     }
 
     /// <summary>
-    /// Converts a brokerage order duration string to the corresponding Lean <see cref="Orders.TimeInForce"/> type.
+    /// Converts the specified brokerage order duration string into the corresponding Lean <see cref="Orders.TimeInForce"/> type.
+    /// This method supports three brokerage order duration values: 'DAY', 'GTD' (Good 'Til Date), and 'GTC' (Good 'Til Canceled).
     /// </summary>
-    /// <param name="brokerageOrderDuration">The brokerage order duration as a string. Supported values are 'DAY', 'GTD', and 'GTC'.</param>
-    /// <param name="goodTilDateTime">The expiration date and time for a Good 'Til Date (GTD) order.</param>
+    /// <param name="brokerageOrderDuration">
+    /// The duration of the order provided by the brokerage as a string. Valid values include:
+    /// <list type="bullet">
+    /// <item>
+    /// <term>DAY</term>
+    /// <description>The order is active only for the current trading day and expires at the end of the day.</description>
+    /// </item>
+    /// <item>
+    /// <term>GTD</term>
+    /// <description>The order remains active until the specified expiration date and time (Good 'Til Date).</description>
+    /// </item>
+    /// <item>
+    /// <term>GTC</term>
+    /// <description>The order remains active indefinitely until explicitly canceled (Good 'Til Canceled).</description>
+    /// </item>
+    /// </list>
+    /// </param>
+    /// <param name="goodTilDateTime">
+    /// The expiration date and time for a Good 'Til Date (GTD) order. This parameter is used only when <paramref name="brokerageOrderDuration"/> is 'GTD'.
+    /// </param>
     /// <returns>
-    /// The corresponding <see cref="Orders.TimeInForce"/> value based on the brokerage order duration.
+    /// Returns <c>true</c> if the conversion was successful and a valid <see cref="Orders.TimeInForce"/> value was assigned to 
+    /// the <see cref="TradeStationOrderProperties.TimeInForce"/> property. Returns <c>false</c> if an unsupported brokerage order duration was provided.
     /// </returns>
-    /// <exception cref="NotImplementedException">
-    /// Thrown when the provided <paramref name="brokerageOrderDuration"/> is not supported.
-    /// </exception>
-    public static Orders.TimeInForce GetLeanTimeInForce(this string brokerageOrderDuration, DateTime goodTilDateTime)
+    public static bool GetLeanTimeInForce(this TradeStationOrderProperties orderProperties, string brokerageOrderDuration, DateTime goodTilDateTime)
     {
         switch (brokerageOrderDuration)
         {
             case "DAY":
-                return Orders.TimeInForce.Day;
+                orderProperties.TimeInForce = Orders.TimeInForce.Day;
+                return true;
             case "GTD":
-                return Orders.TimeInForce.GoodTilDate(goodTilDateTime);
+                orderProperties.TimeInForce = Orders.TimeInForce.GoodTilDate(goodTilDateTime);
+                return true;
             case "GTC":
-                return Orders.TimeInForce.GoodTilCanceled;
+                orderProperties.TimeInForce = Orders.TimeInForce.GoodTilCanceled;
+                return true;
             default:
-                Logging.Log.Error($"{nameof(TradeStationExtensions)}.{nameof(GetLeanTimeInForce)}: Detected unsupported duration '{brokerageOrderDuration}', ignoring. Using default: TimeInForce.GoodTilCanceled");
-                return Orders.TimeInForce.GoodTilCanceled;
+                return false;
         };
     }
 

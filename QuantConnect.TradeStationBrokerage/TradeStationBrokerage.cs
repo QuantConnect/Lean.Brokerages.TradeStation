@@ -1040,10 +1040,11 @@ public partial class TradeStationBrokerage : Brokerage
         var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
                                                       leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
 
-        var orderProperties = new TradeStationOrderProperties()
+        var orderProperties = new TradeStationOrderProperties();
+        if (!orderProperties.GetLeanTimeInForce(order.Duration, order.GoodTillDate))
         {
-            TimeInForce = order.Duration.GetLeanTimeInForce(order.GoodTillDate)
-        };
+            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $"Detected unsupported duration '{order.Duration}', ignoring. Using default: TimeInForce.GoodTilCanceled"));
+        }
 
         if (!string.IsNullOrEmpty(order.AdvancedOptions))
         {
@@ -1056,7 +1057,7 @@ public partial class TradeStationBrokerage : Brokerage
                         orderProperties.AllOrNone = true;
                         break;
                     default:
-                        Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(CreateLeanOrder)}: Detected unsupported: {option}, ignoring");
+                        OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $" Detected unsupported: {option}, ignoring"));
                         break;
                 }
             }
