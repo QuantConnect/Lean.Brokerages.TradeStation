@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -20,6 +20,7 @@ using System.Threading.Tasks;
 using QuantConnect.Securities;
 using System.Collections.Generic;
 using QuantConnect.Orders.TimeInForces;
+using QuantConnect.Brokerages.TradeStation.Models;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
 
 namespace QuantConnect.Brokerages.TradeStation;
@@ -80,6 +81,8 @@ public static class TradeStationExtensions
         OrderType.Limit => TradeStationOrderType.Limit,
         OrderType.StopMarket => TradeStationOrderType.StopMarket,
         OrderType.StopLimit => TradeStationOrderType.StopLimit,
+        OrderType.ComboMarket => TradeStationOrderType.Market,
+        OrderType.ComboLimit => TradeStationOrderType.Limit,
         _ => throw new NotSupportedException($"{nameof(TradeStationBrokerage)}.{nameof(ConvertLeanOrderTypeToTradeStation)}:" +
             $" The order type '{orderType}' is not supported for conversion to TradeStation order type.")
     };
@@ -109,6 +112,52 @@ public static class TradeStationExtensions
         }
 
         return (duration, expiryDateTime);
+    }
+
+    /// <summary>
+    /// Converts the specified brokerage order duration string into the corresponding Lean <see cref="Orders.TimeInForce"/> type.
+    /// This method supports three brokerage order duration values: 'DAY', 'GTD' (Good 'Til Date), and 'GTC' (Good 'Til Canceled).
+    /// </summary>
+    /// <param name="brokerageOrderDuration">
+    /// The duration of the order provided by the brokerage as a string. Valid values include:
+    /// <list type="bullet">
+    /// <item>
+    /// <term>DAY</term>
+    /// <description>The order is active only for the current trading day and expires at the end of the day.</description>
+    /// </item>
+    /// <item>
+    /// <term>GTD</term>
+    /// <description>The order remains active until the specified expiration date and time (Good 'Til Date).</description>
+    /// </item>
+    /// <item>
+    /// <term>GTC</term>
+    /// <description>The order remains active indefinitely until explicitly canceled (Good 'Til Canceled).</description>
+    /// </item>
+    /// </list>
+    /// </param>
+    /// <param name="goodTilDateTime">
+    /// The expiration date and time for a Good 'Til Date (GTD) order. This parameter is used only when <paramref name="brokerageOrderDuration"/> is 'GTD'.
+    /// </param>
+    /// <returns>
+    /// Returns <c>true</c> if the conversion was successful and a valid <see cref="Orders.TimeInForce"/> value was assigned to 
+    /// the <see cref="TradeStationOrderProperties.TimeInForce"/> property. Returns <c>false</c> if an unsupported brokerage order duration was provided.
+    /// </returns>
+    public static bool GetLeanTimeInForce(this TradeStationOrderProperties orderProperties, string brokerageOrderDuration, DateTime goodTilDateTime)
+    {
+        switch (brokerageOrderDuration)
+        {
+            case "DAY":
+                orderProperties.TimeInForce = Orders.TimeInForce.Day;
+                return true;
+            case "GTD":
+                orderProperties.TimeInForce = Orders.TimeInForce.GoodTilDate(goodTilDateTime);
+                return true;
+            case "GTC":
+                orderProperties.TimeInForce = Orders.TimeInForce.GoodTilCanceled;
+                return true;
+            default:
+                return false;
+        };
     }
 
     /// <summary>
@@ -163,6 +212,7 @@ public static class TradeStationExtensions
     {
         LimitOrder lo => lo.LimitPrice,
         StopLimitOrder slo => slo.LimitPrice,
+        ComboLimitOrder clo => clo.GroupOrderManager.LimitPrice,
         _ => null
     };
 
@@ -236,4 +286,29 @@ public static class TradeStationExtensions
     /// </remarks>
     public static NodaTime.DateTimeZone GetSymbolExchangeTimeZone(this Symbol symbol)
         => MarketHoursDatabase.FromDataFolder().GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType).TimeZone;
+
+    /// <summary>
+    /// Sets the status of the Lean order and associates it with the corresponding TradeStation broker ID.
+    /// </summary>
+    /// <param name="leanOrder">The Lean <see cref="Order"/> object whose status and broker ID are to be set.</param>
+    /// <param name="order">The TradeStation order providing the status and broker ID information.</param>
+    /// <param name="leg">The specific leg of the order, used to determine the execution quantity and final status.</param>
+    public static Order SetOrderStatusAndBrokerId(this Order leanOrder, TradeStationOrder order, Models.Leg leg)
+    {
+        leanOrder.Status = leg.ExecQuantity > 0m && leg.ExecQuantity != leg.QuantityOrdered
+            ? OrderStatus.PartiallyFilled
+            : OrderStatus.Submitted;
+
+        leanOrder.BrokerId.Add(order.OrderID);
+
+        return leanOrder;
+    }
+
+    /// <summary>
+    /// Calculates the greatest common divisor (GCD) of two decimal numbers using the Euclidean algorithm.
+    /// </summary>
+    /// <param name="a">The first decimal number.</param>
+    /// <param name="b">The second decimal number. If this value is 0, the method returns the first number.</param>
+    /// <returns>The greatest common divisor of <paramref name="a"/> and <paramref name="b"/>.</returns>
+    public static decimal GreatestCommonDivisor(decimal a, decimal b) => b == 0 ? a : GreatestCommonDivisor(b, a % b);
 }

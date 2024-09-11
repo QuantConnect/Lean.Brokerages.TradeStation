@@ -37,6 +37,7 @@ using QuantConnect.Configuration;
 using System.Security.Cryptography;
 using System.Collections.Concurrent;
 using System.Net.NetworkInformation;
+using System.Collections.ObjectModel;
 using QuantConnect.Brokerages.CrossZero;
 using QuantConnect.Brokerages.TradeStation.Api;
 using QuantConnect.Brokerages.TradeStation.Models;
@@ -100,9 +101,50 @@ public partial class TradeStationBrokerage : Brokerage
     private ConcurrentDictionary<int, decimal> _orderIdToFillQuantity = new();
 
     /// <summary>
+    /// Provides a thread-safe service for caching and managing original orders when they are part of a group.
+    /// </summary>
+    private GroupOrderCacheManager _groupOrderCacheManager = new();
+
+    /// <summary>
     /// Specifies the type of account on TradeStation in current session.
     /// </summary>
     private TradeStationAccountType _tradeStationAccountType;
+
+    /// <summary>
+    /// Containing the available trading routes.
+    /// </summary>
+    /// <remarks>
+    /// The routes are only loaded when accessed for the first time, ensuring efficient resource usage.
+    /// </remarks>
+    private Lazy<Dictionary<SecurityType, ReadOnlyCollection<Route>>> _routes;
+
+    /// <summary>
+    /// Maps various exchanges to their corresponding routing codes.
+    /// </summary>
+    /// <remarks>
+    /// This dictionary is used to convert exchange identifiers to their specific routing strings 
+    /// required for order placement or other exchange-specific operations.
+    /// </remarks>
+    private readonly Dictionary<Exchange, string> _leanExchangeToTradeStationRoute = new()
+    {
+        { Exchange.BOSTON, "NQBX" },
+        { Exchange.NASDAQ, "NSDQ" },
+        { Exchange.ARCA_Options, "NYSE Arca" },
+        { Exchange.ISE_MERCURY, "ISE Mercury" },
+        { Exchange.MIAX_PEARL, "MPRL" },
+        { Exchange.MIAX_SAPPHIRE, "SPHR"},
+        { Exchange.BATS_Y, "BYX" },
+        { Exchange.MEMX, "MXOP" },
+        { Exchange.NASDAQ_BX, "Nasdaq BX" },
+        { Exchange.MIAX_EMERALD, "EMLD" },
+        { Exchange.ISE_GEMINI, "GMNI" },
+        { Exchange.AMEX_Options, "NYSE Amex" }
+    };
+
+    /// <summary>
+    /// Maps TradeStation routing codes to Lean Exchange ones.
+    /// </summary>
+    private readonly Dictionary<string, Exchange> _tradeStationRouteToLeanExchange = new();
 
     /// <summary>
     /// Represents a type capable of fetching the holdings for the specified symbol
@@ -193,6 +235,7 @@ public partial class TradeStationBrokerage : Brokerage
         : base("TradeStation")
     {
         Initialize(clientId, clientSecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider);
+        _leanExchangeToTradeStationRoute.DoForEach(l => _tradeStationRouteToLeanExchange.Add(l.Value, l.Key));
     }
 
     protected void Initialize(string clientId, string clientSecret, string restApiUrl, string redirectUrl, string authorizationCode,
@@ -226,6 +269,14 @@ public partial class TradeStationBrokerage : Brokerage
             _aggregator = Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(aggregatorName);
         }
 
+        _routes = new Lazy<Dictionary<SecurityType, ReadOnlyCollection<Route>>>(() =>
+        {
+            return _tradeStationApiClient.GetRoutes().SynchronouslyAwaitTaskResult().Routes
+            .SelectMany(route => route.AssetTypes.Select(assetType => new { SecurityType = assetType.ConvertAssetTypeToSecurityType(), Route = route }))
+            .GroupBy(x => x.SecurityType)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.Route).ToList().AsReadOnly());
+        });
+
         ValidateSubscription();
     }
 
@@ -235,43 +286,29 @@ public partial class TradeStationBrokerage : Brokerage
     /// Gets all open orders on the account.
     /// NOTE: The order objects returned do not have QC order IDs.
     /// </summary>
-    /// <returns>The open orders returned from IB</returns>
+    /// <returns>The open orders returned from TradeStation</returns>
     public override List<Order> GetOpenOrders()
     {
         var orders = _tradeStationApiClient.GetOrders().SynchronouslyAwaitTaskResult();
-
         var leanOrders = new List<Order>();
+
         foreach (var order in orders.Orders.Where(o => o.Status is TradeStationOrderStatusType.Ack or TradeStationOrderStatusType.Don))
         {
-            var leg = order.Legs.First();
-            var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
-                leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
-
-            var leanOrder = default(Order);
-            switch (order.OrderType)
+            if (order.Legs.Count == 1)
             {
-                case TradeStationOrderType.Market:
-                    leanOrder = new MarketOrder(leanSymbol, leg.QuantityOrdered, order.OpenedDateTime);
-                    break;
-                case TradeStationOrderType.Limit:
-                    leanOrder = new LimitOrder(leanSymbol, leg.QuantityOrdered, order.LimitPrice, order.OpenedDateTime);
-                    break;
-                case TradeStationOrderType.StopMarket:
-                    leanOrder = new StopMarketOrder(leanSymbol, leg.QuantityOrdered, order.StopPrice, order.OpenedDateTime);
-                    break;
-                case TradeStationOrderType.StopLimit:
-                    leanOrder = new StopLimitOrder(leanSymbol, leg.QuantityOrdered, order.StopPrice, order.LimitPrice, order.OpenedDateTime);
-                    break;
+                var leg = order.Legs.First();
+                leanOrders.Add(CreateLeanOrder(order, leg));
             }
-
-            leanOrder.Status = OrderStatus.Submitted;
-            if (leg.ExecQuantity > 0m && leg.ExecQuantity != leg.QuantityOrdered)
+            else
             {
-                leanOrder.Status = OrderStatus.PartiallyFilled;
-            }
+                var groupQuantity = order.Legs.Select(leg => leg.QuantityOrdered).Aggregate(TradeStationExtensions.GreatestCommonDivisor);
+                var groupOrderManager = new GroupOrderManager(order.Legs.Count, groupQuantity);
 
-            leanOrder.BrokerId.Add(order.OrderID);
-            leanOrders.Add(leanOrder);
+                foreach (var leg in order.Legs)
+                {
+                    leanOrders.Add(CreateLeanOrder(order, leg, groupOrderManager));
+                }
+            }
         }
         return leanOrders;
     }
@@ -362,38 +399,59 @@ public partial class TradeStationBrokerage : Brokerage
             return false;
         }
 
-        var result = default(bool);
-        _messageHandler.WithLockedStream(() =>
+        try
         {
-            var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol);
-
-            var isPlaceCrossOrder = TryCrossZeroPositionOrder(order, holdingQuantity);
-
-            if (isPlaceCrossOrder == null)
+            _messageHandler.WithLockedStream(() =>
             {
-                var response = PlaceTradeStationOrder(order, holdingQuantity);
-                result = response != null && response.Value.Orders.Count > 0;
-            }
-            else
-            {
-                result = isPlaceCrossOrder.Value;
-            }
-        });
-        return result;
+                var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol);
+
+                var isPlaceCrossOrder = TryCrossZeroPositionOrder(order, holdingQuantity);
+
+                if (isPlaceCrossOrder == null)
+                {
+                    if (!_groupOrderCacheManager.TryGetGroupCachedOrders(order, out var orders))
+                    {
+                        return;
+                    }
+
+                    var response = PlaceTradeStationOrder(orders, holdingQuantity);
+                }
+            });
+            return true;
+        }
+        catch (Exception error)
+        {
+            Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(PlaceOrder)}: " + error);
+        }
+        return false;
     }
 
     /// <summary>
     /// Places an order using TradeStation.
     /// </summary>
-    /// <param name="order">The order to be placed.</param>
+    /// <param name="orders">The collection orders to be placed.</param>
     /// <param name="holdingQuantity">The holding quantity associated with the order.</param>
     /// <param name="isSubmittedEvent">Indicates if the order submission event should be triggered.</param>
     /// <returns>A response from TradeStation after placing the order.</returns>
-    private TradeStationPlaceOrderResponse? PlaceTradeStationOrder(Order order, decimal holdingQuantity, bool isSubmittedEvent = true)
+    private TradeStationPlaceOrderResponse? PlaceTradeStationOrder(IReadOnlyCollection<Order> orders, decimal holdingQuantity, bool isSubmittedEvent = true)
     {
-        var symbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
-        var tradeAction = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity);
-        return PlaceOrderCommon(order, order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, symbol, order.GetLimitPrice(), order.GetStopPrice(), isSubmittedEvent);
+        var order = orders.First();
+        switch (order.Type)
+        {
+            case OrderType.ComboMarket:
+            case OrderType.ComboLimit:
+                return PlaceOrderCommon(orders, order.Type, order.TimeInForce, 0m, "", "", order.GetLimitPrice(), 0m, isSubmittedEvent);
+            case OrderType.Market:
+            case OrderType.Limit:
+            case OrderType.StopMarket:
+            case OrderType.StopLimit:
+                var symbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
+                var tradeAction = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity);
+                return PlaceOrderCommon(orders, order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, symbol, order.GetLimitPrice(), order.GetStopPrice(), isSubmittedEvent);
+            default:
+                throw new NotSupportedException($"{nameof(TradeStationBrokerage)}.{nameof(PlaceTradeStationOrder)}:" +
+                    $" The order type '{order.Type}' is not supported for conversion to TradeStation order type.");
+        };
     }
 
     /// <summary>
@@ -410,7 +468,7 @@ public partial class TradeStationBrokerage : Brokerage
         var crossZeroOrderResponse = default(CrossZeroOrderResponse);
         _messageHandler.WithLockedStream(() =>
         {
-            var response = PlaceOrderCommon(crossZeroOrderRequest.LeanOrder, crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
+            var response = PlaceOrderCommon(new List<Order> { crossZeroOrderRequest.LeanOrder }, crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
                 crossZeroOrderRequest.AbsoluteOrderQuantity, tradeAction, symbol, crossZeroOrderRequest.LeanOrder.GetLimitPrice(), crossZeroOrderRequest.LeanOrder.GetStopPrice(), isPlaceOrderWithLeanEvent);
 
             if (response == null || !response.Value.Orders.Any())
@@ -428,7 +486,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// <summary>
     /// Places a common order.
     /// </summary>
-    /// <param name="order">The order to be placed.</param>
+    /// <param name="orders">The collection orders to be placed.</param>
     /// <param name="orderType">The type of the order.</param>
     /// <param name="timeInForce">The time in force for the order.</param>
     /// <param name="quantity">The quantity of the order.</param>
@@ -438,37 +496,74 @@ public partial class TradeStationBrokerage : Brokerage
     /// <param name="stopPrice">The stop price for the order, if applicable.</param>
     /// <param name="isSubmittedEvent">Indicates if the order submission event should be triggered.</param>
     /// <returns>A response from TradeStation after placing the order.</returns>
-    private TradeStationPlaceOrderResponse? PlaceOrderCommon(Order order, OrderType orderType, TimeInForce timeInForce, decimal quantity, string tradeAction, string symbol, decimal? limitPrice, decimal? stopPrice, bool isSubmittedEvent)
+    private TradeStationPlaceOrderResponse? PlaceOrderCommon(IReadOnlyCollection<Order> orders, OrderType orderType, TimeInForce timeInForce, decimal quantity, string tradeAction,
+        string symbol, decimal? limitPrice, decimal? stopPrice, bool isSubmittedEvent)
     {
-        var response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, quantity, tradeAction, symbol, limitPrice, stopPrice).SynchronouslyAwaitTaskResult();
+        var response = default(TradeStationPlaceOrderResponse);
+
+        var tradeStationOrderProperties = orders.First().Properties as OrderProperties;
+
+        if (!GetTradeStationOrderRouteIdByOrderSecurityTypes(tradeStationOrderProperties, orders.Select(x => x.SecurityType).ToList(), out var routeId))
+        {
+            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1,
+                $"Failed to find a valid TradeStation route for exchange '{tradeStationOrderProperties.Exchange.Name}' with the security types: {string.Join(", ", orders.Select(order => order.SecurityType))}." +
+                $"Please verify that the exchange and security types are supported."));
+            return null;
+        }
+
+        if (!string.IsNullOrEmpty(routeId))
+        {
+            Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(PlaceOrderCommon)}: Using Route ID '{routeId}' for the following Order(s): {string.Join(',', orders.Select(x => x.ToString()))}");
+        }
+
+        if (orders.Count == 1)
+        {
+            response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, quantity, tradeAction, symbol, limitPrice: limitPrice, stopPrice: stopPrice, routeId: routeId, tradeStationOrderProperties: tradeStationOrderProperties as TradeStationOrderProperties).SynchronouslyAwaitTaskResult();
+        }
+        else
+        {
+            var orderLegs = CreateOrderLegs(orders);
+            response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, legs: orderLegs, limitPrice: limitPrice, routeId: routeId, tradeStationOrderProperties: tradeStationOrderProperties as TradeStationOrderProperties).SynchronouslyAwaitTaskResult();
+        }
 
         foreach (var brokerageOrder in response.Orders)
         {
-            // Check if the order failed due to an existing position. Reason: [EC601,EC602,EC701,EC702]: You are long/short N shares.
-            if (brokerageOrder.Message.Contains("Order failed", StringComparison.InvariantCultureIgnoreCase))
+            var exceptOneFailed = default(bool);
+            foreach (var order in orders)
             {
-                OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
-                { Status = OrderStatus.Invalid, Message = brokerageOrder.Message });
+                // Check if the order failed due to an existing position. Reason: [EC601,EC602,EC701,EC702]: You are long/short N shares.
+                if (brokerageOrder.Message.Contains("Order failed", StringComparison.InvariantCultureIgnoreCase))
+                {
+                    OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
+                    { Status = OrderStatus.Invalid, Message = brokerageOrder.Message });
+                    exceptOneFailed = true;
+                    continue;
+                }
+
+                if (string.IsNullOrEmpty(brokerageOrder.OrderID))
+                {
+                    // die
+                    OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"Brokerage OrderId not found for {order.Id}: {brokerageOrder.Message}"));
+                }
+
+                if (!order.BrokerId.Contains(brokerageOrder.OrderID))
+                {
+                    order.BrokerId.Add(brokerageOrder.OrderID);
+                }
+
+                if (isSubmittedEvent)
+                {
+                    OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
+                    { Status = OrderStatus.Submitted });
+                }
+            }
+
+            if (exceptOneFailed)
+            {
                 return null;
             }
-
-            if (string.IsNullOrEmpty(brokerageOrder.OrderID))
-            {
-                // die
-                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"Brokerage OrderId not found for {order.Id}: {brokerageOrder.Message}"));
-            }
-
-            if (!order.BrokerId.Contains(brokerageOrder.OrderID))
-            {
-                order.BrokerId.Add(brokerageOrder.OrderID);
-            }
-
-            if (isSubmittedEvent)
-            {
-                OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
-                { Status = OrderStatus.Submitted });
-            }
         }
+
         return response;
     }
 
@@ -487,18 +582,31 @@ public partial class TradeStationBrokerage : Brokerage
             return false;
         }
 
+        if (!_groupOrderCacheManager.TryGetGroupCachedOrders(order, out var orders))
+        {
+            return true;
+        }
+
+        // Always use the first order in the group, as combo orders determine direction based on the first order's details.
+        order = orders.First();
+        var brokerageOrderId = order.BrokerId.Last();
+
         var response = default(bool);
         _messageHandler.WithLockedStream(() =>
         {
             try
             {
-                var result = _tradeStationApiClient.ReplaceOrder(order.BrokerId.Last(), order.Type, Math.Abs(orderQuantity), order.GetLimitPrice(), order.GetStopPrice()).SynchronouslyAwaitTaskResult();
-                OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)}.{nameof(UpdateOrder)} Order Event")
+                var result = _tradeStationApiClient.ReplaceOrder(brokerageOrderId, order.Type, Math.Abs(orderQuantity), order.GetLimitPrice(), order.GetStopPrice()).SynchronouslyAwaitTaskResult();
+
+                foreach (var order in orders)
                 {
-                    Status = OrderStatus.UpdateSubmitted
-                });
+                    OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)}.{nameof(UpdateOrder)} Order Event")
+                    {
+                        Status = OrderStatus.UpdateSubmitted
+                    });
+                }
                 response = true;
-                _updateSubmittedResponseResultByBrokerageID[order.BrokerId.Last()] = true;
+                _updateSubmittedResponseResultByBrokerageID[brokerageOrderId] = true;
             }
             catch (Exception exception)
             {
@@ -516,6 +624,11 @@ public partial class TradeStationBrokerage : Brokerage
     /// <returns>True if the request was made for the order to be canceled, false otherwise</returns>
     public override bool CancelOrder(Order order)
     {
+        if (!_groupOrderCacheManager.TryGetGroupCachedOrders(order, out var orders))
+        {
+            return true;
+        }
+
         var brokerageOrderId = order.BrokerId.Last();
 
         var result = default(bool);
@@ -667,7 +780,7 @@ public partial class TradeStationBrokerage : Brokerage
             {
                 var brokerageOrder = jObj.ToObject<TradeStationOrder>();
 
-                var leanOrderStatus = default(OrderStatus);
+                var globalLeanOrderStatus = default(OrderStatus);
                 switch (brokerageOrder.Status)
                 {
                     case TradeStationOrderStatusType.Ack:
@@ -678,16 +791,16 @@ public partial class TradeStationBrokerage : Brokerage
                     // Subsequently, another event is received with the ClosedDateTime property correctly populated.
                     case TradeStationOrderStatusType.Fll when brokerageOrder.ClosedDateTime != default:
                     case TradeStationOrderStatusType.Brf:
-                        leanOrderStatus = OrderStatus.Filled;
+                        globalLeanOrderStatus = OrderStatus.Filled;
                         break;
                     case TradeStationOrderStatusType.Fpr:
-                        leanOrderStatus = OrderStatus.PartiallyFilled;
+                        globalLeanOrderStatus = OrderStatus.PartiallyFilled;
                         break;
                     case TradeStationOrderStatusType.Rej:
                     case TradeStationOrderStatusType.Tsc:
                     case TradeStationOrderStatusType.Rjr:
                     case TradeStationOrderStatusType.Bro:
-                        leanOrderStatus = OrderStatus.Invalid;
+                        globalLeanOrderStatus = OrderStatus.Invalid;
                         break;
                     // Sometimes, a Out event is received without the ClosedDateTime property set. 
                     // Subsequently, another event is received with the ClosedDateTime property correctly populated.
@@ -698,52 +811,108 @@ public partial class TradeStationBrokerage : Brokerage
                         {
                             return;
                         }
-                        leanOrderStatus = OrderStatus.Canceled;
+                        globalLeanOrderStatus = OrderStatus.Canceled;
                         break;
                     default:
                         Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}.TradeStationStreamStatus: {json}");
                         return;
                 };
 
-                if (!TryGetOrRemoveCrossZeroOrder(brokerageOrder.OrderID, leanOrderStatus, out var leanOrder))
+                var leanOrders = new List<Order>();
+                if (!TryGetOrRemoveCrossZeroOrder(brokerageOrder.OrderID, globalLeanOrderStatus, out var crossZeroLeanOrder))
                 {
-                    leanOrder = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID)?.SingleOrDefault();
+                    leanOrders = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID);
+                }
+                else
+                {
+                    leanOrders.Add(crossZeroLeanOrder);
                 }
 
-                if (leanOrder == null)
+                if (leanOrders == null || leanOrders.Count == 0)
                 {
-                    // If the lean order is still null, wait for up to 10 seconds before trying again to get the order from the cache.
-                    // This is necessary when a CrossZeroOrder was placed successfully and we need to ensure the order is available.
                     Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}. order id not found: {brokerageOrder.OrderID}");
                     return;
                 }
 
-                var leg = brokerageOrder.Legs.First();
-
-                // TradeStation sends the accumulative filled quantity but we need the partial amount for our event
-                _orderIdToFillQuantity.TryGetValue(leanOrder.Id, out var previousExecutionAmount);
-                var accumulativeFilledQuantity = _orderIdToFillQuantity[leanOrder.Id] = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.ExecQuantity) : leg.ExecQuantity;
-
-                if (leanOrderStatus.IsClosed())
+                var sendFeesOnce = default(bool);
+                foreach (var leg in brokerageOrder.Legs)
                 {
-                    _orderIdToFillQuantity.TryRemove(leanOrder.Id, out _);
-                }
+                    var legOrderStatus = globalLeanOrderStatus;
+                    // Manually update the order status to 'Filled' because one of the combo order legs is fully filled.
+                    // This prevents excessive event generation in Lean by avoiding repeated 'PartiallyFilled' updates.
+                    if (legOrderStatus != OrderStatus.Filled && legOrderStatus == OrderStatus.PartiallyFilled && leg.QuantityRemaining == 0)
+                    {
+                        legOrderStatus = OrderStatus.Filled;
+                    }
 
-                var orderEvent = new OrderEvent(
-                    leanOrder,
-                    DateTime.UtcNow,
-                    new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD)),
-                    brokerageOrder.RejectReason)
-                {
-                    Status = leanOrderStatus,
-                    FillPrice = leg.ExecutionPrice,
-                    FillQuantity = accumulativeFilledQuantity - previousExecutionAmount
-                };
+                    var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
+                        leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
 
-                // if we filled the order and have another contingent order waiting, submit it
-                if (!TryHandleRemainingCrossZeroOrder(leanOrder, orderEvent))
-                {
-                    OnOrderEvent(orderEvent);
+                    // Ensure there is an order with the specific symbol in leanOrders.
+                    var leanOrder = leanOrders.FirstOrDefault(order => order.Symbol == leanSymbol);
+
+                    if (leanOrder == null)
+                    {
+                        OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"Error in {nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}: " +
+                            $"Could not find order with symbol '{leanSymbol}' in leanOrders. " +
+                            $"Brokerage Order ID: {brokerageOrder.OrderID}. " +
+                            $"Leg details - Symbol: {leg.Symbol}, Underlying: {leg.Underlying}, " +
+                            $"Asset Type: {leg.AssetType}, Expiration Date: {leg.ExpirationDate}, " +
+                            $"Strike Price: {leg.StrikePrice}, Option Type: {leg.OptionType}. " +
+                            $"Please verify that the order was correctly added to leanOrders."));
+                        return;
+                    }
+
+                    // TradeStation may occasionally send duplicate event messages where the only difference is the order of the legs.
+                    // If the order status is 'Filled', skip processing this message to avoid handling the same event multiple times.
+                    if (leanOrder.Status == OrderStatus.Filled)
+                    {
+                        continue;
+                    }
+
+                    // TradeStation sends the accumulative filled quantity but we need the partial amount for our event
+                    _orderIdToFillQuantity.TryGetValue(leanOrder.Id, out var previousExecutionAmount);
+                    var accumulativeFilledQuantity = _orderIdToFillQuantity[leanOrder.Id] = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.ExecQuantity) : leg.ExecQuantity;
+
+                    if (globalLeanOrderStatus.IsClosed())
+                    {
+                        _orderIdToFillQuantity.TryRemove(leanOrder.Id, out _);
+                    }
+
+                    var orderEvent = new OrderEvent(
+                        leanOrder,
+                        DateTime.UtcNow,
+                        OrderFee.Zero,
+                        brokerageOrder.RejectReason)
+                    {
+                        Status = legOrderStatus,
+                        FillPrice = leg.ExecutionPrice,
+                        FillQuantity = accumulativeFilledQuantity - previousExecutionAmount
+                    };
+
+                    // When updating a combo order with multiple legs, each leg's update is received separately via WebSocket.
+                    // However, it's possible for one leg to be partially filled while another leg is still waiting to be filled.
+                    // In these cases, to avoid generating unnecessary events in Lean (and causing spam),
+                    // we skip processing if the current leg's update does not include any new fill quantity (i.e., the leg has not had any additional quantity filled).
+                    if ((legOrderStatus == OrderStatus.PartiallyFilled || leanOrder.Status == OrderStatus.Filled) && orderEvent.FillQuantity == 0)
+                    {
+                        continue;
+                    }
+
+                    // Fees should only be sent once when the order is fully filled.
+                    // The sendFeesOnce flag ensures that we don't send the OrderFee multiple times,
+                    // especially for ComboOrders with multiple legs where each leg might trigger an update.
+                    if (!sendFeesOnce && globalLeanOrderStatus == OrderStatus.Filled)
+                    {
+                        sendFeesOnce = true;
+                        orderEvent.OrderFee = new OrderFee(new CashAmount(brokerageOrder.CommissionFee, Currencies.USD));
+                    }
+
+                    // if we filled the order and have another contingent order waiting, submit it
+                    if (!TryHandleRemainingCrossZeroOrder(leanOrder, orderEvent))
+                    {
+                        OnOrderEvent(orderEvent);
+                    }
                 }
             }
             else if (jObj["StreamStatus"] != null)
@@ -825,6 +994,151 @@ public partial class TradeStationBrokerage : Brokerage
         return tradeAction.ToStringInvariant().ToUpperInvariant();
     }
 
+    /// <summary>
+    /// Creates a collection of TradeStation order legs and determines the group limit price for the orders.
+    /// </summary>
+    /// <param name="orders">
+    /// A collection of <see cref="Order"/> objects representing the orders to be processed.
+    /// </param>
+    /// <returns>
+    /// A tuple containing a read-only collection of <see cref="TradeStationPlaceOrderLeg"/> representing the order legs.
+    /// </returns>
+    private IReadOnlyCollection<TradeStationPlaceOrderLeg> CreateOrderLegs(IReadOnlyCollection<Order> orders)
+    {
+        var legs = new List<TradeStationPlaceOrderLeg>();
+        foreach (var order in orders)
+        {
+            var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol);
+            var brokerageSymbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
+
+            var tradeActionMultiple = default(string);
+            if (order.Symbol.SecurityType == SecurityType.Equity)
+            {
+                tradeActionMultiple = GetOrderPosition(order.Direction, holdingQuantity).ToStringInvariant().ToUpperInvariant();
+            }
+            else
+            {
+                tradeActionMultiple = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity);
+            }
+            legs.Add(new TradeStationPlaceOrderLeg(order.AbsoluteQuantity.ToStringInvariant(), brokerageSymbol, tradeActionMultiple));
+        }
+
+        return legs;
+    }
+
+    /// <summary>
+    /// Creates a Lean order based on the given TradeStation order and leg details.
+    /// </summary>
+    /// <param name="order">The TradeStation order containing overall order information.</param>
+    /// <param name="leg">The specific leg of the order, representing the individual component of a multi-leg order.</param>
+    /// <param name="groupOrderManager">The manager responsible for coordinating multi-leg group orders.</param>
+    /// <returns>A Lean <see cref="Order"/> object that corresponds to the provided TradeStation order and leg.</returns>
+    /// <exception cref="NotSupportedException">Thrown when the TradeStation order type is not supported by this method.</exception>
+    private Order CreateLeanOrder(TradeStationOrder order, Models.Leg leg, GroupOrderManager groupOrderManager = null)
+    {
+        var orderQuantity = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.QuantityOrdered) : leg.QuantityOrdered;
+        var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
+                                                      leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
+
+        var orderProperties = new TradeStationOrderProperties();
+        if (!orderProperties.GetLeanTimeInForce(order.Duration, order.GoodTillDate))
+        {
+            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $"Detected unsupported Lean TimeInForce of '{order.Duration}', ignoring. Using default: TimeInForce.GoodTilCanceled"));
+        }
+
+        if (!string.IsNullOrEmpty(order.AdvancedOptions))
+        {
+            var advancedOptions = order.AdvancedOptions.Split(';', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var option in advancedOptions)
+            {
+                switch (option)
+                {
+                    case "AON":
+                        orderProperties.AllOrNone = true;
+                        break;
+                    default:
+                        OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $" Detected unsupported Lean.TradeStationOrderProperties: {option}, ignoring"));
+                        break;
+                }
+            }
+        }
+
+        // "Intelligent" is the default routing strategy for TradeStation orders.
+        if (!string.IsNullOrEmpty(order.Routing) && !order.Routing.Equals("Intelligent", StringComparison.InvariantCultureIgnoreCase))
+        {
+            if (!_tradeStationRouteToLeanExchange.TryGetValue(order.Routing, out var mappedExchangeName))
+            {
+                mappedExchangeName = Exchanges.GetPrimaryExchange(order.Routing, leanSymbol.SecurityType);
+            }
+            orderProperties.Exchange = mappedExchangeName;
+        }
+
+        Order leanOrder = order.OrderType switch
+        {
+            TradeStationOrderType.Market when groupOrderManager == null => new MarketOrder(leanSymbol, orderQuantity, order.OpenedDateTime, properties: orderProperties),
+            TradeStationOrderType.Market when groupOrderManager != null => new ComboMarketOrder(leanSymbol, orderQuantity, order.OpenedDateTime, groupOrderManager, properties: orderProperties),
+            TradeStationOrderType.Limit when groupOrderManager == null => new LimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime, properties: orderProperties),
+            TradeStationOrderType.Limit when groupOrderManager != null => new ComboLimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime, groupOrderManager, properties: orderProperties),
+            TradeStationOrderType.StopMarket => new StopMarketOrder(leanSymbol, orderQuantity, order.StopPrice, order.OpenedDateTime, properties: orderProperties),
+            TradeStationOrderType.StopLimit => new StopLimitOrder(leanSymbol, orderQuantity, order.StopPrice, order.LimitPrice, order.OpenedDateTime, properties: orderProperties),
+            _ => throw new NotSupportedException($"Unsupported order type: {order.OrderType}")
+        };
+
+        return leanOrder.SetOrderStatusAndBrokerId(order, leg);
+    }
+
+    /// <summary>
+    /// Attempts to retrieve the TradeStation route ID based on the specified exchange and security types.
+    /// </summary>
+    /// <param name="orderProperties">
+    /// The order properties containing information about the TradeStation exchange.
+    /// If no exchange is provided, the method will return <c>true</c> as no specific routing is required.
+    /// </param>
+    /// <param name="securityTypes">
+    /// A collection of security types to be used for determining the correct TradeStation route.
+    /// The route ID is determined by matching the exchange with one of the security types.
+    /// </param>
+    /// <param name="routeId">
+    /// When this method returns, contains the route ID for the specified exchange and security types, 
+    /// or <c>null</c> if no matching route was found.
+    /// </param>
+    /// <returns>
+    /// <c>true</c> if either the exchange is not provided, indicating that no routing is required, 
+    /// or if a valid route ID is found; otherwise, <c>false</c>.
+    /// </returns>
+    /// <remarks>
+    /// This method will return <c>true</c> when no exchange is set in the <paramref name="orderProperties"/>, 
+    /// since this implies that no specific routing is needed. The route ID is determined by attempting to match 
+    /// the provided exchange with a route for one of the security types.
+    /// </remarks>
+    protected bool GetTradeStationOrderRouteIdByOrderSecurityTypes(OrderProperties orderProperties, IReadOnlyCollection<SecurityType> securityTypes, out string routeId)
+    {
+        routeId = default;
+
+        // If no exchange is set in tradeStationOrderProperties, return true.
+        // This indicates that the user didn't specify an exchange, so no specific routing is required.
+        if (orderProperties?.Exchange == null)
+        {
+            return true;
+        }
+
+        if (!_leanExchangeToTradeStationRoute.TryGetValue(orderProperties.Exchange, out var mappedExchangeName))
+        {
+            mappedExchangeName = orderProperties.Exchange.Name;
+        }
+
+        foreach (var securityType in securityTypes)
+        {
+            routeId = _routes.Value[securityType].FirstOrDefault(r => r.Name.Equals(mappedExchangeName, StringComparison.InvariantCultureIgnoreCase)).Id;
+
+            if (routeId != null)
+            {
+                break;
+            }
+        }
+
+        return !string.IsNullOrEmpty(routeId);
+    }
 
     private class ModulesReadLicenseRead : QuantConnect.Api.RestResponse
     {

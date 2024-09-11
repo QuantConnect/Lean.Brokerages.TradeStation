@@ -66,6 +66,25 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.That(actualActionType, Is.EqualTo(expectedActionType));
         }
 
+        [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""QuantityOrdered"": ""10"" }, { ""QuantityOrdered"": ""20"" } ] } ],""Errors"":[] }", 10)]
+        [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""QuantityOrdered"": ""1"" }, { ""QuantityOrdered"": ""100"" } ] } ],""Errors"":[] }", 1)]
+        [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""QuantityOrdered"": ""600"" }, { ""QuantityOrdered"": ""4"" }, { ""QuantityOrdered"": ""2"" } ] } ],""Errors"":[] }", 2)]
+        [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""QuantityOrdered"": ""200"" }, { ""QuantityOrdered"": ""2"" } ] } ],""Errors"":[] }", 2)]
+        [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""QuantityOrdered"": ""4"" }, { ""QuantityOrdered"": ""400"" } ] } ],""Errors"":[] }", 4)]
+        [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""QuantityOrdered"": ""6"" }, { ""QuantityOrdered"": ""600"" } ] } ],""Errors"":[] }", 6)]
+        [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""QuantityOrdered"": ""16"" }, { ""QuantityOrdered"": ""8"" } ] } ],""Errors"":[] }", 8)]
+        [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""QuantityOrdered"": ""1"" }, { ""QuantityOrdered"": ""1"" } ] } ],""Errors"":[] }", 1)]
+        [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""QuantityOrdered"": ""10"" }, { ""QuantityOrdered"": ""20"" }, { ""QuantityOrdered"": ""10"" } ] } ],""Errors"":[] }", 10)]
+        [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""QuantityOrdered"": ""8"" }, { ""QuantityOrdered"": ""8"" } ] } ],""Errors"":[] }", 8)]
+        public void GettingRightGreatestCommonDivisorOfLegOrders(string json, decimal expectedGreatestCommonDivisor)
+        {
+            var orderResponse = JsonConvert.DeserializeObject<TradeStationOrderResponse>(json);
+
+            var groupQuantity = orderResponse.Orders.Single().Legs.Select(leg => leg.QuantityOrdered).Aggregate(TradeStationExtensions.GreatestCommonDivisor);
+
+            Assert.That(groupQuantity, Is.EqualTo(expectedGreatestCommonDivisor));
+        }
+
         [Test]
         public void GetTradeStationAccountsBalance()
         {
@@ -103,7 +122,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 orderQuantity,
                 orderDirection,
                 ticker,
-                Math.Round(quoteLastPrice - 0.5m, 2));
+                limitPrice: Math.Round(quoteLastPrice - 0.5m, 2));
 
             Assert.IsNotNull(orderResponse);
             Assert.IsNull(orderResponse.Errors);

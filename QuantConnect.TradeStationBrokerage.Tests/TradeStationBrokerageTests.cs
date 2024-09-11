@@ -13,7 +13,6 @@
  * limitations under the License.
 */
 
-using Moq;
 using System;
 using System.Linq;
 using NUnit.Framework;
@@ -43,8 +42,6 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
         protected override IBrokerage CreateBrokerage(IOrderProvider orderProvider, ISecurityProvider securityProvider)
         {
-            var algorithm = new Mock<IAlgorithm>();
-
             var clientId = Config.Get("trade-station-client-id");
             var clientSecret = Config.Get("trade-station-client-secret");
             var restApiUrl = Config.Get("trade-station-api-url");
@@ -136,7 +133,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 yield return new TestCaseData(new StopMarketOrderTestParameters(INTL, 23m, 22m)).SetCategory("Equity").SetName("INTL|EQUITY|STOPMARKET");
                 yield return new TestCaseData(new StopLimitOrderTestParameters(INTL, 23m, 23m)).SetCategory("Equity").SetName("INTL|EQUITY|STOPLIMIT");
 
-                var AAPLOption = Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 235m, new DateTime(2024, 7, 19));
+                var AAPLOption = Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 100m, new DateTime(2024, 9, 6));
                 yield return new TestCaseData(new LimitOrderTestParameters(AAPLOption, 15.85m, 14.85m)).SetCategory("Option").SetName("AAPL|OPTION|LIMIT");
                 yield return new TestCaseData(new StopMarketOrderTestParameters(AAPLOption, 15.1m, 15.1m)).SetCategory("Option").SetName("AAPL|OPTION|STOPMARKET");
                 yield return new TestCaseData(new StopLimitOrderTestParameters(AAPLOption, 15.1m, 15.1m)).SetCategory("Option").SetName("AAPL|OPTION|STOPLIMIT");
@@ -302,6 +299,37 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             PlaceOrderWaitForStatus(marketOrder.CreateLongMarketOrder(-1797), OrderStatus.Filled, secondsTimeout: 120);
         }
 
+        private static IEnumerable<TestCaseData> ExchangesTestParameters
+        {
+            get
+            {
+                yield return new TestCaseData(Symbols.AAPL, Exchange.CBOE, true);
+                yield return new TestCaseData(Symbols.AAPL, Exchange.AMEX, false);
+                yield return new TestCaseData(Symbols.AAPL, Exchange.IEX, false);
+                yield return new TestCaseData(Symbols.AAPL, Exchange.MIAX_SAPPHIRE, true);
+                yield return new TestCaseData(Symbols.AAPL, Exchange.ISE_GEMINI, true);
+                var option = Symbol.CreateOption(Symbols.AAPL, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 100m, new DateTime(2024, 9, 6));
+                yield return new TestCaseData(option, Exchange.ISE_GEMINI, false);
+                yield return new TestCaseData(option, Exchange.AMEX_Options, false);
+                yield return new TestCaseData(option, Exchange.AMEX, true);
+            }
+        }
+
+        [TestCaseSource(nameof(ExchangesTestParameters))]
+        public void PlaceMarketOrderWithDifferentExchanges(Symbol symbol, Exchange exchange, bool isShouldThrow)
+        {
+            var marketOrder = new MarketOrderTestParameters(symbol, properties: new TradeStationOrderProperties() { Exchange = exchange });
+
+            if (isShouldThrow)
+            {
+                Assert.Throws<AssertionException>(() => PlaceOrderWaitForStatus(marketOrder.CreateLongMarketOrder(1), OrderStatus.Invalid));
+            }
+            else
+            {
+                PlaceOrderWaitForStatus(marketOrder.CreateLongMarketOrder(1), OrderStatus.Filled);
+            }
+        }
+
         [Test]
         public void PlaceLimitOrderAndUpdate()
         {
@@ -383,6 +411,215 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             {
                 Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage doesn't return {OrderStatus.Filled}");
             }
+        }
+
+        [Test]
+        public void PlaceComboMarketOrder()
+        {
+            var underlyingSymbol = Symbols.AAPL;
+            var legs = new List<(Symbol symbol, decimal quantity)>
+            {
+                (underlyingSymbol, 16),
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 100m, new DateTime(2024, 9, 6)), -1),
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 125m, new DateTime(2024, 9, 6)), 1)
+            };
+
+            var groupOrderManager = new GroupOrderManager(1, legCount: legs.Count, quantity: 8);
+
+            var comboOrders = PlaceComboOrder(
+                legs,
+                null,
+                (optionContract, quantity, price, groupOrderManager) =>
+                new ComboMarketOrder(optionContract, quantity, DateTime.UtcNow, groupOrderManager),
+                groupOrderManager);
+
+            AssertComboOrderPlacedSuccessfully(comboOrders);
+        }
+
+        [TestCase(150, OrderDirection.Buy)]
+        public void PlaceComboLimitOrder(decimal comboLimitPrice, OrderDirection comboDirection)
+        {
+            var underlyingSymbol = Symbols.AAPL;
+            var optionContracts = new List<(Symbol symbol, decimal quantity)>
+            {
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 100m, new DateTime(2024, 9, 6)), 10),
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 125m, new DateTime(2024, 9, 6)), 1)
+            };
+
+            var groupOrderManager = new GroupOrderManager(1, legCount: optionContracts.Count, quantity: comboDirection == OrderDirection.Buy ? 2 : -2);
+
+            var comboOrders = PlaceComboOrder(
+                optionContracts,
+                comboLimitPrice,
+                (optionContract, quantity, price, groupOrderManager) =>
+                    new ComboLimitOrder(optionContract, quantity.GetOrderLegGroupQuantity(groupOrderManager), price.Value, DateTime.UtcNow, groupOrderManager, properties: new TradeStationOrderProperties() { AllOrNone = true }),
+                groupOrderManager);
+
+            AssertComboOrderPlacedSuccessfully(comboOrders);
+            CancelComboOpenOrders(comboOrders);
+        }
+
+        [TestCase(70, 80)]
+        public void PlaceComboLimitOrderAndUpdateLimitPrice(decimal comboLimitPrice, decimal newComboLimitPrice)
+        {
+            var underlyingSymbol = Symbols.AAPL;
+            var optionContracts = new List<(Symbol symbol, decimal quantity)>
+            {
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 100m, new DateTime(2024, 9, 6)), -1),
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 125m, new DateTime(2024, 9, 6)), 1)
+            };
+
+            var groupOrderManager = new GroupOrderManager(1, legCount: optionContracts.Count, quantity: 8);
+
+            var comboOrders = PlaceComboOrder(
+                optionContracts,
+                comboLimitPrice,
+                (optionContract, quantity, price, groupOrderManager) =>
+                    new ComboLimitOrder(optionContract, quantity, price.Value, DateTime.UtcNow, groupOrderManager, properties: new TradeStationOrderProperties() { AllOrNone = true }),
+                groupOrderManager);
+
+            AssertComboOrderPlacedSuccessfully(comboOrders);
+
+            using var manualResetEvent = new ManualResetEvent(false);
+            var orderStatusCallback = HandleComboOrderStatusChange(comboOrders, manualResetEvent, OrderStatus.UpdateSubmitted);
+
+            Brokerage.OrdersStatusChanged += orderStatusCallback;
+
+            foreach (var comboOrder in comboOrders)
+            {
+                comboOrder.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, comboOrder.Id, new() { LimitPrice = newComboLimitPrice }));
+                Assert.IsTrue(Brokerage.UpdateOrder(comboOrder));
+            }
+
+            Assert.IsTrue(manualResetEvent.WaitOne(TimeSpan.FromSeconds(60)));
+
+            Brokerage.OrdersStatusChanged -= orderStatusCallback;
+
+            CancelComboOpenOrders(comboOrders);
+        }
+
+        [TestCase(70, 10)]
+        public void PlaceSeveralComboLimitOrder(decimal firstLimitPrice, decimal secondLimitPrice)
+        {
+            var submittedComboOrders = new List<ComboLimitOrder>();
+            var symbolQuantityContractsByGroupOrderManager = new Dictionary<(GroupOrderManager groupOrderManager, decimal limitPrice), List<(Symbol symbol, decimal quantity)>>();
+            var underlyingSymbol = Symbols.AAPL;
+            var firstOptionContracts = new List<(Symbol symbol, decimal quantity)>
+            {
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 100m, new DateTime(2024, 9, 6)), -1),
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 125m, new DateTime(2024, 9, 6)), 1)
+            };
+
+            symbolQuantityContractsByGroupOrderManager[(new GroupOrderManager(1, legCount: firstOptionContracts.Count, quantity: 8), firstLimitPrice)] = firstOptionContracts;
+
+            var secondOptionContracts = new List<(Symbol symbol, decimal quantity)>
+            {
+                (underlyingSymbol, 16),
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 105m, new DateTime(2024, 9, 6)), -1),
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 110m, new DateTime(2024, 9, 6)), 1)
+            };
+
+            symbolQuantityContractsByGroupOrderManager[(new GroupOrderManager(2, legCount: secondOptionContracts.Count, quantity: 8), secondLimitPrice)] = secondOptionContracts;
+
+            foreach (var ((groupOrderManager, limitPrice), optionContracts) in symbolQuantityContractsByGroupOrderManager)
+            {
+                var comboOrders = PlaceComboOrder(
+                    optionContracts,
+                    limitPrice,
+                    (optionContract, quantity, price, groupOrderManager) =>
+                    new ComboLimitOrder(optionContract, quantity, price.Value, DateTime.UtcNow, groupOrderManager, properties: new TradeStationOrderProperties()
+                    {
+                        Exchange = Exchange.CBOE
+                    }),
+                    groupOrderManager);
+
+                AssertComboOrderPlacedSuccessfully(comboOrders);
+
+                submittedComboOrders.AddRange(comboOrders);
+            }
+
+            CancelComboOpenOrders(submittedComboOrders);
+        }
+
+        private IReadOnlyCollection<T> PlaceComboOrder<T>(
+            IReadOnlyCollection<(Symbol symbol, decimal quantity)> legs,
+            decimal? orderLimitPrice,
+            Func<Symbol, decimal, decimal?, GroupOrderManager, T> orderType, GroupOrderManager groupOrderManager) where T : ComboOrder
+        {
+            var comboOrders = legs
+                .Select(optionContract => orderType(optionContract.symbol, optionContract.quantity, orderLimitPrice, groupOrderManager))
+                .ToList().AsReadOnly();
+
+            var manualResetEvent = new ManualResetEvent(false);
+            var orderStatusCallback = HandleComboOrderStatusChange(comboOrders, manualResetEvent, OrderStatus.Submitted);
+
+            Brokerage.OrdersStatusChanged += orderStatusCallback;
+
+            foreach (var comboOrder in comboOrders)
+            {
+                OrderProvider.Add(comboOrder);
+                groupOrderManager.OrderIds.Add(comboOrder.Id);
+                Assert.IsTrue(Brokerage.PlaceOrder(comboOrder));
+            }
+
+            Assert.IsTrue(manualResetEvent.WaitOne(TimeSpan.FromSeconds(60)));
+
+            Brokerage.OrdersStatusChanged -= orderStatusCallback;
+
+            return comboOrders;
+        }
+
+        private void CancelComboOpenOrders(IReadOnlyCollection<ComboLimitOrder> comboLimitOrders)
+        {
+            using var manualResetEvent = new ManualResetEvent(false);
+
+            var orderStatusCallback = HandleComboOrderStatusChange(comboLimitOrders, manualResetEvent, OrderStatus.Canceled);
+
+            Brokerage.OrdersStatusChanged += orderStatusCallback;
+
+            var openOrders = OrderProvider.GetOpenOrders(order => order.Type == OrderType.ComboLimit);
+            foreach (var openOrder in openOrders)
+            {
+                Assert.IsTrue(Brokerage.CancelOrder(openOrder));
+            }
+
+            if (openOrders.Count > 0)
+            {
+                Assert.IsTrue(manualResetEvent.WaitOne(TimeSpan.FromSeconds(60)));
+            }
+
+            Brokerage.OrdersStatusChanged -= orderStatusCallback;
+        }
+
+        private void AssertComboOrderPlacedSuccessfully<T>(IReadOnlyCollection<T> comboOrders) where T : ComboOrder
+        {
+            Assert.IsTrue(comboOrders.All(o => o.Status.IsClosed() || o.Status == OrderStatus.Submitted));
+        }
+
+        private static EventHandler<List<OrderEvent>> HandleComboOrderStatusChange<T>(
+            IReadOnlyCollection<T> comboOrders,
+            ManualResetEvent manualResetEvent,
+            OrderStatus expectedOrderStatus) where T : ComboOrder
+        {
+            return (_, orderEvents) =>
+            {
+
+                foreach (var order in comboOrders)
+                {
+                    foreach (var orderEvent in orderEvents)
+                    {
+                        if (orderEvent.OrderId == order.Id)
+                        {
+                            order.Status = orderEvent.Status;
+                        }
+                    }
+
+                    if (comboOrders.All(o => o.Status.IsClosed()) || comboOrders.All(o => o.Status == expectedOrderStatus))
+                    {
+                        manualResetEvent.Set();
+                    }
+                }
+            };
         }
 
         /// <summary>
@@ -479,6 +716,40 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             return Math.Round(result, 2);
         }
 
+        [TestCase("CBOE", SecurityType.Equity, new SecurityType[] { SecurityType.Equity, SecurityType.Option }, "CBOE")]
+        [TestCase("IEX", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "IEXG")]
+        [TestCase("BOSTON", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "NQBX")]
+        [TestCase("NASDAQ", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "NSDQ")]
+        [TestCase("ARCX", SecurityType.Option, new SecurityType[] { SecurityType.Option }, "NYOP")]
+        [TestCase("ISE MERCURY", SecurityType.Option, new SecurityType[] { SecurityType.Option }, "MCRY")]
+        [TestCase("MIAX_PEARL", SecurityType.Option, new SecurityType[] { SecurityType.Option }, "MPRL")]
+        [TestCase("MIAX_SAPPHIRE", SecurityType.Option, new SecurityType[] { SecurityType.Option }, "SPHR")]
+        [TestCase("BATS_Y", SecurityType.Equity, new SecurityType[] { SecurityType.Option }, "SPHR")]
+        [TestCase("BYX", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "BYX")]
+        [TestCase("MEMX", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "MXOP")]
+        [TestCase("NASDAQ_BX", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "NOBO")]
+        [TestCase("NASDAQ_BX", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "NOBO")]
+        [TestCase("MIAX_EMERALD", SecurityType.Option, new SecurityType[] { SecurityType.Option }, "EMLD")]
+        [TestCase("MIAX_EMERALD", SecurityType.Option, new SecurityType[] { SecurityType.Option }, "EMLD")]
+        [TestCase("ISE_GEMINI", SecurityType.Option, new SecurityType[] { SecurityType.Option }, "GMNI")]
+        [TestCase("AMEX", SecurityType.Option, new SecurityType[] { SecurityType.Option }, "AMOP")]
+        [TestCase("TWAP-ALGO", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "TWAP", true)]
+        [TestCase("SweepPI-ALGO", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "WEEB", true)]
+        [TestCase("NQBX", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "NQBX", true)]
+        public void GetCorrectRouteIdWithExchangeNameAndSecurityTypes(string exchangeName, SecurityType exchangeSecurityType, SecurityType[] orderSecurityTypes, string expectedRouteId, bool useCustomExchange = false)
+        {
+            var exchange = useCustomExchange
+                ? new Exchange(exchangeName, exchangeName, exchangeName, exchangeSecurityType.ToString())
+                : Exchanges.GetPrimaryExchange(exchangeName, exchangeSecurityType);
+
+            var tradeStationOrderProperties = new TradeStationOrderProperties() { Exchange = exchange };
+
+            if (_brokerage.GetTradeStationOrderRouteIdByOrder(tradeStationOrderProperties, orderSecurityTypes, out var routeId))
+            {
+                Assert.That(routeId, Is.EqualTo(expectedRouteId));
+            }
+        }
+
         public class TradeStationBrokerageTest : TradeStationBrokerage
         {
             /// <summary>
@@ -510,6 +781,12 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             public Models.Quote GetPrice(Symbol symbol)
             {
                 return GetQuote(symbol).Quotes.Single();
+            }
+
+            public bool GetTradeStationOrderRouteIdByOrder(TradeStationOrderProperties tradeStationOrderProperties, IReadOnlyCollection<SecurityType> securityTypes, out string routeId)
+            {
+                routeId = default;
+                return GetTradeStationOrderRouteIdByOrderSecurityTypes(tradeStationOrderProperties, securityTypes, out routeId);
             }
         }
     }
