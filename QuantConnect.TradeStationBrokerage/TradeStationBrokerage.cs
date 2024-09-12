@@ -914,6 +914,25 @@ public partial class TradeStationBrokerage : Brokerage
                         OnOrderEvent(orderEvent);
                     }
                 }
+
+                // Sometimes, TradeStation returns incorrect responses with a duplicate leg symbol or without the leg being fully executed quantity.
+                // This issue occurs only when dealing with OrderType.ComboMarket or OrderType.ComboLimit Orders.
+                if (globalLeanOrderStatus == OrderStatus.Filled && leanOrders.Any(x => x.GroupOrderManager != null))
+                {
+                    leanOrders = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID);
+                    foreach (var leanOrder in leanOrders)
+                    {
+                        if (leanOrder.Status != OrderStatus.Filled)
+                        {
+                            var orderEvent = new OrderEvent(leanOrder, DateTime.UtcNow, OrderFee.Zero, brokerageOrder.RejectReason)
+                            {
+                                Status = OrderStatus.Filled,
+                                FillQuantity = leanOrder.Quantity
+                            };
+                            OnOrderEvent(orderEvent);
+                        }
+                    }
+                }
             }
             else if (jObj["StreamStatus"] != null)
             {
