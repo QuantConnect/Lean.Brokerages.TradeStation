@@ -789,7 +789,7 @@ public partial class TradeStationBrokerage : Brokerage
                         return;
                     // Sometimes, a filled event is received without the ClosedDateTime property set. 
                     // Subsequently, another event is received with the ClosedDateTime property correctly populated.
-                    case TradeStationOrderStatusType.Fll when brokerageOrder.ClosedDateTime != default:
+                    case TradeStationOrderStatusType.Fll:
                     case TradeStationOrderStatusType.Brf:
                         globalLeanOrderStatus = OrderStatus.Filled;
                         break;
