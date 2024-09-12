@@ -835,7 +835,7 @@ public partial class TradeStationBrokerage : Brokerage
                 }
 
                 var sendFeesOnce = default(bool);
-                foreach (var leg in brokerageOrder.Legs)
+                foreach (var leg in brokerageOrder.Legs.DistinctBy(x => x.Symbol))
                 {
                     var legOrderStatus = globalLeanOrderStatus;
                     // Manually update the order status to 'Filled' because one of the combo order legs is fully filled.
