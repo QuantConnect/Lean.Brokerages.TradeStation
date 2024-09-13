@@ -924,10 +924,12 @@ public partial class TradeStationBrokerage : Brokerage
                     {
                         if (leanOrder.Status != OrderStatus.Filled)
                         {
+                            // if we don't fill our order from TradeStation's response, we can keep the quantity in collection to calculate the correct holdings.
+                            _orderIdToFillQuantity.TryRemove(leanOrder.Id, out var previousExecutionAmount);
                             var orderEvent = new OrderEvent(leanOrder, DateTime.UtcNow, OrderFee.Zero, brokerageOrder.RejectReason)
                             {
                                 Status = OrderStatus.Filled,
-                                FillQuantity = leanOrder.Quantity
+                                FillQuantity = leanOrder.Quantity - previousExecutionAmount
                             };
                             OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $"Detected missing fill event for OrderID: {leanOrder.Id} creating inferred filled event."));
                             OnOrderEvent(orderEvent);
