@@ -929,6 +929,7 @@ public partial class TradeStationBrokerage : Brokerage
                                 Status = OrderStatus.Filled,
                                 FillQuantity = leanOrder.Quantity
                             };
+                            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $"Detected missing fill event for OrderID: {leanOrder.Id} creating inferred filled event."));
                             OnOrderEvent(orderEvent);
                         }
                     }
