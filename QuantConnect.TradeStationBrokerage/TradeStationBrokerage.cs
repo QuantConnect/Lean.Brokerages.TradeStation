@@ -789,7 +789,7 @@ public partial class TradeStationBrokerage : Brokerage
                         return;
                     // Sometimes, a filled event is received without the ClosedDateTime property set. 
                     // Subsequently, another event is received with the ClosedDateTime property correctly populated.
-                    case TradeStationOrderStatusType.Fll when brokerageOrder.ClosedDateTime != default:
+                    case TradeStationOrderStatusType.Fll:
                     case TradeStationOrderStatusType.Brf:
                         globalLeanOrderStatus = OrderStatus.Filled;
                         break;
@@ -835,7 +835,7 @@ public partial class TradeStationBrokerage : Brokerage
                 }
 
                 var sendFeesOnce = default(bool);
-                foreach (var leg in brokerageOrder.Legs)
+                foreach (var leg in brokerageOrder.Legs.DistinctBy(x => x.Symbol))
                 {
                     var legOrderStatus = globalLeanOrderStatus;
                     // Manually update the order status to 'Filled' because one of the combo order legs is fully filled.
@@ -912,6 +912,26 @@ public partial class TradeStationBrokerage : Brokerage
                     if (!TryHandleRemainingCrossZeroOrder(leanOrder, orderEvent))
                     {
                         OnOrderEvent(orderEvent);
+                    }
+                }
+
+                // Sometimes, TradeStation returns incorrect responses with a duplicate leg symbol or without the leg being fully executed quantity.
+                // This issue occurs only when dealing with OrderType.ComboMarket or OrderType.ComboLimit Orders.
+                if (globalLeanOrderStatus == OrderStatus.Filled && leanOrders.Any(x => x.GroupOrderManager != null))
+                {
+                    leanOrders = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID);
+                    foreach (var leanOrder in leanOrders)
+                    {
+                        if (leanOrder.Status != OrderStatus.Filled)
+                        {
+                            var orderEvent = new OrderEvent(leanOrder, DateTime.UtcNow, OrderFee.Zero, brokerageOrder.RejectReason)
+                            {
+                                Status = OrderStatus.Filled,
+                                FillQuantity = leanOrder.Quantity
+                            };
+                            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $"Detected missing fill event for OrderID: {leanOrder.Id} creating inferred filled event."));
+                            OnOrderEvent(orderEvent);
+                        }
                     }
                 }
             }
