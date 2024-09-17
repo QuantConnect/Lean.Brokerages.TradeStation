@@ -252,9 +252,19 @@ public partial class TradeStationBrokerage : Brokerage
         SecurityProvider = securityProvider;
         OrderProvider = orderProvider;
         _symbolMapper = new TradeStationSymbolMapper();
-        _tradeStationAccountType = TradeStationExtensions.ParseAccountType(accountType);
-        _tradeStationApiClient = new TradeStationApiClient(clientId, clientSecret, restApiUrl,
-            _tradeStationAccountType, refreshToken, redirectUrl, authorizationCode, accountId);
+
+        if (string.IsNullOrEmpty(accountId))
+        {
+            _tradeStationAccountType = TradeStationExtensions.ParseAccountType(accountType);
+            _tradeStationApiClient = new TradeStationApiClient(clientId, clientSecret, restApiUrl,
+                _tradeStationAccountType, refreshToken, redirectUrl, authorizationCode);
+        }
+        else
+        {
+            _tradeStationApiClient = new TradeStationApiClient(clientId, clientSecret, restApiUrl, refreshToken, redirectUrl, authorizationCode, accountId);
+            _tradeStationAccountType = _tradeStationApiClient.GetAccountType().SynchronouslyAwaitTaskResult();
+        }
+
         _messageHandler = new(HandleTradeStationMessage);
 
         SubscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager()

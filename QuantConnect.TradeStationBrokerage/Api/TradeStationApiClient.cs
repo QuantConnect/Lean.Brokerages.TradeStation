@@ -78,7 +78,27 @@ public class TradeStationApiClient
     private readonly string _baseUrl;
 
     /// <summary>
-    /// Initializes a new instance of the TradeStationApiClient class with the specified API Key, API Key Secret, REST API URL, redirect URI, account type, and optional parameters.
+    /// Initializes a new instance of the TradeStationApiClient class
+    /// </summary>
+    /// <param name="clientId">The API Key used by the client application to authenticate requests.</param>
+    /// <param name="clientSecret">The secret associated with the client application’s API Key for authentication.</param>
+    /// <param name="restApiUrl">The URL of the REST API.</param>
+    /// <param name="refreshToken">The type of TradeStation account.</param>
+    /// <param name="redirectUri">The URI to which the user will be redirected after authentication.</param>
+    /// <param name="authorizationCode">The authorization code obtained from the URL during OAuth authentication. Default is an empty string.</param>
+    private TradeStationApiClient(string clientId, string clientSecret, string restApiUrl, string refreshToken, string redirectUri, string authorizationCode)
+    {
+        _cliendId = clientId;
+        _redirectUri = redirectUri;
+        _baseUrl = restApiUrl;
+        var httpClientHandler = new HttpClientHandler();
+        var signInUri = "https://signin.tradestation.com";
+        var tokenRefreshHandler = new TokenRefreshHandler(httpClientHandler, clientId, clientSecret, authorizationCode, signInUri, redirectUri, refreshToken);
+        _httpClient = new(tokenRefreshHandler);
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the TradeStationApiClient class with the specified API Key, API Key Secret, REST API URL, redirect URI, account type.
     /// </summary>
     /// <param name="clientId">The API Key used by the client application to authenticate requests.</param>
     /// <param name="clientSecret">The secret associated with the client application’s API Key for authentication.</param>
@@ -87,23 +107,35 @@ public class TradeStationApiClient
     /// <param name="refreshToken">The type of TradeStation account.</param>
     /// <param name="redirectUri">The URI to which the user will be redirected after authentication.</param>
     /// <param name="authorizationCode">The authorization code obtained from the URL during OAuth authentication. Default is an empty string.</param>
-    /// <param name="signInUri">The URI of the sign-in page for TradeStation authentication. Default is "https://signin.tradestation.com".</param>
-    /// <param name="accountId">The specific user account id.</param>
     public TradeStationApiClient(string clientId, string clientSecret, string restApiUrl, TradeStationAccountType tradeStationAccountType,
-        string refreshToken, string redirectUri, string authorizationCode, string signInUri = "https://signin.tradestation.com", string accountId = "")
+        string refreshToken, string redirectUri, string authorizationCode)
+        : this(clientId, clientSecret, restApiUrl, refreshToken, redirectUri, authorizationCode)
     {
-        _cliendId = clientId;
-        _redirectUri = redirectUri;
-        _baseUrl = restApiUrl;
-
-        var httpClientHandler = new HttpClientHandler();
-        var tokenRefreshHandler = new TokenRefreshHandler(httpClientHandler, clientId, clientSecret, authorizationCode, signInUri, redirectUri, refreshToken);
-        _httpClient = new(tokenRefreshHandler);
         _accountID = new Lazy<string>(() =>
         {
-            var account = string.IsNullOrEmpty(accountId) ? GetAccountIDByAccountType(tradeStationAccountType).SynchronouslyAwaitTaskResult() : accountId;
+            var account = GetAccountIDByAccountType(tradeStationAccountType).SynchronouslyAwaitTaskResult();
             Log.Trace($"TradeStationApiClient(): will use account id: {account}");
             return account;
+        });
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the TradeStationApiClient class with the specified API Key, API Key Secret, REST API URL, redirect URI, account Id.
+    /// </summary>
+    /// <param name="clientId">The API Key used by the client application to authenticate requests.</param>
+    /// <param name="clientSecret">The secret associated with the client application’s API Key for authentication.</param>
+    /// <param name="restApiUrl">The URL of the REST API.</param>
+    /// <param name="refreshToken">The type of TradeStation account.</param>
+    /// <param name="redirectUri">The URI to which the user will be redirected after authentication.</param>
+    /// <param name="authorizationCode">The authorization code obtained from the URL during OAuth authentication. Default is an empty string.</param>
+    /// <param name="accountId">The specific user account id.</param>
+    public TradeStationApiClient(string clientId, string clientSecret, string restApiUrl, string refreshToken, string redirectUri, string authorizationCode, string accountId)
+        : this(clientId, clientSecret, restApiUrl, refreshToken, redirectUri, authorizationCode)
+    {
+        _accountID = new Lazy<string>(() =>
+        {
+            Log.Trace($"TradeStationApiClient(): will use account id: {accountId}");
+            return accountId;
         });
     }
 
@@ -328,26 +360,29 @@ public class TradeStationApiClient
     }
 
     /// <summary>
-    /// Retrieves the account ID for a specified TradeStation account type.
+    /// Retrieves the account type for the specified TradeStation account.
     /// </summary>
-    /// <param name="accountType">The type of TradeStation account to retrieve the ID for.</param>
     /// <returns>
-    /// A task that represents the asynchronous operation. The task result contains the account ID 
-    /// for the specified account type.
+    /// The task result contains the <see cref="TradeStationAccountType"/> for the account associated with the provided account ID.
     /// </returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown if the account ID is missing or invalid, or if the account cannot be found.
+    /// </exception>
     /// <remarks>
-    /// If the account ID is already cached, it returns the cached value. Otherwise, it fetches the
-    /// account information, filters it by the specified account type, caches the account ID, and returns it.
+    /// This method checks if the account ID is provided, and if so, it retrieves the associated account 
+    /// details from TradeStation and returns the account type. If no valid account ID is provided, 
+    /// an exception is thrown.
     /// </remarks>
-    public async Task<string> GetAccountIDByAccountType(TradeStationAccountType accountType)
+    public async Task<TradeStationAccountType> GetAccountType()
     {
-        var accounts = await GetAccounts();
-        var result = accounts.SingleOrDefault(acc => acc.AccountType == accountType);
-        if (result.Equals(default(Account)))
+        if (string.IsNullOrEmpty(_accountID.Value))
         {
-            throw new InvalidOperationException($"Failed to find account type: {accountType}. Available options: {string.Join(",", accounts.Select(x => x.AccountType.ToString()))}");
+            throw new InvalidOperationException("Account ID is required to retrieve account details. Please check and provide a valid account ID.");
         }
-        return result.AccountID;
+
+        var accounts = await GetAccounts();
+        var result = accounts.Single(acc => acc.AccountID == _accountID.Value);
+        return result.AccountType;
     }
 
     /// <summary>
@@ -520,6 +555,29 @@ public class TradeStationApiClient
     private async Task<TradeStationPosition> GetPositions(string accountID)
     {
         return await RequestAsync<TradeStationPosition>(_baseUrl, $"/v3/brokerage/accounts/{accountID}/positions", HttpMethod.Get);
+    }
+
+    /// <summary>
+    /// Retrieves the account ID for a specified TradeStation account type.
+    /// </summary>
+    /// <param name="accountType">The type of TradeStation account to retrieve the ID for.</param>
+    /// <returns>
+    /// A task that represents the asynchronous operation. The task result contains the account ID 
+    /// for the specified account type.
+    /// </returns>
+    /// <remarks>
+    /// If the account ID is already cached, it returns the cached value. Otherwise, it fetches the
+    /// account information, filters it by the specified account type, caches the account ID, and returns it.
+    /// </remarks>
+    private async Task<string> GetAccountIDByAccountType(TradeStationAccountType accountType)
+    {
+        var accounts = await GetAccounts();
+        var result = accounts.SingleOrDefault(acc => acc.AccountType == accountType);
+        if (result.Equals(default(Account)))
+        {
+            throw new InvalidOperationException($"Failed to find account type: {accountType}. Available options: {string.Join(",", accounts.Select(x => x.AccountType.ToString()))}");
+        }
+        return result.AccountID;
     }
 
     /// <summary>
