@@ -40,6 +40,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             newBrokerageData["trade-station-refresh-token"] = refreshToken;
             newBrokerageData["trade-station-redirect-url"] = redirectUrl;
             newBrokerageData["trade-station-authorization-code"] = authorizationCode;
+            newBrokerageData["trade-station-account-id"] = string.Empty;
 
             var liveNodePacket = new LiveNodePacket() { BrokerageData = newBrokerageData };
 
