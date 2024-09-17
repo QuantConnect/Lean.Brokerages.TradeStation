@@ -1,9 +1,10 @@
 {
-    "data-folder": "../../../../Lean/Data/",
-    "trade-station-client-id": "",
-    "trade-station-client-secret": "",
-    "trade-station-redirect-url": "http://localhost",
-    "trade-station-refresh-token": "",
-    "trade-station-api-url": "https://sim-api.tradestation.com",
-    "trade-station-account-type": "Margin"
+  "data-folder": "../../../../Lean/Data/",
+  "trade-station-client-id": "",
+  "trade-station-client-secret": "",
+  "trade-station-redirect-url": "http://localhost",
+  "trade-station-refresh-token": "",
+  "trade-station-api-url": "https://sim-api.tradestation.com",
+  "trade-station-account-type": "Margin",
+  "trade-station-account-id": ""
 }

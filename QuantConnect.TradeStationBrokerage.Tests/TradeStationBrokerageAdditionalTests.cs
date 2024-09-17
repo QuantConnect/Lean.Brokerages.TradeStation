@@ -290,6 +290,25 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             }
         }
 
+        [Test, Explicit("Pass the trade station account ID in the configuration explicitly.")]
+        public void GetBrokerageCashBalanceByAccountId()
+        {
+            var clientId = Config.Get("trade-station-client-id");
+            var clientSecret = Config.Get("trade-station-client-secret");
+            var restApiUrl = Config.Get("trade-station-api-url");
+            var accountType = Config.Get("trade-station-account-type");
+            var refreshToken = Config.Get("trade-station-refresh-token");
+
+            var accountId = Config.Get("trade-station-account-id");
+
+            var brokerage = new TradeStationBrokerage(clientId, clientSecret, restApiUrl, string.Empty, string.Empty, refreshToken, accountType, null, null, accountId);
+
+            var cashBalance = brokerage.GetCashBalance();
+
+            Assert.IsNotEmpty(cashBalance);
+            Assert.Greater(cashBalance[0].Amount, 0);
+        }
+
         private TradeStationApiClient CreateTradeStationApiClient()
         {
             var clientId = Config.Get("trade-station-client-id");
