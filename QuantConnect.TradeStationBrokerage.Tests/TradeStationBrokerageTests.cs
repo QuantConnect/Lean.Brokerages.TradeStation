@@ -831,9 +831,10 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             /// For <see cref="TradeStationAccountType.Cash"/> or <seealso cref="TradeStationAccountType.Margin"/> accounts, it is used for trading <seealso cref="SecurityType.Equity"/> and <seealso cref="SecurityType.Option"/>.
             /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
             /// <param name="orderProvider">The order provider.</param>
+            /// <param name="accountId">The specific user account id.</param>
             public TradeStationBrokerageTest(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl,
-                string authorizationCode, string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
-                : base(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider)
+                string authorizationCode, string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider, string accountId = "")
+                : base(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider, accountId)
             { }
 
             /// <summary>

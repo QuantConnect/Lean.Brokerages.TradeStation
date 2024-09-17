@@ -88,8 +88,9 @@ public class TradeStationApiClient
     /// <param name="redirectUri">The URI to which the user will be redirected after authentication.</param>
     /// <param name="authorizationCode">The authorization code obtained from the URL during OAuth authentication. Default is an empty string.</param>
     /// <param name="signInUri">The URI of the sign-in page for TradeStation authentication. Default is "https://signin.tradestation.com".</param>
+    /// <param name="accountId">The specific user account id.</param>
     public TradeStationApiClient(string clientId, string clientSecret, string restApiUrl, TradeStationAccountType tradeStationAccountType,
-        string refreshToken, string redirectUri, string authorizationCode, string signInUri = "https://signin.tradestation.com")
+        string refreshToken, string redirectUri, string authorizationCode, string signInUri = "https://signin.tradestation.com", string accountId = "")
     {
         _cliendId = clientId;
         _redirectUri = redirectUri;
@@ -100,9 +101,9 @@ public class TradeStationApiClient
         _httpClient = new(tokenRefreshHandler);
         _accountID = new Lazy<string>(() =>
         {
-            var accountId = GetAccountIDByAccountType(tradeStationAccountType).SynchronouslyAwaitTaskResult();
-            Log.Trace($"TradeStationApiClient(): will use account id: {accountId}");
-            return accountId;
+            var account = string.IsNullOrEmpty(accountId) ? GetAccountIDByAccountType(tradeStationAccountType).SynchronouslyAwaitTaskResult() : accountId;
+            Log.Trace($"TradeStationApiClient(): will use account id: {account}");
+            return account;
         });
     }
 

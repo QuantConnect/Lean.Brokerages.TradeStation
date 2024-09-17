@@ -189,9 +189,10 @@ public partial class TradeStationBrokerage : Brokerage
     /// it is used for trading <seealso cref="SecurityType.Equity"/> and <seealso cref="SecurityType.Option"/>.
     /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
     /// <param name="algorithm">The algorithm instance is required to retrieve account type</param>
+    /// <param name="accountId">The specific user account id.</param>
     public TradeStationBrokerage(string clientId, string apiKeySecret, string restApiUrl, string redirectUrl, string authorizationCode,
-        string accountType, IAlgorithm algorithm)
-        : this(clientId, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, string.Empty, accountType, algorithm?.Portfolio?.Transactions, algorithm?.Portfolio)
+        string accountType, IAlgorithm algorithm, string accountId = "")
+        : this(clientId, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, string.Empty, accountType, algorithm?.Portfolio?.Transactions, algorithm?.Portfolio, accountId)
     { }
 
     /// <summary>
@@ -209,8 +210,9 @@ public partial class TradeStationBrokerage : Brokerage
     /// it is used for trading <seealso cref="SecurityType.Equity"/> and <seealso cref="SecurityType.Option"/>.
     /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
     /// <param name="algorithm">The algorithm instance is required to retrieve account type</param>
-    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string refreshToken, string accountType, IAlgorithm algorithm)
-        : this(apiKey, apiKeySecret, restApiUrl, string.Empty, string.Empty, refreshToken, accountType, algorithm?.Portfolio?.Transactions, algorithm?.Portfolio)
+    /// <param name="accountId">The specific user account id.</param>
+    public TradeStationBrokerage(string apiKey, string apiKeySecret, string restApiUrl, string refreshToken, string accountType, IAlgorithm algorithm, string accountId = "")
+        : this(apiKey, apiKeySecret, restApiUrl, string.Empty, string.Empty, refreshToken, accountType, algorithm?.Portfolio?.Transactions, algorithm?.Portfolio, accountId)
     { }
 
     /// <summary>
@@ -230,16 +232,17 @@ public partial class TradeStationBrokerage : Brokerage
     /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
     /// <param name="orderProvider">The order provider.</param>
     /// <param name="securityProvider">The type capable of fetching the holdings for the specified symbol</param>
+    /// <param name="accountId">The specific user account id.</param>
     public TradeStationBrokerage(string clientId, string clientSecret, string restApiUrl, string redirectUrl,
-        string authorizationCode, string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
+        string authorizationCode, string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider, string accountId = "")
         : base("TradeStation")
     {
-        Initialize(clientId, clientSecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider);
+        Initialize(clientId, clientSecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider, accountId);
         _leanExchangeToTradeStationRoute.DoForEach(l => _tradeStationRouteToLeanExchange.Add(l.Value, l.Key));
     }
 
     protected void Initialize(string clientId, string clientSecret, string restApiUrl, string redirectUrl, string authorizationCode,
-        string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider)
+        string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider, string accountId)
     {
         if (_isInitialized)
         {
@@ -251,7 +254,7 @@ public partial class TradeStationBrokerage : Brokerage
         _symbolMapper = new TradeStationSymbolMapper();
         _tradeStationAccountType = TradeStationExtensions.ParseAccountType(accountType);
         _tradeStationApiClient = new TradeStationApiClient(clientId, clientSecret, restApiUrl,
-            _tradeStationAccountType, refreshToken, redirectUrl, authorizationCode);
+            _tradeStationAccountType, refreshToken, redirectUrl, authorizationCode, accountId);
         _messageHandler = new(HandleTradeStationMessage);
 
         SubscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager()

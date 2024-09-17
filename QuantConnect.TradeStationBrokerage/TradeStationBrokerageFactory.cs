@@ -47,6 +47,8 @@ public class TradeStationBrokerageFactory : BrokerageFactory
         { "trade-station-api-url", Config.Get("trade-station-api-url") },
         /// <see cref="Models.Enums.TradeStationAccountType"/>
         { "trade-station-account-type", Config.Get("trade-station-account-type") },
+        // Users can have multiple different accounts
+        { "trade-station-account-id", Config.Get("trade-station-account-id") },
         
         // USE CASE 1 (normal): lean CLI & live cloud wizard
         { "trade-station-refresh-token", Config.Get("trade-station-refresh-token") },
@@ -97,6 +99,7 @@ public class TradeStationBrokerageFactory : BrokerageFactory
         }
 
         var refreshToken = Read<string>(job.BrokerageData, "trade-station-refresh-token", errors);
+        var accountId = Read<string>(job.BrokerageData, "trade-station-account-id", errors);
 
         var ts = default(TradeStationBrokerage);
         if (string.IsNullOrEmpty(refreshToken))
@@ -110,12 +113,12 @@ public class TradeStationBrokerageFactory : BrokerageFactory
             }
 
             // Case 1: authentication with using redirectUrl, authorizationCode
-            ts = new TradeStationBrokerage(clientId, clientSecret, apiUrl, redirectUrl, authorizationCode, accountType, algorithm);
+            ts = new TradeStationBrokerage(clientId, clientSecret, apiUrl, redirectUrl, authorizationCode, accountType, algorithm, accountId);
         }
         else
         {
             // Case 2: authentication with using refreshToken
-            ts = new TradeStationBrokerage(clientId, clientSecret, apiUrl, refreshToken, accountType, algorithm);
+            ts = new TradeStationBrokerage(clientId, clientSecret, apiUrl, refreshToken, accountType, algorithm, accountId);
         }
 
         Composer.Instance.AddPart<IDataQueueHandler>(ts);
