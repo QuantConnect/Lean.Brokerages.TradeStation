@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -114,7 +114,8 @@ public partial class TradeStationBrokerage : IDataQueueHandler
             refreshToken: job.BrokerageData.TryGetValue("trade-station-refresh-token", out var refreshToken) ? refreshToken : string.Empty,
             accountType: job.BrokerageData["trade-station-account-type"],
             orderProvider: null,
-            securityProvider: null
+            securityProvider: null,
+            accountId: string.Empty
         );
 
         if (!IsConnected)
