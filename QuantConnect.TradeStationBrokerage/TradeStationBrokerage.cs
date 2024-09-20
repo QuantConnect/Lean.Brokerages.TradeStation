@@ -263,6 +263,7 @@ public partial class TradeStationBrokerage : Brokerage
         {
             _tradeStationApiClient = new TradeStationApiClient(clientId, clientSecret, restApiUrl, refreshToken, redirectUrl, authorizationCode, accountId);
             _tradeStationAccountType = _tradeStationApiClient.GetAccountType().SynchronouslyAwaitTaskResult();
+            Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(Initialize)}: AccountID: {accountId} - AccountType: {_tradeStationAccountType}");
         }
 
         _messageHandler = new(HandleTradeStationMessage);
@@ -278,7 +279,7 @@ public partial class TradeStationBrokerage : Brokerage
         {
             // toolbox downloader case
             var aggregatorName = Config.Get("data-aggregator", "QuantConnect.Lean.Engine.DataFeeds.AggregationManager");
-            Log.Trace($"AlpacaBrokerage.AlpacaBrokerage(): found no data aggregator instance, creating {aggregatorName}");
+            Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(Initialize)}: found no data aggregator instance, creating {aggregatorName}");
             _aggregator = Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(aggregatorName);
         }
 
