@@ -112,10 +112,10 @@ public partial class TradeStationBrokerage : IDataQueueHandler
             redirectUrl: job.BrokerageData.TryGetValue("trade-station-redirect-url", out var redirectUrl) ? redirectUrl : string.Empty,
             authorizationCode: job.BrokerageData.TryGetValue("trade-station-authorization-code", out var authorizationCode) ? authorizationCode : string.Empty,
             refreshToken: job.BrokerageData.TryGetValue("trade-station-refresh-token", out var refreshToken) ? refreshToken : string.Empty,
-            accountType: job.BrokerageData["trade-station-account-type"],
+            accountType: job.BrokerageData.TryGetValue("trade-station-account-type", out var accountType) ? accountType : string.Empty,
             orderProvider: null,
             securityProvider: null,
-            accountId: string.Empty
+            accountId: job.BrokerageData.TryGetValue("trade-station-account-id", out var accountId) ? accountId : string.Empty
         );
 
         if (!IsConnected)
