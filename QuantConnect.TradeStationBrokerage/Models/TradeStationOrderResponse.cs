@@ -99,7 +99,8 @@ public readonly struct TradeStationOrder
     /// <summary>
     /// The amount of time for which an order is valid.
     /// </summary>
-    public string Duration { get; }
+    [JsonConverter(typeof(StringEnumConverter))]
+    public TradeStationDuration Duration { get; }
 
     /// <summary>
     /// At the top level, this is the average fill price. For expanded levels, this is the actual execution price.
@@ -207,7 +208,7 @@ public readonly struct TradeStationOrder
 
     [JsonConstructor]
     public TradeStationOrder(string accountID, string advancedOptions, DateTime closedDateTime, decimal commissionFee, List<ConditionalOrder> conditionalOrders,
-        string conversionRate, string currency, string duration, string filledPrice, DateTime goodTillDate, string groupName, List<Leg> legs,
+        string conversionRate, string currency, TradeStationDuration duration, string filledPrice, DateTime goodTillDate, string groupName, List<Leg> legs,
         List<MarketActivationRule> marketActivationRules, List<TimeActivationRule> timeActivationRules, decimal limitPrice, string orderID,
         DateTime openedDateTime, TradeStationOrderType orderType, string priceUsedForBuyingPower, string rejectReason, string routing, string showOnlyQuantity,
         string spread, TradeStationOrderStatusType status, string statusDescription, decimal stopPrice, TrailingStop trailingStop, string unbundledRouteFee)

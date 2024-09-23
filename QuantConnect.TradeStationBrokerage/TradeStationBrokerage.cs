@@ -441,6 +441,8 @@ public partial class TradeStationBrokerage : Brokerage
             case OrderType.ComboMarket:
             case OrderType.ComboLimit:
                 return PlaceOrderCommon(orders, order.Type, order.TimeInForce, 0m, "", "", order.GetLimitPrice(), 0m, isSubmittedEvent);
+            case OrderType.MarketOnOpen:
+            case OrderType.MarketOnClose:
             case OrderType.Market:
             case OrderType.Limit:
             case OrderType.StopMarket:

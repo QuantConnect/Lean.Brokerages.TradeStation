@@ -145,7 +145,7 @@ public readonly struct TimeInForce
     /// Available values are: DAY, DYP, GTC, GCP, GTD, GDP, OPG, CLO, IOC, FOK, 1, 3, and 5.
     /// Different asset classes and routes may have restrictions on the durations they accept.
     /// </summary>
-    public string Duration { get; }
+    public TradeStationDuration Duration { get; }
 
     /// <summary>
     /// Timestamp represented as an RFC3339 formatted date, a profile of the ISO 8601 date standard.
@@ -155,7 +155,7 @@ public readonly struct TimeInForce
     public string Expiration { get; }
 
     [JsonConstructor]
-    public TimeInForce(string duration, string expiration)
+    public TimeInForce(TradeStationDuration duration, string expiration)
     {
         Duration = duration;
         Expiration = expiration;

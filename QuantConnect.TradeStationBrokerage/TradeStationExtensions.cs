@@ -75,39 +75,60 @@ public static class TradeStationExtensions
     /// <exception cref="NotSupportedException">
     /// Thrown when the specified order type is not supported by the conversion.
     /// </exception>
-    public static TradeStationOrderType ConvertLeanOrderTypeToTradeStation(this OrderType orderType) => orderType switch
+    public static TradeStationOrderType ConvertLeanOrderTypeToTradeStation(this OrderType orderType)
     {
-        OrderType.Market => TradeStationOrderType.Market,
-        OrderType.Limit => TradeStationOrderType.Limit,
-        OrderType.StopMarket => TradeStationOrderType.StopMarket,
-        OrderType.StopLimit => TradeStationOrderType.StopLimit,
-        OrderType.ComboMarket => TradeStationOrderType.Market,
-        OrderType.ComboLimit => TradeStationOrderType.Limit,
-        _ => throw new NotSupportedException($"{nameof(TradeStationBrokerage)}.{nameof(ConvertLeanOrderTypeToTradeStation)}:" +
-            $" The order type '{orderType}' is not supported for conversion to TradeStation order type.")
-    };
+        switch (orderType)
+        {
+            case OrderType.Market:
+            case OrderType.MarketOnOpen:
+            case OrderType.MarketOnClose:
+            case OrderType.ComboMarket:
+                return TradeStationOrderType.Market;
+            case OrderType.Limit:
+            case OrderType.ComboLimit:
+                return TradeStationOrderType.Limit;
+            case OrderType.StopMarket:
+                return TradeStationOrderType.StopMarket;
+            case OrderType.StopLimit:
+                return TradeStationOrderType.StopLimit;
+            default:
+                throw new NotSupportedException($"{nameof(TradeStationBrokerage)}.{nameof(ConvertLeanOrderTypeToTradeStation)}:" +
+                    $" The order type '{orderType}' is not supported for conversion to TradeStation order type.");
+        }
+    }
 
     /// <summary>
     /// The util, transform Lean Order TimeInForce to brokerage format for orders
     /// </summary>
     /// <param name="leanOrderTimeInForce">Lean Order TimeInForce</param>
     /// <returns>brokerage:(expirationType and expirationTimestamp)</returns>
-    public static (string Duration, string expiryDateTime) GetBrokerageTimeInForce(this Orders.TimeInForce leanOrderTimeInForce)
+    public static (TradeStationDuration Duration, string expiryDateTime) GetBrokerageTimeInForce(this Orders.TimeInForce leanOrderTimeInForce, OrderType leanOrderType)
     {
-        var duration = default(string);
+        var duration = default(TradeStationDuration);
         var expiryDateTime = default(string);
 
-        switch (leanOrderTimeInForce)
+        switch (leanOrderType)
         {
-            case DayTimeInForce:
-                duration = "DAY";
+            case OrderType.MarketOnOpen:
+                duration = TradeStationDuration.Opening;
                 break;
-            case GoodTilDateTimeInForce goodTilDateTime:
-                duration = "GTD";
-                expiryDateTime = goodTilDateTime.Expiry.ToIso8601Invariant();
+            case OrderType.MarketOnClose:
+                duration = TradeStationDuration.Close;
                 break;
-            case GoodTilCanceledTimeInForce:
-                duration = "GTC";
+            default:
+                switch (leanOrderTimeInForce)
+                {
+                    case DayTimeInForce:
+                        duration = TradeStationDuration.Day;
+                        break;
+                    case GoodTilDateTimeInForce goodTilDateTime:
+                        duration = TradeStationDuration.GoodThroughDate;
+                        expiryDateTime = goodTilDateTime.Expiry.ToIso8601Invariant();
+                        break;
+                    case GoodTilCanceledTimeInForce:
+                        duration = TradeStationDuration.GoodTillCanceled;
+                        break;
+                }
                 break;
         }
 
@@ -142,17 +163,17 @@ public static class TradeStationExtensions
     /// Returns <c>true</c> if the conversion was successful and a valid <see cref="Orders.TimeInForce"/> value was assigned to 
     /// the <see cref="TradeStationOrderProperties.TimeInForce"/> property. Returns <c>false</c> if an unsupported brokerage order duration was provided.
     /// </returns>
-    public static bool GetLeanTimeInForce(this TradeStationOrderProperties orderProperties, string brokerageOrderDuration, DateTime goodTilDateTime)
+    public static bool GetLeanTimeInForce(this TradeStationOrderProperties orderProperties, TradeStationDuration brokerageOrderDuration, DateTime goodTilDateTime)
     {
         switch (brokerageOrderDuration)
         {
-            case "DAY":
+            case TradeStationDuration.Day:
                 orderProperties.TimeInForce = Orders.TimeInForce.Day;
                 return true;
-            case "GTD":
+            case TradeStationDuration.GoodThroughDate:
                 orderProperties.TimeInForce = Orders.TimeInForce.GoodTilDate(goodTilDateTime);
                 return true;
-            case "GTC":
+            case TradeStationDuration.GoodTillCanceled:
                 orderProperties.TimeInForce = Orders.TimeInForce.GoodTilCanceled;
                 return true;
             default:
