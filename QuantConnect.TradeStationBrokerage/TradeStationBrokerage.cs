@@ -1097,16 +1097,50 @@ public partial class TradeStationBrokerage : Brokerage
             orderProperties.Exchange = mappedExchangeName;
         }
 
-        Order leanOrder = order.OrderType switch
+        var leanOrder = default(Order);
+
+        switch (order.OrderType)
         {
-            TradeStationOrderType.Market when groupOrderManager == null => new MarketOrder(leanSymbol, orderQuantity, order.OpenedDateTime, properties: orderProperties),
-            TradeStationOrderType.Market when groupOrderManager != null => new ComboMarketOrder(leanSymbol, orderQuantity, order.OpenedDateTime, groupOrderManager, properties: orderProperties),
-            TradeStationOrderType.Limit when groupOrderManager == null => new LimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime, properties: orderProperties),
-            TradeStationOrderType.Limit when groupOrderManager != null => new ComboLimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime, groupOrderManager, properties: orderProperties),
-            TradeStationOrderType.StopMarket => new StopMarketOrder(leanSymbol, orderQuantity, order.StopPrice, order.OpenedDateTime, properties: orderProperties),
-            TradeStationOrderType.StopLimit => new StopLimitOrder(leanSymbol, orderQuantity, order.StopPrice, order.LimitPrice, order.OpenedDateTime, properties: orderProperties),
-            _ => throw new NotSupportedException($"Unsupported order type: {order.OrderType}")
-        };
+            case TradeStationOrderType.Market:
+                switch (order.Duration)
+                {
+                    case TradeStationDuration.Close:
+                        leanOrder = new MarketOnCloseOrder(leanSymbol, orderQuantity, order.OpenedDateTime, properties: orderProperties);
+                        break;
+                    case TradeStationDuration.Opening:
+                        leanOrder = new MarketOnOpenOrder(leanSymbol, orderQuantity, order.OpenedDateTime, properties: orderProperties);
+                        break;
+                    default:
+                        if (groupOrderManager == null)
+                        {
+                            leanOrder = new MarketOrder(leanSymbol, orderQuantity, order.OpenedDateTime, properties: orderProperties);
+                        }
+                        else
+                        {
+                            leanOrder = new ComboMarketOrder(leanSymbol, orderQuantity, order.OpenedDateTime, groupOrderManager, properties: orderProperties);
+                        }
+                        break;
+                }
+                break;
+            case TradeStationOrderType.Limit:
+                if (groupOrderManager == null)
+                {
+                    leanOrder = new LimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime, properties: orderProperties);
+                }
+                else
+                {
+                    leanOrder = new ComboLimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime, groupOrderManager, properties: orderProperties);
+                }
+                break;
+            case TradeStationOrderType.StopMarket:
+                leanOrder = new StopMarketOrder(leanSymbol, orderQuantity, order.StopPrice, order.OpenedDateTime, properties: orderProperties);
+                break;
+            case TradeStationOrderType.StopLimit:
+                leanOrder = new StopLimitOrder(leanSymbol, orderQuantity, order.StopPrice, order.LimitPrice, order.OpenedDateTime, properties: orderProperties);
+                break;
+            default:
+                throw new NotSupportedException($"Unsupported order type: {order.OrderType}");
+        }
 
         return leanOrder.SetOrderStatusAndBrokerId(order, leg);
     }
