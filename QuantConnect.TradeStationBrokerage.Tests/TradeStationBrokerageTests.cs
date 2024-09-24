@@ -413,6 +413,64 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             }
         }
 
+        private static IEnumerable<TestCaseData> MarketOpenCloseOrderTypeParameters
+        {
+            get
+            {
+                var symbol = Symbols.AAPL;
+                yield return new TestCaseData(new MarketOnOpenOrder(symbol, 1m, DateTime.UtcNow), !symbol.IsMarketOpen(DateTime.UtcNow, false));
+                yield return new TestCaseData(new MarketOnCloseOrder(symbol, 1m, DateTime.UtcNow), symbol.IsMarketOpen(DateTime.UtcNow, false));
+            }
+        }
+
+        [TestCaseSource(nameof(MarketOpenCloseOrderTypeParameters))]
+        public void PlaceMarketOpenCloseOrder(Order order, bool marketIsOpen)
+        {
+            Log.Trace($"PLACE {order.Type} ORDER TEST");
+
+            var submittedResetEvent = new AutoResetEvent(false);
+            var invalidResetEvent = new AutoResetEvent(false);
+
+            OrderProvider.Add(order);
+
+            Brokerage.OrdersStatusChanged += (_, orderEvents) =>
+            {
+                var orderEvent = orderEvents[0];
+
+                Log.Trace("");
+                Log.Trace($"{nameof(PlaceMarketOpenCloseOrder)}.OrderEvent.Status: {orderEvent.Status}");
+                Log.Trace("");
+
+                if (orderEvent.Status == OrderStatus.Submitted)
+                {
+                    submittedResetEvent.Set();
+                }
+                else if (orderEvent.Status == OrderStatus.Invalid)
+                {
+                    invalidResetEvent.Set();
+                }
+            };
+
+            Assert.IsTrue(Brokerage.PlaceOrder(order));
+
+            if (marketIsOpen)
+            {
+                if (!submittedResetEvent.WaitOne(TimeSpan.FromSeconds(5)))
+                {
+                    Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage doesn't return {OrderStatus.Submitted}");
+                }
+
+                Assert.IsTrue(Brokerage.CancelOrder(order));
+            }
+            else
+            {
+                if (!invalidResetEvent.WaitOne(TimeSpan.FromSeconds(5)))
+                {
+                    Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage doesn't return {OrderStatus.Invalid}");
+                }
+            }
+        }
+
         [Test]
         public void PlaceComboMarketOrder()
         {
