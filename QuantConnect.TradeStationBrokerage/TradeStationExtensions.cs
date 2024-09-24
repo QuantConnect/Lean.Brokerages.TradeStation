@@ -176,6 +176,10 @@ public static class TradeStationExtensions
             case TradeStationDuration.GoodTillCanceled:
                 orderProperties.TimeInForce = Orders.TimeInForce.GoodTilCanceled;
                 return true;
+            case TradeStationDuration.Close:
+            case TradeStationDuration.Opening:
+                orderProperties.TimeInForce = Orders.TimeInForce.GoodTilCanceled;
+                return true;
             default:
                 return false;
         };
