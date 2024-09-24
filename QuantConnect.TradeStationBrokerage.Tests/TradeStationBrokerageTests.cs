@@ -460,6 +460,11 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                     Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage doesn't return {OrderStatus.Submitted}");
                 }
 
+                var openOrders = Brokerage.GetOpenOrders();
+
+                Assert.IsNotEmpty(openOrders);
+                Assert.That(openOrders.Count, Is.EqualTo(1));
+                Assert.That(openOrders[0].Type, Is.EqualTo(order.Type));
                 Assert.IsTrue(Brokerage.CancelOrder(order));
             }
             else
