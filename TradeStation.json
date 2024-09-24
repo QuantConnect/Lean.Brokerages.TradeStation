@@ -9,7 +9,7 @@
 			"Live Trading":	[1,1,1]
 		}
 	],
-	"order-types": [ "Market",  "Limit", "Stop Market", "Stop Limit", "Combo Market", "Combo Limit" ],
+	"order-types": [ "Market",  "Limit", "Stop Market", "Stop Limit", "Combo Market", "Combo Limit", "Market On Open", "Market On Close" ],
 	"assets": [ "Equity", "Equity Options", "Futures" ], 
 	"brokerage-url": "https://tradestation.com/",
 	"documentation": "/docs/v2/cloud-platform/live-trading/brokerages/tradestation",
