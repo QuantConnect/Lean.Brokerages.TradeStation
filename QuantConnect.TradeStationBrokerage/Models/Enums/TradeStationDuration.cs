@@ -51,4 +51,52 @@ public enum TradeStationDuration
     /// </summary>
     [EnumMember(Value = "CLO")]
     Close = 4,
+
+    /// <summary>
+    /// Valid until the end of the extended trading session.
+    /// </summary>
+    [EnumMember(Value = "DAY+")]
+    DayPlus = 5,
+
+    /// <summary>
+    /// Good till Canceled Plus
+    /// </summary>
+    [EnumMember(Value = "GTC+")]
+    GoodTillCanceledPlus = 6,
+
+    /// <summary>
+    /// Good till Date Plus
+    /// </summary>
+    [EnumMember(Value = "GTD+")]
+    GoodThroughDatePlus = 7,
+
+    /// <summary>
+    /// (Immediate or Cancel) IOC orders are filled immediately or canceled. Partial fills are accepted when using this order duration.
+    /// </summary>
+    [EnumMember(Value = "IOC")]
+    ImmediateOrCancel = 8,
+
+    /// <summary>
+    /// (Fill or Kill) FOK orders are filled in their entirety or canceled. Partial fills are not accepted when using this order duration.
+    /// </summary>
+    [EnumMember(Value = "FOK")]
+    FillOrKill = 9,
+
+    /// <summary>
+    /// Expire after 1 minutes;
+    /// </summary>
+    [EnumMember(Value = "1 min")]
+    OneMinute = 11,
+
+    /// <summary>
+    /// Expire after 3 minutes;
+    /// </summary>
+    [EnumMember(Value = "3 min")]
+    ThreeMinute = 12,
+
+    /// <summary>
+    /// Expire after 5 minutes;
+    /// </summary>
+    [EnumMember(Value = "5 min")]
+    FiveMinute = 13,
 }
