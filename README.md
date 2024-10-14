@@ -29,8 +29,9 @@ For more information about the TradeStation brokerage, see the [QuantConnect-Tra
 ### Deploying TradeStation with VSCode User Interface
 
   You can deploy using a visual interface in the QuantConnect cloud. For instructions, see the [QuantConnect-TradeStation Integration Page](https://www.quantconnect.com/docs/v2/our-platform/live-trading/brokerages/tradestation). 
-  
-![tradestation-deployment](https://github.com/user-attachments/assets/d543a9dc-7dfb-4350-8210-1f348f2fbc77)
+
+![tradestation-deployment](https://github.com/user-attachments/assets/c7b6546f-bcb2-402c-b663-e2c01c4e28b2)
+
 
   In the QuantConnect Cloud Platform, you can harness the QuantConnect Live Data Feed, the TradeStation Live Data Feed, or both. For most users, this is substantially cheaper and easier than self-hosting.
   
@@ -63,7 +64,6 @@ Follow these steps to start local live trading with the TradeStation brokerage:
     Enter an option: 15
 	```
 
-
 3.  In the browser window that automatically opens, click Allow.
 
     ```
@@ -73,19 +73,13 @@ Follow these steps to start local live trading with the TradeStation brokerage:
     Will sleep 5 seconds and retry fetching authorization...
     ```
 
-4.  Enter the environment to use.
+4.  Enter the TradeStation account ID.
     ```
     $ lean live "My Project"
-    Live or Paper environment? (live, paper): live
+    The TradeStation account Id (11810357, 210NKH33, SIM2829935F, SIM2829934M): SIM2829935F
     ```
 
-5. Enter the account type to use.
-    ```
-    $ lean live "My Project"
-    Trade Station account type (Cash, Margin, Futures, DVP): Margin
-    ```
-
-6.  Enter the number of the live data provider(s) to use and then follow the steps required for the data connection.
+5.  Enter the number of the live data provider(s) to use and then follow the steps required for the data connection.
 
     ```
     $ lean live "My Project"
@@ -117,7 +111,7 @@ Follow these steps to start local live trading with the TradeStation brokerage:
     If you select IQFeed, see [IQFeed](https://www.quantconnect.com/docs/v2/lean-cli/live-trading/other-data-feeds/iqfeed) for set up instructions.  
     If you select Polygon Data Feed, see [Polygon](https://www.quantconnect.com/docs/v2/lean-cli/live-trading/other-data-feeds/polygon) for set up instructions.
 
-7.  In the browser window that automatically opens, click Allow.
+6.  In the browser window that automatically opens, click Allow.
 
     ```
     $ lean live "My Project"
