@@ -78,7 +78,7 @@ public partial class TradeStationBrokerage : IDataQueueHandler
     /// <summary>
     /// Display that stream quote task was finished great
     /// </summary>
-    private readonly ManualResetEvent _quoteStreamEndingAutoResetEvent = new(false);
+    private readonly ManualResetEvent _quoteStreamEndingManualResetEvent = new(false);
 
     /// <summary>
     /// Maintains active stream quote tasks when there are more than 100 subscription symbols.
@@ -227,7 +227,7 @@ public partial class TradeStationBrokerage : IDataQueueHandler
                 }
             }
 
-            _quoteStreamEndingAutoResetEvent.Reset();
+            _quoteStreamEndingManualResetEvent.Reset();
             while (!_streamQuoteCancellationTokenSource.IsCancellationRequested)
             {
                 _streamQuotesTasks.Clear();
@@ -272,7 +272,7 @@ public partial class TradeStationBrokerage : IDataQueueHandler
                 _streamQuoteCancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(10));
             }
             // Signal that the quote streaming task is ending
-            _quoteStreamEndingAutoResetEvent.Set();
+            _quoteStreamEndingManualResetEvent.Set();
         }, _streamQuoteCancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
     }
 
@@ -425,7 +425,7 @@ public partial class TradeStationBrokerage : IDataQueueHandler
             try
             {
                 _quoteStreamingTask.Wait();
-                if (!_quoteStreamEndingAutoResetEvent.WaitOne(TimeSpan.FromSeconds(5)))
+                if (!_quoteStreamEndingManualResetEvent.WaitOne(TimeSpan.FromSeconds(5)))
                 {
                     Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(StopQuoteStreamingTask)}: TimeOut waiting for Quote Streaming Task to end.");
                 }
