@@ -78,7 +78,7 @@ public partial class TradeStationBrokerage : IDataQueueHandler
     /// <summary>
     /// Display that stream quote task was finished great
     /// </summary>
-    private readonly AutoResetEvent _quoteStreamEndingAutoResetEvent = new(false);
+    private readonly ManualResetEvent _quoteStreamEndingAutoResetEvent = new(false);
 
     /// <summary>
     /// Maintains active stream quote tasks when there are more than 100 subscription symbols.
@@ -227,6 +227,7 @@ public partial class TradeStationBrokerage : IDataQueueHandler
                 }
             }
 
+            _quoteStreamEndingAutoResetEvent.Reset();
             while (!_streamQuoteCancellationTokenSource.IsCancellationRequested)
             {
                 _streamQuotesTasks.Clear();
