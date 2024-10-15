@@ -250,6 +250,11 @@ public partial class TradeStationBrokerage : IDataQueueHandler
                             }
                             return false;
                         }
+                        catch (OperationCanceledException operationEx)
+                        {
+                            Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdateEvents)}.OperationCanceledException: {operationEx}");
+                            return false;
+                        }
                         catch (Exception ex)
                         {
                             Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdateEvents)}.Exception: {ex}");
@@ -260,16 +265,8 @@ public partial class TradeStationBrokerage : IDataQueueHandler
                     _streamQuotesTasks.Add(streamQuotesTask);
                 }
 
-                do
-                {
-                    var finished = await Task.WhenAny(_streamQuotesTasks);
-
-                    if (!await finished)
-                    {
-                        break;
-                    }
-
-                } while (true);
+                // If the operation is canceled using a cancellation token, it ensures all tasks complete before returning false.
+                await Task.WhenAll(_streamQuotesTasks);
 
                 Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdateEvents)}: Connection lost. Reconnecting in 10 seconds...");
                 _streamQuoteCancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(10));
