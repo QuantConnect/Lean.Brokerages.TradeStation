@@ -22,7 +22,6 @@ using QuantConnect.Data;
 using QuantConnect.Packets;
 using QuantConnect.Logging;
 using System.Threading.Tasks;
-using QuantConnect.Securities;
 using QuantConnect.Interfaces;
 using QuantConnect.Data.Market;
 using System.Collections.Generic;
@@ -36,6 +35,12 @@ namespace QuantConnect.Brokerages.TradeStation;
 /// </summary>
 public partial class TradeStationBrokerage : IDataQueueHandler
 {
+    /// <summary>
+    /// The maximum number of symbols allowed per quote stream request.
+    /// </summary>
+    /// <see href="https://api.tradestation.com/docs/specification#tag/MarketData/operation/GetQuoteChangeStream"/>
+    private const int MaxSymbolsPerQuoteStreamRequest = 100;
+
     /// <summary>
     /// Aggregates ticks and bars based on given subscriptions.
     /// </summary>
@@ -74,6 +79,11 @@ public partial class TradeStationBrokerage : IDataQueueHandler
     /// Display that stream quote task was finished great
     /// </summary>
     private readonly AutoResetEvent _quoteStreamEndingAutoResetEvent = new(false);
+
+    /// <summary>
+    /// Maintains active stream quote tasks when there are more than 100 subscription symbols.
+    /// </summary>
+    private readonly List<Task<bool>> _streamQuotesTasks = new();
 
     /// <summary>
     /// Indicates whether there are any pending subscription processes.
@@ -219,45 +229,47 @@ public partial class TradeStationBrokerage : IDataQueueHandler
 
             while (!_streamQuoteCancellationTokenSource.IsCancellationRequested)
             {
-                var tasks = new List<Task<bool>>();
+                _streamQuotesTasks.Clear();
                 Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdateEvents)}: Starting to listen for tick updates...");
-                try
+
+                var brokerageTickerChunks = brokerageTickers.Chunk(MaxSymbolsPerQuoteStreamRequest).ToList();
+                for (var i = 0; i < brokerageTickerChunks.Count; i++)
                 {
-                    var brokerageTickerChunks = brokerageTickers.Chunk(100).ToList();
-                    for (var i = 0; i < brokerageTickerChunks.Count; i++)
+                    var taskIndex = i;
+
+                    var streamQuotesTask = await Task.Factory.StartNew(async () =>
                     {
-                        var taskIndex = i;
-                        Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdateEvents)}: Starting task for chunk {i}/{brokerageTickerChunks.Count} with {brokerageTickerChunks[i].Length} tickers.");
-                        var res = await Task.Factory.StartNew(async () =>
+                        Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdateEvents)}: Starting task for chunk {i + 1}/{brokerageTickerChunks.Count} with {brokerageTickerChunks[i].Length} tickers.");
+                        try
                         {
                             // Stream quotes from the TradeStation API and handle each quote event
                             await foreach (var quote in _tradeStationApiClient.StreamQuotes(brokerageTickerChunks[taskIndex], _streamQuoteCancellationTokenSource.Token))
                             {
                                 HandleQuoteEvents(quote);
                             }
-
                             return false;
-                        }, _streamQuoteCancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdateEvents)}.Exception: {ex}");
+                            return false;
+                        }
+                    }, _streamQuoteCancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
-                        tasks.Add(res);
+                    _streamQuotesTasks.Add(streamQuotesTask);
+                }
+
+                do
+                {
+                    var finished = await Task.WhenAny(_streamQuotesTasks);
+
+                    if (!await finished)
+                    {
+                        break;
                     }
 
+                } while (true);
 
-                    do
-                    {
-                        var finishedTask = tasks.Any(t => !t.Result);
-
-                        if (finishedTask)
-                        {
-                            break;
-                        }
-
-                    } while (true);
-                }
-                catch (Exception ex)
-                {
-                    Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdateEvents)}.Exception: {ex}");
-                }
                 Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdateEvents)}: Connection lost. Reconnecting in 10 seconds...");
                 _streamQuoteCancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(10));
             }
