@@ -219,14 +219,40 @@ public partial class TradeStationBrokerage : IDataQueueHandler
 
             while (!_streamQuoteCancellationTokenSource.IsCancellationRequested)
             {
+                var tasks = new List<Task<bool>>();
                 Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdateEvents)}: Starting to listen for tick updates...");
                 try
                 {
-                    // Stream quotes from the TradeStation API and handle each quote event
-                    await foreach (var quote in _tradeStationApiClient.StreamQuotes(brokerageTickers, _streamQuoteCancellationTokenSource.Token))
+                    var brokerageTickerChunks = brokerageTickers.Chunk(100).ToList();
+                    for (var i = 0; i < brokerageTickerChunks.Count; i++)
                     {
-                        HandleQuoteEvents(quote);
+                        var taskIndex = i;
+                        Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(SubscribeOnTickUpdateEvents)}: Starting task for chunk {i}/{brokerageTickerChunks.Count} with {brokerageTickerChunks[i].Length} tickers.");
+                        var res = await Task.Factory.StartNew(async () =>
+                        {
+                            // Stream quotes from the TradeStation API and handle each quote event
+                            await foreach (var quote in _tradeStationApiClient.StreamQuotes(brokerageTickerChunks[taskIndex], _streamQuoteCancellationTokenSource.Token))
+                            {
+                                HandleQuoteEvents(quote);
+                            }
+
+                            return false;
+                        }, _streamQuoteCancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+
+                        tasks.Add(res);
                     }
+
+
+                    do
+                    {
+                        var finishedTask = tasks.Any(t => !t.Result);
+
+                        if (finishedTask)
+                        {
+                            break;
+                        }
+
+                    } while (true);
                 }
                 catch (Exception ex)
                 {

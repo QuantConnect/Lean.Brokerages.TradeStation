@@ -26,7 +26,6 @@ using QuantConnect.Logging;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using Lean = QuantConnect.Orders;
-using System.Collections.ObjectModel;
 using System.Runtime.CompilerServices;
 using QuantConnect.Brokerages.TradeStation.Models;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
