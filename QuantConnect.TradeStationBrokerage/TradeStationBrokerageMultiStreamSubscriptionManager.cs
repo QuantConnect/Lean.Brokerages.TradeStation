@@ -117,6 +117,11 @@ namespace QuantConnect.Brokerages.TradeStation
                         subscribedSymbols.Remove(symbol);
                         symbolAdded = true;
                     }
+                    else
+                    {
+                        // Exit the loop if the subscription limit is reached and no more items can be added.
+                        break;
+                    }
 
                     if (subscribedSymbols.Count == 0)
                     {
@@ -173,19 +178,25 @@ namespace QuantConnect.Brokerages.TradeStation
                     {
                         streamQuoteTask.RestartStreaming();
                     }
+                    else
+                    {
+                        // Exit the loop if the symbol is not found or cannot be unsubscribed.
+                        break;
+                    }
 
                     if (streamQuoteTask.subscriptionBrokerageTickers.Count == 0)
                     {
                         streamsToRemove.Add(streamQuoteTask);
-                        _quoteStreamManagers.Remove(streamQuoteTask);
-                    }
-
-                    if (_quoteStreamManagers.Count == 0)
-                    {
-                        break;
                     }
                 }
             }
+
+            // Remove the streams that have no remaining subscriptions
+            foreach (var streamToRemove in streamsToRemove)
+            {
+                _quoteStreamManagers.Remove(streamToRemove);
+            }
+
             return true;
         }
 
