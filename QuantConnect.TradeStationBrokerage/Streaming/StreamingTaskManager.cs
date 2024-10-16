@@ -142,6 +142,15 @@ public class StreamingTaskManager
     /// </summary>
     public void StopStreaming()
     {
+        lock (_streamingTaskLock)
+        {
+            if (_hasPendingSubscriptions)
+            {
+                // Avoid duplicate subscriptions by checking if a subscription is already in progress
+                return;
+            }
+        }
+
         Log.Debug($"{nameof(StreamingTaskManager)}.{nameof(StopStreaming)}: Stopping the current streaming task.");
 
         if (_streamingTask != null)
