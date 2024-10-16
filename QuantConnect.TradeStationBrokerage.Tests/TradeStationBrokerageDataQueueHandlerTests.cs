@@ -116,6 +116,12 @@ public partial class TradeStationBrokerageTests
         var amountDataBySymbol = new ConcurrentDictionary<Symbol, int>();
         var configBySymbol = new Dictionary<Symbol, (List<SubscriptionDataConfig> Configs, CancellationTokenSource CancellationTokenSource)>();
 
+        var equitySymbols = _equitySymbols.Value.Count();
+
+        Log.Trace("");
+        Log.Trace($"MULTIPLE SUSBSRIPTION TEST on [{equitySymbols}] symbols.");
+        Log.Trace("");
+
         foreach (var symbol in _equitySymbols.Value)
         {
             foreach (var config in GetSubscriptionDataConfigsBySymbolResolution(symbol, Resolution.Tick))
@@ -153,7 +159,7 @@ public partial class TradeStationBrokerageTests
 
         resetEvent.WaitOne(TimeSpan.FromSeconds(30), cancelationToken.Token);
 
-        foreach (var configs in configBySymbol.Values.Take(_equitySymbols.Value.Count() / 2))
+        foreach (var configs in configBySymbol.Values.Take(equitySymbols / 2))
         {
             foreach (var config in configs.Configs)
             {
