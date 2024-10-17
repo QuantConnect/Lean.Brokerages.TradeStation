@@ -184,7 +184,7 @@ public class StreamingTaskManager : IDisposable
                 }
             }
 
-            while (!_cancellationTokenSource.IsCancellationRequested)
+            do
             {
                 try
                 {
@@ -199,7 +199,7 @@ public class StreamingTaskManager : IDisposable
                 {
                     Log.Error($"{nameof(StreamingTaskManager)}.Exception: {ex}");
                 }
-            }
+            } while (!_cancellationTokenSource.IsCancellationRequested && !_cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(10)));
         });
     }
 
