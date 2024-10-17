@@ -189,6 +189,7 @@ namespace QuantConnect.Brokerages.TradeStation
             // Remove the streams that have no remaining subscriptions
             foreach (var streamToRemove in streamsToRemove)
             {
+                streamToRemove.DisposeSafely();
                 _quoteStreamManagers.Remove(streamToRemove);
             }
 

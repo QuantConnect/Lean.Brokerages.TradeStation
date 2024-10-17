@@ -190,9 +190,10 @@ public class StreamingTaskManager : IDisposable
                 {
                     var result = await _streamAction(brokerageTickers, _cancellationTokenSource.Token);
                 }
-                catch (OperationCanceledException oex)
+                catch (OperationCanceledException)
                 {
-                    // Ski
+                    // Safely skipping:
+                    // Task was cancelled, likely due to token cancellation (e.g., retry attempts or HttpClient.Timeout of 100 seconds). 
                 }
                 catch (Exception ex)
                 {
@@ -247,6 +248,7 @@ public class StreamingTaskManager : IDisposable
     public void Dispose()
     {
         _streamingTask?.DisposeSafely();
+        _cancellationTokenSource?.Cancel();
         _cancellationTokenSource?.DisposeSafely();
     }
 }
