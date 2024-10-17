@@ -184,13 +184,20 @@ public class StreamingTaskManager : IDisposable
                 }
             }
 
-            try
+            while (!_cancellationTokenSource.IsCancellationRequested)
             {
-                var result = await _streamAction(brokerageTickers, _cancellationTokenSource.Token);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                Log.Error($"{nameof(StreamingTaskManager)}.Exception: {ex}");
+                try
+                {
+                    var result = await _streamAction(brokerageTickers, _cancellationTokenSource.Token);
+                }
+                catch (OperationCanceledException oex)
+                {
+                    // Ski
+                }
+                catch (Exception ex)
+                {
+                    Log.Error($"{nameof(StreamingTaskManager)}.Exception: {ex}");
+                }
             }
         });
     }
