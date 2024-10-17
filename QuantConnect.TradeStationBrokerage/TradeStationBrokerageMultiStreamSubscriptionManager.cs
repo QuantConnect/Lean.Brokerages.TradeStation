@@ -15,9 +15,11 @@
 
 using System;
 using NodaTime;
-using System.Linq;
+using System.Threading;
 using QuantConnect.Data;
+using QuantConnect.Util;
 using QuantConnect.Logging;
+using System.Threading.Tasks;
 using QuantConnect.Data.Market;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
@@ -32,12 +34,6 @@ namespace QuantConnect.Brokerages.TradeStation
     /// </summary>
     public class TradeStationBrokerageMultiStreamSubscriptionManager : EventBasedDataQueueHandlerSubscriptionManager, IDisposable
     {
-        /// <summary>
-        /// The maximum number of symbols allowed per quote stream request.
-        /// </summary>
-        /// <see href="https://api.tradestation.com/docs/specification#tag/MarketData/operation/GetQuoteChangeStream"/>
-        private const int MaxSymbolsPerQuoteStreamRequest = 100;
-
         /// <summary>
         /// Manages the list of active quote stream managers.
         /// </summary>
@@ -93,69 +89,56 @@ namespace QuantConnect.Brokerages.TradeStation
             UnsubscribeImpl = (symbols, _) => UnSubscribe(symbols);
         }
 
+        /// <summary>
+        /// Subscribes to updates for the specified collection of symbols.
+        /// </summary>
+        /// <param name="symbols">A collection of symbols to subscribe to.</param>
+        /// <returns>Always, Returns <c>true</c> if the subscription was successful</returns>
         private bool Subscribe(IEnumerable<Symbol> symbols)
         {
-            var subscribedSymbols = new List<string>();
+            var subscribedBrokerageSymbolsQueue = new Queue<string>();
             foreach (var symbol in symbols)
             {
-                subscribedSymbols.Add(AddOrderBook(symbol));
+                subscribedBrokerageSymbolsQueue.Enqueue(AddOrderBook(symbol));
             }
 
             foreach (var quoteStream in _quoteStreamManagers)
             {
-                if (subscribedSymbols.Count == 0)
+                if (quoteStream.IsSubscriptionFilled)
                 {
-                    break;
+                    // Skip this quote stream as its subscription is full
+                    continue;
                 }
 
-                var symbolAdded = default(bool);
-
-                foreach (var symbol in subscribedSymbols)
+                do
                 {
-                    if (quoteStream.AddSubscriptionItem(symbol))
+                    var brokerageSymbol = subscribedBrokerageSymbolsQueue.Dequeue();
+
+                    if (!quoteStream.AddSubscriptionItem(brokerageSymbol))
                     {
-                        subscribedSymbols.Remove(symbol);
-                        symbolAdded = true;
-                    }
-                    else
-                    {
+                        // Re-enqueue the symbol since adding it to the subscription failed
+                        subscribedBrokerageSymbolsQueue.Enqueue(brokerageSymbol);
                         // Exit the loop if the subscription limit is reached and no more items can be added.
                         break;
                     }
-
-                    if (subscribedSymbols.Count == 0)
-                    {
-                        break;
-                    }
-                }
-
-                if (symbolAdded)
-                {
-                    quoteStream.RestartStreaming();
-                }
+                } while (subscribedBrokerageSymbolsQueue.Count > 0);
             }
 
-            if (subscribedSymbols.Count > 0)
+            while (subscribedBrokerageSymbolsQueue.Count > 0)
             {
-                var brokerageSymbolsChunks = subscribedSymbols.Chunk(MaxSymbolsPerQuoteStreamRequest);
+                var streamQuoteTask = new StreamingTaskManager(StreamHandleQuoteEvents);
+                _quoteStreamManagers.Add(streamQuoteTask);
 
-                foreach (var brokerageSymbolChunk in brokerageSymbolsChunks)
+                do
                 {
-                    var streamQuoteTask = new StreamingTaskManager(async (brokerageTickers, cancellationToken) =>
+                    var brokerageSymbol = subscribedBrokerageSymbolsQueue.Dequeue();
+
+                    if (!streamQuoteTask.AddSubscriptionItem(brokerageSymbol))
                     {
-                        await foreach (var quote in _tradeStationApiClient.StreamQuotes(brokerageTickers, cancellationToken))
-                        {
-                            HandleQuoteEvents(quote);
-                        }
-
-                        return false;
-
-                    }, brokerageSymbolChunk, MaxSymbolsPerQuoteStreamRequest);
-
-                    _quoteStreamManagers.Add(streamQuoteTask);
-
-                    streamQuoteTask.StartStreaming();
-                }
+                        // The subscription limit is reached and no more items can be added.
+                        break;
+                    }
+                } while (subscribedBrokerageSymbolsQueue.Count > 0);
             }
 
             return true;
@@ -174,17 +157,13 @@ namespace QuantConnect.Brokerages.TradeStation
             {
                 foreach (var streamQuoteTask in _quoteStreamManagers)
                 {
-                    if (streamQuoteTask.RemoveSubscriptionItem(RemoveOrderBook(symbol)))
-                    {
-                        streamQuoteTask.RestartStreaming();
-                    }
-                    else
+                    if (!streamQuoteTask.RemoveSubscriptionItem(RemoveOrderBook(symbol)))
                     {
                         // Exit the loop if the symbol is not found or cannot be unsubscribed.
                         break;
                     }
 
-                    if (streamQuoteTask.subscriptionBrokerageTickers.Count == 0)
+                    if (streamQuoteTask.IsSubscriptionBrokerageTickerEmpty)
                     {
                         streamsToRemove.Add(streamQuoteTask);
                     }
@@ -198,6 +177,21 @@ namespace QuantConnect.Brokerages.TradeStation
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Handles streaming quote events for the specified brokerage tickers.
+        /// </summary>
+        /// <param name="brokerageTickers">A read-only collection of brokerage tickers to subscribe to for streaming quotes.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the streaming operation.</param>
+        /// <returns>A task that represents the asynchronous operation, returning <c>false</c> upon completion.</returns>
+        private async Task<bool> StreamHandleQuoteEvents(IReadOnlyCollection<string> brokerageTickers, CancellationToken cancellationToken)
+        {
+            await foreach (var quote in _tradeStationApiClient.StreamQuotes(brokerageTickers, cancellationToken))
+            {
+                HandleQuoteEvents(quote);
+            }
+            return false;
         }
 
         /// <summary>
@@ -334,22 +328,20 @@ namespace QuantConnect.Brokerages.TradeStation
             return brokerageSymbol;
         }
 
+        /// <summary>
+        /// Releases the resources used by the current instance.
+        /// </summary>
         public override void Dispose()
         {
             if (_quoteStreamManagers != null)
             {
-                // Stop each stream in the manager
-                foreach (var streamQuote in _quoteStreamManagers)
-                {
-                    streamQuote.StopStreaming();
-                }
-
                 // Clear the list to release resources
                 _quoteStreamManagers.Clear();
                 _quoteStreamManagers = null;
             }
 
-
+            _aggregator.DisposeSafely();
+            _tradeStationApiClient.DisposeSafely();
         }
     }
 }

@@ -16,6 +16,7 @@
 using System;
 using System.Linq;
 using System.Threading;
+using QuantConnect.Util;
 using QuantConnect.Logging;
 using System.Threading.Tasks;
 using System.Collections.Generic;
@@ -25,8 +26,14 @@ namespace QuantConnect.Brokerages.TradeStation.Streaming;
 /// <summary>
 /// Manages streaming tasks for a collection of items, allowing for subscription, unSubscription and restarting of streaming processes.
 /// </summary>
-public class StreamingTaskManager
+public class StreamingTaskManager : IDisposable
 {
+    /// <summary>
+    /// The maximum number of symbols allowed per quote stream request.
+    /// </summary>
+    /// <see href="https://api.tradestation.com/docs/specification#tag/MarketData/operation/GetQuoteChangeStream"/>
+    private const int MaxSymbolsPerQuoteStreamRequest = 100;
+
     /// <summary>
     /// Indicates whether there are any pending subscription processes.
     /// </summary>
@@ -43,14 +50,14 @@ public class StreamingTaskManager
     private Task _streamingTask;
 
     /// <summary>
-    /// The maximum number of items that can be subscribed to.
-    /// </summary>
-    private readonly int _maxSubscriptionLimit;
-
-    /// <summary>
     /// Synchronization object used to ensure thread safety when starting or restarting the streaming task.
     /// </summary>
     private readonly object _streamingTaskLock = new();
+
+    /// <summary>
+    /// Synchronization object used to ensure thread safety when Add or Remove item in <see cref="_subscriptionBrokerageTickers"/>.
+    /// </summary>
+    private readonly object _brokerageTickerLock = new();
 
     /// <summary>
     /// Specifies the delay interval between subscription attempts.
@@ -63,35 +70,91 @@ public class StreamingTaskManager
     private readonly Func<IReadOnlyCollection<string>, CancellationToken, Task<bool>> _streamAction;
 
     /// <summary>
-    /// Event used to signal the completion of the streaming task.
-    /// </summary>
-    private readonly AutoResetEvent autoResetEvent = new(false);
-
-    /// <summary>
     /// Gets the collection of subscribed items.
     /// </summary>
-    public readonly HashSet<string> subscriptionBrokerageTickers;
+    private readonly HashSet<string> _subscriptionBrokerageTickers = new();
+
+    /// <summary>
+    /// Indicates whether there are no subscribed brokerage tickers.
+    /// </summary>
+    public bool IsSubscriptionBrokerageTickerEmpty { get => _subscriptionBrokerageTickers.Count == 0; }
+
+    /// <summary>
+    /// Indicates whether the maximum number of subscribed brokerage tickers has been reached.
+    /// </summary>
+    public bool IsSubscriptionFilled { get => _subscriptionBrokerageTickers.Count == MaxSymbolsPerQuoteStreamRequest; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="StreamingTaskManager"/> class.
     /// </summary>
     /// <param name="streamingAction">The action to execute for streaming the items.</param>
-    /// <param name="initialSubscribedItems">Initial collection of items to subscribe to.</param>
-    /// <param name="maxSubscriptionLimit">The maximum number of items that can be subscribed to. (Defaults to 100)</param>
-    public StreamingTaskManager(
-        Func<IReadOnlyCollection<string>, CancellationToken, Task<bool>> streamingAction,
-        IEnumerable<string> initialSubscribedItems,
-        int maxSubscriptionLimit = 100)
+    public StreamingTaskManager(Func<IReadOnlyCollection<string>, CancellationToken, Task<bool>> streamingAction)
     {
         _streamAction = streamingAction ?? throw new ArgumentNullException(nameof(streamingAction), "Streaming action cannot be null.");
-        subscriptionBrokerageTickers = new(initialSubscribedItems ?? throw new ArgumentNullException(nameof(initialSubscribedItems), "Initial subscribed items cannot be null."));
-        _maxSubscriptionLimit = maxSubscriptionLimit;
+    }
+
+    /// <summary>
+    /// Adds an item to the subscription list if the maximum limit is not reached. 
+    /// If the item is already present, it will not be added, and the method will return false.
+    /// </summary>
+    /// <param name="item">The item to add to the subscription list. This should be a unique identifier 
+    /// for the item being subscribed to.</param>
+    /// <returns><c>true</c> if the item was added successfully; otherwise, <c>false</c>.</returns>
+    public bool AddSubscriptionItem(string item)
+    {
+        lock (_brokerageTickerLock)
+        {
+            if (_subscriptionBrokerageTickers.Count >= MaxSymbolsPerQuoteStreamRequest)
+            {
+                Log.Debug($"{nameof(StreamingTaskManager)}.{nameof(AddSubscriptionItem)}: Cannot add more items. Maximum limit reached.");
+                return false;
+            }
+
+            if (!_subscriptionBrokerageTickers.Add(item))
+            {
+                Log.Debug($"{nameof(StreamingTaskManager)}.{nameof(AddSubscriptionItem)}: Item already exists in the list.");
+                return false;
+            }
+        }
+
+        RestartStreaming();
+
+        return true;
+    }
+
+    /// <summary>
+    /// Removes an item from the subscription list.
+    /// </summary>
+    /// <param name="item">The item to remove from the subscription list.</param>
+    /// <returns><c>true</c> if the item was removed successfully; otherwise, <c>false</c>.</returns>
+    public bool RemoveSubscriptionItem(string item)
+    {
+        lock (_brokerageTickerLock)
+        {
+            if (_subscriptionBrokerageTickers.Remove(item))
+            {
+                RestartStreaming();
+                return true;
+            }
+        }
+        Log.Debug($"{nameof(StreamingTaskManager)}.{nameof(RemoveSubscriptionItem)}: Cannot remove item: [{item}]. Item not found.");
+        return false;
+    }
+
+    /// <summary>
+    /// Restarts the streaming task by stopping the current one and starting a new one. 
+    /// This is useful for updating subscriptions without needing to manually stop and start.
+    /// </summary>
+    private void RestartStreaming()
+    {
+        StopStreaming();
+        StartStreaming();
     }
 
     /// <summary>
     /// Starts the streaming task and executes the provided streaming action.
     /// </summary>
-    public void StartStreaming()
+    private void StartStreaming()
     {
         lock (_streamingTaskLock)
         {
@@ -112,7 +175,7 @@ public class StreamingTaskManager
             lock (_streamingTaskLock)
             {
                 _hasPendingSubscriptions = false;
-                brokerageTickers = subscriptionBrokerageTickers.ToList();
+                brokerageTickers = _subscriptionBrokerageTickers.ToList();
                 if (brokerageTickers.Count == 0)
                 {
                     // If there are no symbols to subscribe to, exit the task
@@ -129,18 +192,13 @@ public class StreamingTaskManager
             {
                 Log.Error($"{nameof(StreamingTaskManager)}.Exception: {ex}");
             }
-            finally
-            {
-                // Signal: task is completed
-                autoResetEvent.Set();
-            }
         });
     }
 
     /// <summary>
     /// Stops the currently running streaming task and cancels the current task.
     /// </summary>
-    public void StopStreaming()
+    private void StopStreaming()
     {
         lock (_streamingTaskLock)
         {
@@ -157,14 +215,12 @@ public class StreamingTaskManager
         {
             _cancellationTokenSource.Cancel();
 
-            if (!autoResetEvent.WaitOne(TimeSpan.FromSeconds(5)))
-            {
-                Log.Error($"{nameof(StreamingTaskManager)}.{nameof(StopStreaming)}: Timeout while waiting for the streaming task to complete.");
-            }
-
             try
             {
-                _streamingTask.Wait();
+                if (!_streamingTask.Wait(TimeSpan.FromSeconds(5)))
+                {
+                    Log.Error($"{nameof(StreamingTaskManager)}.{nameof(StopStreaming)}: Timeout while waiting for the streaming task to complete.");
+                }
             }
             catch (Exception ex)
             {
@@ -179,52 +235,11 @@ public class StreamingTaskManager
     }
 
     /// <summary>
-    /// Restarts the streaming task by stopping the current one and starting a new one. 
-    /// This is useful for updating subscriptions without needing to manually stop and start.
+    /// Releases the resources used by the current instance.
     /// </summary>
-    public void RestartStreaming()
+    public void Dispose()
     {
-        StopStreaming();
-        StartStreaming();
-    }
-
-    /// <summary>
-    /// Adds an item to the subscription list if the maximum limit is not reached. 
-    /// If the item is already present, it will not be added, and the method will return false.
-    /// </summary>
-    /// <param name="item">The item to add to the subscription list. This should be a unique identifier 
-    /// for the item being subscribed to.</param>
-    /// <returns><c>true</c> if the item was added successfully; otherwise, <c>false</c>.</returns>
-    public bool AddSubscriptionItem(string item)
-    {
-        if (subscriptionBrokerageTickers.Count >= _maxSubscriptionLimit)
-        {
-            Log.Debug($"{nameof(StreamingTaskManager)}.{nameof(AddSubscriptionItem)}: Cannot add more items. Maximum limit reached.");
-            return false;
-        }
-
-        if (!subscriptionBrokerageTickers.Add(item))
-        {
-            Log.Debug($"{nameof(StreamingTaskManager)}.{nameof(AddSubscriptionItem)}: Item already exists in the list.");
-            return false;
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// Removes an item from the subscription list.
-    /// </summary>
-    /// <param name="item">The item to remove from the subscription list.</param>
-    /// <returns><c>true</c> if the item was removed successfully; otherwise, <c>false</c>.</returns>
-    public bool RemoveSubscriptionItem(string item)
-    {
-        if (subscriptionBrokerageTickers.Remove(item))
-        {
-            return true;
-        }
-
-        Log.Debug($"{nameof(StreamingTaskManager)}.{nameof(RemoveSubscriptionItem)}: Cannot remove item: [{item}]. Item not found.");
-        return false;
+        _streamingTask?.DisposeSafely();
+        _cancellationTokenSource?.DisposeSafely();
     }
 }
