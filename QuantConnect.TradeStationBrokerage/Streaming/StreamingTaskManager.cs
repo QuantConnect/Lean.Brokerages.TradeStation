@@ -133,7 +133,11 @@ public class StreamingTaskManager : IDisposable
         {
             if (_subscriptionBrokerageTickers.Remove(item))
             {
-                RestartStreaming();
+                // Restart streaming if the subscription collection is not empty
+                if (_subscriptionBrokerageTickers.Count != 0)
+                {
+                    RestartStreaming();
+                }
                 return true;
             }
         }
@@ -247,8 +251,8 @@ public class StreamingTaskManager : IDisposable
     /// </summary>
     public void Dispose()
     {
-        _streamingTask?.DisposeSafely();
         _cancellationTokenSource?.Cancel();
         _cancellationTokenSource?.DisposeSafely();
+        _streamingTask?.DisposeSafely();
     }
 }

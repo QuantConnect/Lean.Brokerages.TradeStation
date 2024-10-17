@@ -191,6 +191,7 @@ namespace QuantConnect.Brokerages.TradeStation
             {
                 streamToRemove.DisposeSafely();
                 _quoteStreamManagers.Remove(streamToRemove);
+                Log.Debug($"{nameof(TradeStationBrokerageMultiStreamSubscriptionManager)}.{nameof(UnSubscribe)}: Stream removed. Remaining active streams: {_quoteStreamManagers.Count}");
             }
 
             return true;
