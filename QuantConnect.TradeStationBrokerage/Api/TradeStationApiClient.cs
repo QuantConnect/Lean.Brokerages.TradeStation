@@ -36,7 +36,7 @@ namespace QuantConnect.Brokerages.TradeStation.Api;
 /// <summary>
 /// TradeStation api client implementation
 /// </summary>
-public class TradeStationApiClient
+public class TradeStationApiClient : IDisposable
 {
     /// <summary>
     /// Maximum number of bars that can be requested in a single call to <see cref="GetBars(string, TradeStationUnitTimeIntervalType, DateTime, DateTime)"/>.
@@ -715,5 +715,13 @@ public class TradeStationApiClient
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Releases the resources used by the current instance.
+    /// </summary>
+    public void Dispose()
+    {
+        _httpClient.DisposeSafely();
     }
 }
