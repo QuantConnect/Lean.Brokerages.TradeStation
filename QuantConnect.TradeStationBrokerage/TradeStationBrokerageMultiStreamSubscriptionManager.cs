@@ -153,20 +153,36 @@ namespace QuantConnect.Brokerages.TradeStation
         {
             var streamsToRemove = new List<StreamingTaskManager>();
 
+            var unSubscribeBrokerageSymbolsQueue = new Queue<string>();
             foreach (var symbol in symbols)
             {
-                foreach (var streamQuoteTask in _quoteStreamManagers)
+                unSubscribeBrokerageSymbolsQueue.Enqueue(RemoveOrderBook(symbol));
+            }
+
+            foreach (var streamQuoteTask in _quoteStreamManagers)
+            {
+                do
                 {
-                    if (!streamQuoteTask.RemoveSubscriptionItem(RemoveOrderBook(symbol)))
+                    var brokerageSymbol = unSubscribeBrokerageSymbolsQueue.Dequeue();
+
+                    if (!streamQuoteTask.RemoveSubscriptionItem(brokerageSymbol))
                     {
+                        // Re-enqueue the symbol since adding it to the subscription failed
+                        unSubscribeBrokerageSymbolsQueue.Enqueue(brokerageSymbol);
                         // Exit the loop if the symbol is not found or cannot be unsubscribed.
                         break;
                     }
 
-                    if (streamQuoteTask.IsSubscriptionBrokerageTickerEmpty)
-                    {
-                        streamsToRemove.Add(streamQuoteTask);
-                    }
+                } while (unSubscribeBrokerageSymbolsQueue.Count > 0);
+
+                if (streamQuoteTask.IsSubscriptionBrokerageTickerEmpty)
+                {
+                    streamsToRemove.Add(streamQuoteTask);
+                }
+
+                if (unSubscribeBrokerageSymbolsQueue.Count == 0)
+                {
+                    break;
                 }
             }
 
