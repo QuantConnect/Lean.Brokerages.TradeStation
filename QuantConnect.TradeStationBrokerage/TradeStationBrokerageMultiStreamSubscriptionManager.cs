@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -15,6 +15,7 @@
 
 using System;
 using NodaTime;
+using System.Linq;
 using System.Threading;
 using QuantConnect.Data;
 using QuantConnect.Util;
@@ -130,36 +131,14 @@ namespace QuantConnect.Brokerages.TradeStation
         {
             var streamsToRemove = new List<StreamingTaskManager>();
 
-            var unSubscribeBrokerageSymbolsQueue = new Queue<string>();
-            foreach (var symbol in symbols)
+            foreach (var brokerageSymbol in symbols.Select(symbol => RemoveOrderBook(symbol)))
             {
-                unSubscribeBrokerageSymbolsQueue.Enqueue(RemoveOrderBook(symbol));
-            }
-
-            foreach (var streamQuoteTask in _quoteStreamManagers)
-            {
-                do
+                foreach (var streamQuoteTask in _quoteStreamManagers.Where(x => x.RemoveSubscriptionItem(brokerageSymbol)))
                 {
-                    var brokerageSymbol = unSubscribeBrokerageSymbolsQueue.Dequeue();
-
-                    if (!streamQuoteTask.RemoveSubscriptionItem(brokerageSymbol))
+                    if (streamQuoteTask.IsSubscriptionBrokerageTickerEmpty)
                     {
-                        // Re-enqueue the symbol since adding it to the subscription failed
-                        unSubscribeBrokerageSymbolsQueue.Enqueue(brokerageSymbol);
-                        // Exit the loop if the symbol is not found or cannot be unsubscribed.
-                        break;
+                        streamsToRemove.Add(streamQuoteTask);
                     }
-
-                } while (unSubscribeBrokerageSymbolsQueue.Count > 0);
-
-                if (streamQuoteTask.IsSubscriptionBrokerageTickerEmpty)
-                {
-                    streamsToRemove.Add(streamQuoteTask);
-                }
-
-                if (unSubscribeBrokerageSymbolsQueue.Count == 0)
-                {
-                    break;
                 }
             }
 

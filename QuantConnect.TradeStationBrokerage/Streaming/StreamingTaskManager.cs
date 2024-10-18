@@ -78,7 +78,7 @@ public class StreamingTaskManager : IDisposable
         {
             lock (_streamingTaskLock)
             {
-                return _subscriptionBrokerageTickers.Count == 0; 
+                return _subscriptionBrokerageTickers.Count == 0;
             }
         }
     }
@@ -90,9 +90,9 @@ public class StreamingTaskManager : IDisposable
     {
         get
         {
-            lock(_streamingTaskLock)
+            lock (_streamingTaskLock)
             {
-                return _subscriptionBrokerageTickers.Count == MaxSymbolsPerQuoteStreamRequest; 
+                return _subscriptionBrokerageTickers.Count >= MaxSymbolsPerQuoteStreamRequest;
             }
         }
     }
@@ -126,7 +126,7 @@ public class StreamingTaskManager : IDisposable
             if (!_subscriptionBrokerageTickers.Add(item))
             {
                 Log.Debug($"{nameof(StreamingTaskManager)}.{nameof(AddSubscriptionItem)}: Item already exists in the list.");
-                return false;
+                return true;
             }
         }
 
@@ -146,14 +146,7 @@ public class StreamingTaskManager : IDisposable
         {
             if (_subscriptionBrokerageTickers.Remove(item))
             {
-                if (IsSubscriptionBrokerageTickerEmpty)
-                {
-                    StopStreaming();
-                }
-                else
-                {
-                    RestartStreaming();
-                }
+                RestartStreaming();
                 return true;
             }
         }
@@ -162,101 +155,73 @@ public class StreamingTaskManager : IDisposable
     }
 
     /// <summary>
-    /// Restarts the streaming task by stopping the current one and starting a new one. 
-    /// This is useful for updating subscriptions without needing to manually stop and start.
+    /// Starts the streaming task and executes the provided streaming action.
     /// </summary>
     private void RestartStreaming()
     {
-        StopStreaming();
-        StartStreaming();
-    }
-
-    /// <summary>
-    /// Starts the streaming task and executes the provided streaming action.
-    /// </summary>
-    private void StartStreaming()
-    {
-        lock (_streamingTaskLock)
+        try
         {
-            if (_hasPendingSubscriptions)
-            {
-                // Avoid duplicate subscriptions by checking if a subscription is already in progress
-                return;
-            }
-            _hasPendingSubscriptions = true;
-        }
-
-        _streamingTask = Task.Factory.StartNew(async () =>
-        {
-            // Wait for a specified delay to batch multiple symbol subscriptions into a single request
-            await Task.Delay(_subscribeDelay).ConfigureAwait(false);
-
             lock (_streamingTaskLock)
             {
-                _hasPendingSubscriptions = false;
-                if (IsSubscriptionBrokerageTickerEmpty)
+                if (_hasPendingSubscriptions)
                 {
-                    // If there are no symbols to subscribe to, exit the task
-                    Log.Trace($"{nameof(StreamingTaskManager)}.{nameof(StartStreaming)}: No symbols to subscribe to at this time. Exiting subscription task.");
+                    // Avoid duplicate subscriptions by checking if a subscription is already in progress
                     return;
                 }
+                _hasPendingSubscriptions = true;
             }
 
-            do
+            if (_streamingTask != null)
             {
-                try
-                {
-                    var result = await _streamAction(_subscriptionBrokerageTickers.ToList(), _cancellationTokenSource.Token);
-                }
-                catch (OperationCanceledException)
-                {
-                    // Safely skipping:
-                    // Task was cancelled, likely due to token cancellation (e.g., retry attempts or HttpClient.Timeout of 100 seconds). 
-                }
-                catch (Exception ex)
-                {
-                    Log.Error($"{nameof(StreamingTaskManager)}.Exception: {ex}");
-                }
-            } while (!_cancellationTokenSource.IsCancellationRequested && !_cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(10)));
-        });
-    }
-
-    /// <summary>
-    /// Stops the currently running streaming task and cancels the current task.
-    /// </summary>
-    private void StopStreaming()
-    {
-        lock (_streamingTaskLock)
-        {
-            if (_hasPendingSubscriptions)
-            {
-                // Avoid duplicate subscriptions by checking if a subscription is already in progress
-                return;
-            }
-        }
-
-        Log.Debug($"{nameof(StreamingTaskManager)}.{nameof(StopStreaming)}: Stopping the current streaming task.");
-
-        if (_streamingTask != null)
-        {
-            _cancellationTokenSource.Cancel();
-
-            try
-            {
+                _cancellationTokenSource.Cancel();
                 if (!_streamingTask.Wait(TimeSpan.FromSeconds(5)))
                 {
-                    Log.Error($"{nameof(StreamingTaskManager)}.{nameof(StopStreaming)}: Timeout while waiting for the streaming task to complete.");
+                    Log.Error($"{nameof(StreamingTaskManager)}.{nameof(RestartStreaming)}: Timeout while waiting for the streaming task to complete.");
                 }
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"{nameof(StreamingTaskManager)}.{nameof(StopStreaming)}: Error during task cancellation: {ex}");
-            }
-            finally
-            {
+                _streamingTask = null;
                 _cancellationTokenSource.Dispose();
                 _cancellationTokenSource = new CancellationTokenSource();
             }
+
+            _streamingTask = Task.Factory.StartNew(async () =>
+            {
+                // Wait for a specified delay to batch multiple symbol subscriptions into a single request
+                await Task.Delay(_subscribeDelay).ConfigureAwait(false);
+
+                var brokerageTickers = default(List<string>);
+                lock (_streamingTaskLock)
+                {
+                    _hasPendingSubscriptions = false;
+                    if (IsSubscriptionBrokerageTickerEmpty)
+                    {
+                        // If there are no symbols to subscribe to, exit the task
+                        Log.Trace($"{nameof(StreamingTaskManager)}.{nameof(RestartStreaming)}: No symbols to subscribe to at this time. Exiting subscription task.");
+                        return;
+                    }
+                    brokerageTickers = _subscriptionBrokerageTickers.ToList();
+                }
+
+                do
+                {
+                    try
+                    {
+                        var result = await _streamAction(brokerageTickers, _cancellationTokenSource.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Safely skipping:
+                        // Task was cancelled, likely due to token cancellation (e.g., retry attempts or HttpClient.Timeout of 100 seconds). 
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error($"{nameof(StreamingTaskManager)}.Exception stream action: {ex}");
+                    }
+                } while (!_cancellationTokenSource.IsCancellationRequested && !_cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(10)));
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"{nameof(StreamingTaskManager)}.Exception warpper: {ex}");
         }
     }
 
