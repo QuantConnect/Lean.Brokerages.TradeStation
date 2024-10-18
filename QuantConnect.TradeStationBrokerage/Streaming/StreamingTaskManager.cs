@@ -55,11 +55,6 @@ public class StreamingTaskManager : IDisposable
     private readonly object _streamingTaskLock = new();
 
     /// <summary>
-    /// Synchronization object used to ensure thread safety when Add or Remove item in <see cref="_subscriptionBrokerageTickers"/>.
-    /// </summary>
-    private readonly object _brokerageTickerLock = new();
-
-    /// <summary>
     /// Specifies the delay interval between subscription attempts.
     /// </summary>
     private readonly TimeSpan _subscribeDelay = TimeSpan.FromMilliseconds(1000);
@@ -77,12 +72,30 @@ public class StreamingTaskManager : IDisposable
     /// <summary>
     /// Indicates whether there are no subscribed brokerage tickers.
     /// </summary>
-    public bool IsSubscriptionBrokerageTickerEmpty { get => _subscriptionBrokerageTickers.Count == 0; }
+    public bool IsSubscriptionBrokerageTickerEmpty
+    {
+        get
+        {
+            lock (_streamingTaskLock)
+            {
+                return _subscriptionBrokerageTickers.Count == 0; 
+            }
+        }
+    }
 
     /// <summary>
     /// Indicates whether the maximum number of subscribed brokerage tickers has been reached.
     /// </summary>
-    public bool IsSubscriptionFilled { get => _subscriptionBrokerageTickers.Count == MaxSymbolsPerQuoteStreamRequest; }
+    public bool IsSubscriptionFilled
+    {
+        get
+        {
+            lock(_streamingTaskLock)
+            {
+                return _subscriptionBrokerageTickers.Count == MaxSymbolsPerQuoteStreamRequest; 
+            }
+        }
+    }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="StreamingTaskManager"/> class.
@@ -102,7 +115,7 @@ public class StreamingTaskManager : IDisposable
     /// <returns><c>true</c> if the item was added successfully; otherwise, <c>false</c>.</returns>
     public bool AddSubscriptionItem(string item)
     {
-        lock (_brokerageTickerLock)
+        lock (_streamingTaskLock)
         {
             if (_subscriptionBrokerageTickers.Count >= MaxSymbolsPerQuoteStreamRequest)
             {
@@ -129,12 +142,15 @@ public class StreamingTaskManager : IDisposable
     /// <returns><c>true</c> if the item was removed successfully; otherwise, <c>false</c>.</returns>
     public bool RemoveSubscriptionItem(string item)
     {
-        lock (_brokerageTickerLock)
+        lock (_streamingTaskLock)
         {
             if (_subscriptionBrokerageTickers.Remove(item))
             {
-                // Restart streaming if the subscription collection is not empty
-                if (_subscriptionBrokerageTickers.Count != 0)
+                if (IsSubscriptionBrokerageTickerEmpty)
+                {
+                    StopStreaming();
+                }
+                else
                 {
                     RestartStreaming();
                 }
@@ -175,12 +191,10 @@ public class StreamingTaskManager : IDisposable
             // Wait for a specified delay to batch multiple symbol subscriptions into a single request
             await Task.Delay(_subscribeDelay).ConfigureAwait(false);
 
-            List<string> brokerageTickers;
             lock (_streamingTaskLock)
             {
                 _hasPendingSubscriptions = false;
-                brokerageTickers = _subscriptionBrokerageTickers.ToList();
-                if (brokerageTickers.Count == 0)
+                if (IsSubscriptionBrokerageTickerEmpty)
                 {
                     // If there are no symbols to subscribe to, exit the task
                     Log.Trace($"{nameof(StreamingTaskManager)}.{nameof(StartStreaming)}: No symbols to subscribe to at this time. Exiting subscription task.");
@@ -192,7 +206,7 @@ public class StreamingTaskManager : IDisposable
             {
                 try
                 {
-                    var result = await _streamAction(brokerageTickers, _cancellationTokenSource.Token);
+                    var result = await _streamAction(_subscriptionBrokerageTickers.ToList(), _cancellationTokenSource.Token);
                 }
                 catch (OperationCanceledException)
                 {
