@@ -224,7 +224,7 @@ public class StreamingTaskManager : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error($"{nameof(StreamingTaskManager)}.Exception warpper: {ex}");
+            Log.Error($"{nameof(StreamingTaskManager)}.Exception wrapper: {ex}");
         }
     }
 
