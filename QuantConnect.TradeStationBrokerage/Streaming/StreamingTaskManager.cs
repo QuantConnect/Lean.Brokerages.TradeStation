@@ -186,7 +186,10 @@ public class StreamingTaskManager : IDisposable
             _streamingTask = Task.Factory.StartNew(async () =>
             {
                 // Wait for a specified delay to batch multiple symbol subscriptions into a single request
-                await Task.Delay(_subscribeDelay).ConfigureAwait(false);
+                if (_cancellationTokenSource.Token.WaitHandle.WaitOne(_subscribeDelay))
+                {
+                    return;
+                }
 
                 var brokerageTickers = default(List<string>);
                 lock (_streamingTaskLock)
@@ -217,7 +220,7 @@ public class StreamingTaskManager : IDisposable
                         Log.Error($"{nameof(StreamingTaskManager)}.Exception stream action: {ex}");
                     }
                 } while (!_cancellationTokenSource.IsCancellationRequested && !_cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(10)));
-            });
+            }, _cancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
         catch (Exception ex)
         {
@@ -232,6 +235,9 @@ public class StreamingTaskManager : IDisposable
     {
         _cancellationTokenSource?.Cancel();
         _cancellationTokenSource?.DisposeSafely();
-        _streamingTask?.DisposeSafely();
+        if (_streamingTask != null && _streamingTask.Status == TaskStatus.RanToCompletion)
+        {
+            _streamingTask?.DisposeSafely();
+        }
     }
 }
