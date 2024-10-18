@@ -107,8 +107,9 @@ public partial class TradeStationBrokerageTests
         cancelationToken.Cancel();
     }
 
-    [TestCase(101)]
-    public void MultipleSubscription(int subscribeAmount)
+    [TestCase(105, 2)]
+    [TestCase(300, 100)]
+    public void MultipleSubscription(int initSubscribeAmount, int unSubscribeAmount)
     {
         var lockObject = new object();
         var resetEvent = new ManualResetEvent(false);
@@ -116,7 +117,13 @@ public partial class TradeStationBrokerageTests
         var amountDataBySymbol = new ConcurrentDictionary<Symbol, int>();
         var configBySymbol = new Dictionary<Symbol, (List<SubscriptionDataConfig> Configs, CancellationTokenSource CancellationTokenSource)>();
 
-        foreach (var symbol in _equitySymbols.Value.Take(subscribeAmount))
+        var equitySymbols = _equitySymbols.Value.Take(initSubscribeAmount);
+
+        Log.Trace("");
+        Log.Trace($"SUBSCRIBE 105 UNSUBSCRIBE 2 THEN 100 TEST");
+        Log.Trace("");
+
+        foreach (var symbol in equitySymbols)
         {
             foreach (var config in GetSubscriptionDataConfigsBySymbolResolution(symbol, Resolution.Tick))
             {
@@ -153,7 +160,7 @@ public partial class TradeStationBrokerageTests
 
         resetEvent.WaitOne(TimeSpan.FromSeconds(30), cancelationToken.Token);
 
-        foreach (var configs in configBySymbol.Values.Take(subscribeAmount / 2))
+        foreach (var configs in configBySymbol.Values.TakeLast(unSubscribeAmount))
         {
             foreach (var config in configs.Configs)
             {

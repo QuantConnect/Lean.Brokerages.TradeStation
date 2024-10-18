@@ -268,12 +268,6 @@ public partial class TradeStationBrokerage : Brokerage
 
         _messageHandler = new(HandleTradeStationMessage);
 
-        SubscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager()
-        {
-            SubscribeImpl = (symbols, _) => Subscribe(symbols),
-            UnsubscribeImpl = (symbols, _) => UnSubscribe(symbols)
-        };
-
         _aggregator = Composer.Instance.GetPart<IDataAggregator>();
         if (_aggregator == null)
         {
@@ -282,6 +276,8 @@ public partial class TradeStationBrokerage : Brokerage
             Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(Initialize)}: found no data aggregator instance, creating {aggregatorName}");
             _aggregator = Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(aggregatorName);
         }
+
+        SubscriptionManager = new TradeStationBrokerageMultiStreamSubscriptionManager(_tradeStationApiClient, _symbolMapper, _aggregator);
 
         _routes = new Lazy<Dictionary<SecurityType, ReadOnlyCollection<Route>>>(() =>
         {
@@ -686,7 +682,7 @@ public partial class TradeStationBrokerage : Brokerage
         {
             Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(Disconnect)}: TimeOut waiting for stream order task to end.");
         }
-        StopQuoteStreamingTask(updateCancellationToken: false);
+        SubscriptionManager.Dispose();
     }
 
     #endregion
