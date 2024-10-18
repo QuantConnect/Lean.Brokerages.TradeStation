@@ -104,41 +104,18 @@ namespace QuantConnect.Brokerages.TradeStation
 
             foreach (var quoteStream in _quoteStreamManagers)
             {
-                if (quoteStream.IsSubscriptionFilled)
+                // Skip this quote stream as its subscription is full
+                if (!quoteStream.IsSubscriptionFilled)
                 {
-                    // Skip this quote stream as its subscription is full
-                    continue;
+                    ProcessSubscriptions(quoteStream, subscribedBrokerageSymbolsQueue);
                 }
-
-                do
-                {
-                    var brokerageSymbol = subscribedBrokerageSymbolsQueue.Dequeue();
-
-                    if (!quoteStream.AddSubscriptionItem(brokerageSymbol))
-                    {
-                        // Re-enqueue the symbol since adding it to the subscription failed
-                        subscribedBrokerageSymbolsQueue.Enqueue(brokerageSymbol);
-                        // Exit the loop if the subscription limit is reached and no more items can be added.
-                        break;
-                    }
-                } while (subscribedBrokerageSymbolsQueue.Count > 0);
             }
 
             while (subscribedBrokerageSymbolsQueue.Count > 0)
             {
                 var streamQuoteTask = new StreamingTaskManager(StreamHandleQuoteEvents);
                 _quoteStreamManagers.Add(streamQuoteTask);
-
-                do
-                {
-                    var brokerageSymbol = subscribedBrokerageSymbolsQueue.Dequeue();
-
-                    if (!streamQuoteTask.AddSubscriptionItem(brokerageSymbol))
-                    {
-                        // The subscription limit is reached and no more items can be added.
-                        break;
-                    }
-                } while (subscribedBrokerageSymbolsQueue.Count > 0);
+                ProcessSubscriptions(streamQuoteTask, subscribedBrokerageSymbolsQueue);
             }
 
             return true;
@@ -344,6 +321,31 @@ namespace QuantConnect.Brokerages.TradeStation
             }
 
             return brokerageSymbol;
+        }
+
+
+        /// <summary>
+        /// Processes subscription items from the queue and adds them to the quote stream manager.
+        /// </summary>
+        /// <param name="quoteStream">The quote stream manager responsible for handling the subscription items.</param>
+        /// <param name="symbolsQueue">
+        /// A queue of symbols representing the brokerage symbols to be subscribed. 
+        /// Items that cannot be added to the subscription are re-enqueued, and the process stops when the subscription limit is reached.
+        /// </param>
+        private void ProcessSubscriptions(StreamingTaskManager quoteStream, Queue<string> symbolsQueue)
+        {
+            while (symbolsQueue.Count > 0)
+            {
+                var brokerageSymbol = symbolsQueue.Dequeue();
+
+                if (!quoteStream.AddSubscriptionItem(brokerageSymbol))
+                {
+                    // Re-enqueue the symbol since adding it to the subscription failed
+                    symbolsQueue.Enqueue(brokerageSymbol);
+                    // The subscription limit is reached and no more items can be added.
+                    break;
+                }
+            }
         }
 
         /// <summary>
