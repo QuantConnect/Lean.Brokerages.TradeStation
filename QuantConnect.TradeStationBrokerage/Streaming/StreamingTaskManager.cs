@@ -179,14 +179,13 @@ public class StreamingTaskManager : IDisposable
                     Log.Error($"{nameof(StreamingTaskManager)}.{nameof(RestartStreaming)}: Timeout while waiting for the streaming task to complete.");
                 }
                 _streamingTask = null;
-                _cancellationTokenSource.Dispose();
-                _cancellationTokenSource = new CancellationTokenSource();
             }
 
+            var newCancellationTokenSource = _cancellationTokenSource = new CancellationTokenSource();
             _streamingTask = Task.Factory.StartNew(async () =>
             {
                 // Wait for a specified delay to batch multiple symbol subscriptions into a single request
-                if (_cancellationTokenSource.Token.WaitHandle.WaitOne(_subscribeDelay))
+                if (newCancellationTokenSource.Token.WaitHandle.WaitOne(_subscribeDelay))
                 {
                     return;
                 }
@@ -208,7 +207,7 @@ public class StreamingTaskManager : IDisposable
                 {
                     try
                     {
-                        var result = await _streamAction(brokerageTickers, _cancellationTokenSource.Token);
+                        var result = await _streamAction(brokerageTickers, newCancellationTokenSource.Token);
                     }
                     catch (OperationCanceledException)
                     {
@@ -219,8 +218,11 @@ public class StreamingTaskManager : IDisposable
                     {
                         Log.Error($"{nameof(StreamingTaskManager)}.Exception stream action: {ex}");
                     }
-                } while (!_cancellationTokenSource.IsCancellationRequested && !_cancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(10)));
-            }, _cancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+                } while (!newCancellationTokenSource.IsCancellationRequested && !newCancellationTokenSource.Token.WaitHandle.WaitOne(TimeSpan.FromSeconds(10)));
+
+
+                newCancellationTokenSource.DisposeSafely();
+            }, newCancellationTokenSource.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
         catch (Exception ex)
         {
@@ -233,8 +235,11 @@ public class StreamingTaskManager : IDisposable
     /// </summary>
     public void Dispose()
     {
-        _cancellationTokenSource?.Cancel();
-        _cancellationTokenSource?.DisposeSafely();
+        if (_cancellationTokenSource != null && !_cancellationTokenSource.IsCancellationRequested)
+        {
+            _cancellationTokenSource.Cancel();
+        }
+
         if (_streamingTask != null && _streamingTask.Status == TaskStatus.RanToCompletion)
         {
             _streamingTask?.DisposeSafely();
