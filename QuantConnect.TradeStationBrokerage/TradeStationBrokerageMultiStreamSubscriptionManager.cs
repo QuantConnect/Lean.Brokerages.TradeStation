@@ -353,13 +353,6 @@ namespace QuantConnect.Brokerages.TradeStation
         /// </summary>
         public override void Dispose()
         {
-            if (_quoteStreamManagers != null)
-            {
-                // Clear the list to release resources
-                _quoteStreamManagers.Clear();
-                _quoteStreamManagers = null;
-            }
-
             _aggregator.DisposeSafely();
             _tradeStationApiClient.DisposeSafely();
         }
