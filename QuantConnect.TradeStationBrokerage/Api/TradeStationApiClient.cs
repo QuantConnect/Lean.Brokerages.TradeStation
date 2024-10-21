@@ -26,7 +26,6 @@ using QuantConnect.Logging;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using Lean = QuantConnect.Orders;
-using System.Collections.ObjectModel;
 using System.Runtime.CompilerServices;
 using QuantConnect.Brokerages.TradeStation.Models;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
@@ -37,7 +36,7 @@ namespace QuantConnect.Brokerages.TradeStation.Api;
 /// <summary>
 /// TradeStation api client implementation
 /// </summary>
-public class TradeStationApiClient
+public class TradeStationApiClient : IDisposable
 {
     /// <summary>
     /// Maximum number of bars that can be requested in a single call to <see cref="GetBars(string, TradeStationUnitTimeIntervalType, DateTime, DateTime)"/>.
@@ -716,5 +715,13 @@ public class TradeStationApiClient
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Releases the resources used by the current instance.
+    /// </summary>
+    public void Dispose()
+    {
+        _httpClient.DisposeSafely();
     }
 }
