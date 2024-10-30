@@ -343,13 +343,23 @@ public partial class TradeStationBrokerage : Brokerage
                 case TradeStationAssetType.Stock:
                     leanSymbol = _symbolMapper.GetLeanSymbol(position.Symbol, SecurityType.Equity, Market.USA);
                     break;
+                case TradeStationAssetType.Index:
+                    leanSymbol = _symbolMapper.GetLeanSymbol(position.Symbol, SecurityType.Index, Market.USA);
+                    break;
+                case TradeStationAssetType.IndexOption:
+                    var indexOptionParam = _symbolMapper.ParsePositionOptionSymbol(position.Symbol);
+                    leanSymbol = _symbolMapper.GetLeanSymbol(indexOptionParam.symbol, SecurityType.IndexOption, Market.USA, indexOptionParam.expiryDate, indexOptionParam.strikePrice, indexOptionParam.optionRight == 'C' ? OptionRight.Call : OptionRight.Put);
+                    break;
                 case TradeStationAssetType.StockOption:
                     var optionParam = _symbolMapper.ParsePositionOptionSymbol(position.Symbol);
                     leanSymbol = _symbolMapper.GetLeanSymbol(optionParam.symbol, SecurityType.Option, Market.USA, optionParam.expiryDate, optionParam.strikePrice, optionParam.optionRight == 'C' ? OptionRight.Call : OptionRight.Put);
                     break;
+                default:
+                    OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, 1, $"The asset type '{position.AssetType}' for symbol '{position.Symbol}' is not supported. This position has been skipped."));
+                    continue;
             }
 
-            if (leanSymbol.SecurityType is SecurityType.Future or SecurityType.Option && leanSymbol.ID.Date.Date < DateTime.UtcNow.ConvertFromUtc(leanSymbol.GetSymbolExchangeTimeZone()).Date)
+            if (leanSymbol.SecurityType is SecurityType.Future or SecurityType.Option or SecurityType.IndexOption && leanSymbol.ID.Date.Date < DateTime.UtcNow.ConvertFromUtc(leanSymbol.GetSymbolExchangeTimeZone()).Date)
             {
                 Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(GetAccountHoldings)}: The {leanSymbol} was expired and skipped.");
                 continue;
