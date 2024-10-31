@@ -102,9 +102,6 @@ public class TradeStationSymbolMapper : ISymbolMapper
             case SecurityType.Option:
                 var underlying = Symbol.Create(brokerageSymbol, SecurityType.Equity, market);
                 return Symbol.CreateOption(underlying, underlying.ID.Market, SecurityType.Option.DefaultOptionStyle(), optionRight, strike, expirationDate);
-            case SecurityType.IndexOption:
-                var underlyingIndex = Symbol.Create(brokerageSymbol, SecurityType.Index, market);
-                return Symbol.CreateOption(underlyingIndex, underlyingIndex.ID.Market, SecurityType.IndexOption.DefaultOptionStyle(), optionRight, strike, expirationDate);
             case SecurityType.Future:
                 if (!SymbolPropertiesDatabase.FromDataFolder().TryGetMarket(brokerageSymbol, SecurityType.Future, out market))
                 {
