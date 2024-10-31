@@ -311,7 +311,7 @@ public partial class TradeStationBrokerage : Brokerage
                 if (TryCreateLeanOrder(order, leg, out var leanOrder))
                 {
                     leanOrders.Add(leanOrder);
-            }
+                }
             }
             else
             {
@@ -324,14 +324,14 @@ public partial class TradeStationBrokerage : Brokerage
                     if (TryCreateLeanOrder(order, leg, out var leanOrder, groupOrderManager))
                     {
                         tempLegOrders.Add(leanOrder);
-                }
+                    }
                     else
                     {
                         // If any leg fails to create a Lean order, clear tempLegOrders to prevent partial group orders.
                         tempLegOrders.Clear();
                         break;
-            }
-        }
+                    }
+                }
 
                 if (tempLegOrders.Count > 0)
                 {
