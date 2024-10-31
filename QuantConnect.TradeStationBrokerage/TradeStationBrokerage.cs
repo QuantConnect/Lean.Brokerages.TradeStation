@@ -307,16 +307,35 @@ public partial class TradeStationBrokerage : Brokerage
             if (order.Legs.Count == 1)
             {
                 var leg = order.Legs.First();
-                leanOrders.Add(CreateLeanOrder(order, leg));
+
+                if (TryCreateLeanOrder(order, leg, out var leanOrder))
+                {
+                    leanOrders.Add(leanOrder);
+            }
             }
             else
             {
                 var groupQuantity = order.Legs.Select(leg => leg.QuantityOrdered).Aggregate(TradeStationExtensions.GreatestCommonDivisor);
                 var groupOrderManager = new GroupOrderManager(order.Legs.Count, groupQuantity);
 
+                var tempLegOrders = new List<Order>();
                 foreach (var leg in order.Legs)
                 {
-                    leanOrders.Add(CreateLeanOrder(order, leg, groupOrderManager));
+                    if (TryCreateLeanOrder(order, leg, out var leanOrder, groupOrderManager))
+                    {
+                        tempLegOrders.Add(leanOrder);
+                }
+                    else
+                    {
+                        // If any leg fails to create a Lean order, clear tempLegOrders to prevent partial group orders.
+                        tempLegOrders.Clear();
+                        break;
+            }
+        }
+
+                if (tempLegOrders.Count > 0)
+                {
+                    leanOrders.AddRange(tempLegOrders);
                 }
             }
         }
@@ -1071,11 +1090,22 @@ public partial class TradeStationBrokerage : Brokerage
     /// <param name="groupOrderManager">The manager responsible for coordinating multi-leg group orders.</param>
     /// <returns>A Lean <see cref="Order"/> object that corresponds to the provided TradeStation order and leg.</returns>
     /// <exception cref="NotSupportedException">Thrown when the TradeStation order type is not supported by this method.</exception>
-    private Order CreateLeanOrder(TradeStationOrder order, Models.Leg leg, GroupOrderManager groupOrderManager = null)
+    private bool TryCreateLeanOrder(TradeStationOrder order, Models.Leg leg, out Order leanOrder, GroupOrderManager groupOrderManager = null)
     {
         var orderQuantity = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.QuantityOrdered) : leg.QuantityOrdered;
-        var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
+
+        leanOrder = default;
+        var leanSymbol = default(Symbol);
+        try
+        {
+            leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
                                                       leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
+        }
+        catch (Exception ex)
+        {
+            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, 1, $"{ex.Message}"));
+            return false;
+        }
 
         var orderProperties = new TradeStationOrderProperties();
         if (!orderProperties.GetLeanTimeInForce(order.Duration, order.GoodTillDate))
@@ -1109,8 +1139,6 @@ public partial class TradeStationBrokerage : Brokerage
             }
             orderProperties.Exchange = mappedExchangeName;
         }
-
-        var leanOrder = default(Order);
 
         switch (order.OrderType)
         {
@@ -1155,7 +1183,9 @@ public partial class TradeStationBrokerage : Brokerage
                 throw new NotSupportedException($"Unsupported order type: {order.OrderType}");
         }
 
-        return leanOrder.SetOrderStatusAndBrokerId(order, leg);
+        leanOrder = leanOrder.SetOrderStatusAndBrokerId(order, leg);
+
+        return true;
     }
 
     /// <summary>
