@@ -42,27 +42,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
         protected override IBrokerage CreateBrokerage(IOrderProvider orderProvider, ISecurityProvider securityProvider)
         {
-            var clientId = Config.Get("trade-station-client-id");
-            var clientSecret = Config.Get("trade-station-client-secret");
-            var restApiUrl = Config.Get("trade-station-api-url");
-            var accountType = Config.Get("trade-station-account-type");
-            var refreshToken = Config.Get("trade-station-refresh-token");
-
-            if (string.IsNullOrEmpty(refreshToken))
-            {
-                var redirectUrl = Config.Get("trade-station-redirect-url");
-                var authorizationCode = Config.Get("trade-station-authorization-code");
-
-                if (new string[] { redirectUrl, authorizationCode }.Any(string.IsNullOrEmpty))
-                {
-                    throw new ArgumentException("RedirectUrl or AuthorizationCode cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
-                }
-
-                return new TradeStationBrokerageTest(clientId, clientSecret, restApiUrl, redirectUrl, authorizationCode, string.Empty,
-                    accountType, orderProvider, securityProvider);
-            }
-
-            return new TradeStationBrokerageTest(clientId, clientSecret, restApiUrl, string.Empty, string.Empty, refreshToken, accountType, orderProvider, securityProvider);
+            return TestSetup.CreateBrokerage(orderProvider, securityProvider, forceCreateBrokerageInstance: true);
         }
         protected override bool IsAsync()
         {
@@ -271,7 +251,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         public void MarketCrossZeroLongFromShort(string ticker, SecurityType securityType, string market, DateTime expireDate, decimal longQuantityMultiplayer)
         {
             Log.Trace($"TEST MARKET CROSS ZERO LONG FROM SHORT OF {securityType.ToString().ToUpperInvariant()}");
-            var symbol = CreateSymbol(ticker, securityType, expirationDate: expireDate, market: market);
+            var symbol = TradeStationBrokerageHistoryProviderTests.CreateSymbol(ticker, securityType, expirationDate: expireDate, market: market);
             var expectedOrderStatusChangedOrdering = new[] { OrderStatus.Submitted, OrderStatus.PartiallyFilled, OrderStatus.Filled };
             var actualCrossZeroOrderStatusOrdering = new Queue<OrderStatus>();
 
