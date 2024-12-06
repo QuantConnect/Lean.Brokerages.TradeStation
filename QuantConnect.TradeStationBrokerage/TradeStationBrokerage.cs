@@ -800,6 +800,11 @@ public partial class TradeStationBrokerage : Brokerage
             var jObj = JObject.Parse(json);
             if (_isSubscribeOnStreamOrderUpdate && jObj["AccountID"] != null)
             {
+                if (Log.DebuggingEnabled)
+                {
+                    Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}.WebSocket.JSON: {json}");
+                }
+
                 var brokerageOrder = jObj.ToObject<TradeStationOrder>();
 
                 var globalLeanOrderStatus = default(OrderStatus);
