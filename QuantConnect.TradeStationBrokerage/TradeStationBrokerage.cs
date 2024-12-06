@@ -353,22 +353,10 @@ public partial class TradeStationBrokerage : Brokerage
         var holdings = new List<Holding>();
         foreach (var position in positions.Positions)
         {
-            var leanSymbol = default(Symbol);
-            switch (position.AssetType)
+            if (!_symbolMapper.TryGetLeanSymbolByBrokerageAssetType(position.AssetType, position.Symbol, position.ExpirationDate, out var leanSymbol))
             {
-                case TradeStationAssetType.Future:
-                    leanSymbol = _symbolMapper.GetLeanSymbol(SymbolRepresentation.ParseFutureTicker(position.Symbol).Underlying, SecurityType.Future, Market.USA, position.ExpirationDate);
-                    break;
-                case TradeStationAssetType.Stock:
-                    leanSymbol = _symbolMapper.GetLeanSymbol(position.Symbol, SecurityType.Equity, Market.USA);
-                    break;
-                case TradeStationAssetType.StockOption:
-                    var optionParam = _symbolMapper.ParsePositionOptionSymbol(position.Symbol);
-                    leanSymbol = _symbolMapper.GetLeanSymbol(optionParam.symbol, SecurityType.Option, Market.USA, optionParam.expiryDate, optionParam.strikePrice, optionParam.optionRight == 'C' ? OptionRight.Call : OptionRight.Put);
-                    break;
-                default:
-                    OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, 1, $"The asset type '{position.AssetType}' for symbol '{position.Symbol}' is not supported. This position has been skipped."));
-                    continue;
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, 1, $"The asset type '{position.AssetType}' for symbol '{position.Symbol}' is not supported. This position has been skipped."));
+                continue;
             }
 
             if (leanSymbol.SecurityType is SecurityType.Future or SecurityType.Option && leanSymbol.ID.Date.Date < DateTime.UtcNow.ConvertFromUtc(leanSymbol.GetSymbolExchangeTimeZone()).Date)
@@ -1095,15 +1083,9 @@ public partial class TradeStationBrokerage : Brokerage
         var orderQuantity = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.QuantityOrdered) : leg.QuantityOrdered;
 
         leanOrder = default;
-        var leanSymbol = default(Symbol);
-        try
+        if (!_symbolMapper.TryGetLeanSymbolByBrokerageAssetType(leg.AssetType, leg.Symbol, leg.ExpirationDate, out var leanSymbol))
         {
-            leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
-                                                      leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
-        }
-        catch (Exception ex)
-        {
-            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, 1, $"{ex.Message}"));
+            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, 1, $"The asset type '{leg.AssetType}' for symbol '{leg.Symbol}' is not supported. This position has been skipped."));
             return false;
         }
 
