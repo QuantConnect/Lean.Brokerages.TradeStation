@@ -1006,23 +1006,24 @@ public partial class TradeStationBrokerage : Brokerage
         {
             case SecurityType.Equity:
             case SecurityType.Option:
+            case SecurityType.IndexOption:
                 switch (orderPosition)
                 {
                     // Increasing existing long position or opening new long position from zero
                     case OrderPosition.BuyToOpen:
-                        tradeAction = securityType == SecurityType.Option ? TradeStationTradeActionType.BuyToOpen : TradeStationTradeActionType.Buy;
+                        tradeAction = securityType.IsOption() ? TradeStationTradeActionType.BuyToOpen : TradeStationTradeActionType.Buy;
                         break;
                     // Decreasing existing short position or opening new short position from zero
                     case OrderPosition.SellToOpen:
-                        tradeAction = securityType == SecurityType.Option ? TradeStationTradeActionType.SellToOpen : TradeStationTradeActionType.SellShort;
+                        tradeAction = securityType.IsOption() ? TradeStationTradeActionType.SellToOpen : TradeStationTradeActionType.SellShort;
                         break;
                     // Buying from an existing short position (reducing, closing or flipping)
                     case OrderPosition.BuyToClose:
-                        tradeAction = securityType == SecurityType.Option ? TradeStationTradeActionType.BuyToClose : TradeStationTradeActionType.BuyToCover;
+                        tradeAction = securityType.IsOption() ? TradeStationTradeActionType.BuyToClose : TradeStationTradeActionType.BuyToCover;
                         break;
                     // Selling from an existing long position (reducing, closing or flipping)
                     case OrderPosition.SellToClose:
-                        tradeAction = securityType == SecurityType.Option ? TradeStationTradeActionType.SellToClose : TradeStationTradeActionType.Sell;
+                        tradeAction = securityType.IsOption() ? TradeStationTradeActionType.SellToClose : TradeStationTradeActionType.Sell;
                         break;
                     // This should never happen
                     default:
