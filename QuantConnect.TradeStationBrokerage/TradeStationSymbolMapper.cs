@@ -110,7 +110,7 @@ public class TradeStationSymbolMapper : ISymbolMapper
             case TradeStationAssetType.StockOption:
             case TradeStationAssetType.IndexOption:
                 var optionParam = ParsePositionOptionSymbol(brokerageSymbol);
-                leanSymbol = GetLeanSymbol(optionParam.symbol, assetType.ConvertAssetTypeToSecurityType(), Market.USA, optionParam.expiryDate, optionParam.strikePrice, optionParam.optionRight);
+                leanSymbol = GetLeanSymbol(optionParam.symbol, assetType.ConvertAssetTypeToSecurityType(), Market.USA, expirationDate, optionParam.strikePrice, optionParam.optionRight);
                 return true;
             default:
                 leanSymbol = default;

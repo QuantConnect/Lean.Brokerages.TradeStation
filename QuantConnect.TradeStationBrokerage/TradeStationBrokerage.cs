@@ -872,8 +872,12 @@ public partial class TradeStationBrokerage : Brokerage
                         legOrderStatus = OrderStatus.Filled;
                     }
 
-                    var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
-                        leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
+                    if (!_symbolMapper.TryGetLeanSymbolByBrokerageAssetType(leg.AssetType, leg.Symbol, leg.ExpirationDate, out var leanSymbol))
+                    {
+                        OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}: " +
+                            $"Failed to map a Lean Symbol using the following details:: {leg} "));
+                        return;
+                    }
 
                     // Ensure there is an order with the specific symbol in leanOrders.
                     var leanOrder = leanOrders.FirstOrDefault(order => order.Symbol == leanSymbol);
@@ -882,10 +886,7 @@ public partial class TradeStationBrokerage : Brokerage
                     {
                         OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"Error in {nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}: " +
                             $"Could not find order with symbol '{leanSymbol}' in leanOrders. " +
-                            $"Brokerage Order ID: {brokerageOrder.OrderID}. " +
-                            $"Leg details - Symbol: {leg.Symbol}, Underlying: {leg.Underlying}, " +
-                            $"Asset Type: {leg.AssetType}, Expiration Date: {leg.ExpirationDate}, " +
-                            $"Strike Price: {leg.StrikePrice}, Option Type: {leg.OptionType}. " +
+                            $"Brokerage Order ID: {brokerageOrder.OrderID}. Leg details - {leg}" +
                             $"Please verify that the order was correctly added to leanOrders."));
                         return;
                     }
