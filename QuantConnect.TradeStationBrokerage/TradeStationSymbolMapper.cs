@@ -83,7 +83,7 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// <example>{AAPL 240510C167.5}</example>
     private string GenerateBrokerageOption(Symbol symbol)
     {
-        return $"{symbol.Underlying.Value} {symbol.ID.Date:yyMMdd}{symbol.ID.OptionRight.ToString()[0]}{symbol.ID.StrikePrice}";
+        return $"{symbol.ID.Symbol} {symbol.ID.Date:yyMMdd}{symbol.ID.OptionRight.ToString()[0]}{symbol.ID.StrikePrice}";
     }
 
     /// <summary>
@@ -111,6 +111,9 @@ public class TradeStationSymbolMapper : ISymbolMapper
             case TradeStationAssetType.IndexOption:
                 var optionParam = ParsePositionOptionSymbol(brokerageSymbol);
                 leanSymbol = GetLeanSymbol(optionParam.symbol, assetType.ConvertAssetTypeToSecurityType(), Market.USA, expirationDate, optionParam.strikePrice, optionParam.optionRight);
+                return true;
+            case TradeStationAssetType.Index:
+                leanSymbol = GetLeanSymbol(brokerageSymbol, SecurityType.Index, Market.USA);
                 return true;
             default:
                 leanSymbol = default;

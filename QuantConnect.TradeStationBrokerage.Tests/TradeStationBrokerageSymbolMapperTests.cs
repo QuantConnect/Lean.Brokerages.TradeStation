@@ -16,6 +16,7 @@
 using System;
 using NUnit.Framework;
 using QuantConnect.Tests;
+using QuantConnect.Securities;
 using System.Collections.Generic;
 using QuantConnect.Brokerages.TradeStation.Models;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
@@ -36,23 +37,72 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             _symbolMapper = new TradeStationSymbolMapper();
         }
 
-        [TestCase("AAPL", "AAPL", TradeStationAssetType.Stock, null, TradeStationOptionType.Call, 0, Market.USA)]
-        [TestCase("ESZ24", "ES", TradeStationAssetType.Future, "2024/12/20", TradeStationOptionType.Call, 0, Market.CME)]
-        [TestCase("CTV24", "CT", TradeStationAssetType.Future, "2024/10/1", TradeStationOptionType.Call, 0, Market.ICE)]
-        [TestCase("TSLA 240510C167.5", "TSLA", TradeStationAssetType.StockOption, "2024/5/10", TradeStationOptionType.Call, 167.5, Market.USA)]
-        [TestCase("RUTW 241206C2415", "$RUTW.X", TradeStationAssetType.IndexOption, "2024/12/06", TradeStationOptionType.Call, 2415, Market.USA)]
-        [TestCase("$RUTW.X", "$RUTW.X", TradeStationAssetType.Index, null, TradeStationOptionType.Call, 0, Market.USA)]
-        [TestCase("$VIX.X", "$VIX.X", TradeStationAssetType.Index, null, TradeStationOptionType.Call, 0, Market.USA)]
-        public void ReturnsCorrectLeanSymbol(string symbol, string underlying, TradeStationAssetType assetType,
-            DateTime expirationDate, TradeStationOptionType optionType, decimal strikePrice, string expectedMarket)
+
+
+        private static IEnumerable<LegSymbol> BrokerageSymbolTestCases
         {
-            var leg = new Leg("", 0m, 0m, 0m, TradeStationTradeActionType.Buy, symbol, underlying, assetType, 0m, expirationDate, optionType, strikePrice);
+            get
+            {
+                var APPLLeg = new Leg("", 0m, 0m, 0m, TradeStationTradeActionType.Buy, "AAPL", "AAPL", TradeStationAssetType.Stock, 0m, default, default, default);
+                yield return new(APPLLeg, Symbols.AAPL);
 
-            var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
-               leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
+                var ESLeg = new Leg("", 0m, 0m, 0m, TradeStationTradeActionType.Buy, "ESZ24", "ES", TradeStationAssetType.Future, 0m, new DateTime(2024, 12, 10), default, default);
+                var SP500EMini = Symbol.CreateFuture(Futures.Indices.SP500EMini, Market.CME, new DateTime(2024, 12, 10));
+                yield return new(ESLeg, SP500EMini);
 
-            Assert.IsNotNull(leanSymbol);
-            Assert.That(leanSymbol.ID.Market, Is.EqualTo(expectedMarket));
+                var CTLeg = new Leg("", 0m, 0m, 0m, TradeStationTradeActionType.Buy, "CTV24", "CT", TradeStationAssetType.Future, 0m, new DateTime(2024, 10, 1), default, default);
+                var COTTON = Symbol.CreateFuture(Futures.Softs.Cotton2, Market.ICE, new DateTime(2024, 10, 1));
+                yield return new(CTLeg, COTTON);
+
+                var TSLAExpiryDate = new DateTime(2024, 5, 10);
+                var TSLALeg = new Leg("", 0m, 0m, 0m, TradeStationTradeActionType.Buy, "TSLA 240510C167.5", "TSLA", TradeStationAssetType.StockOption, 0m, TSLAExpiryDate, TradeStationOptionType.Call, 167.5m);
+                var TSLA = Symbol.Create("TSLA", SecurityType.Equity, Market.USA);
+                var TSLAOption = Symbol.CreateOption(TSLA, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 167.5m, TSLAExpiryDate);
+                yield return new(TSLALeg, TSLAOption);
+
+                var RUTWIndexLeg = new Leg("", 0m, 0m, 0m, TradeStationTradeActionType.Buy, "$RUTW.X", "$RUTW.X", TradeStationAssetType.Index, 0m, default, default, default);
+                var RUTW = Symbol.Create("RUTW", SecurityType.Index, Market.USA);
+                yield return new(RUTWIndexLeg, RUTW);
+
+                var RUTWIndexOptionLeg = new Leg("", 0m, 0m, 0m, TradeStationTradeActionType.Buy, "RUTW 241206C2415", "$RUTW.X", TradeStationAssetType.IndexOption, 0m, new DateTime(2024, 12, 6), TradeStationOptionType.Call, 2415m);
+                var RUTWOption = Symbol.CreateOption(RUTW, Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 2415m, new DateTime(2024, 12, 6));
+                yield return new(RUTWIndexOptionLeg, RUTWOption);
+
+                var VIXIndexLeg = new Leg("", 0m, 0m, 0m, TradeStationTradeActionType.Buy, "$VIX.X", "$VIX.X", TradeStationAssetType.Index, 0m, default, default, default);
+                var VIX = Symbol.Create("VIX", SecurityType.Index, Market.USA);
+                yield return new(VIXIndexLeg, VIX);
+
+                var VIXWeeklyLeg = new Leg("", 0m, 0m, 0m, TradeStationTradeActionType.Buy, "VIXW 241211C14.5", "$VIX.X", TradeStationAssetType.IndexOption, 0m, new DateTime(2024, 12, 11), TradeStationOptionType.Call, 14.5m);
+                var VIXWeeklyOption = Symbol.CreateOption(VIX, "VIXW", Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 14.5m, new DateTime(2024, 12, 11));
+                yield return new(VIXWeeklyLeg, VIXWeeklyOption);
+            }
+        }
+
+        [Test, TestCaseSource(nameof(BrokerageSymbolTestCases))]
+        public void ReturnsCorrectLeanSymbol(LegSymbol metaData)
+        {
+            var (brokerageLeg, expectedLeanSymbol) = metaData;
+
+            var actualLeanSymbol = _symbolMapper.GetLeanSymbol(brokerageLeg.Underlying, brokerageLeg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
+               brokerageLeg.ExpirationDate, brokerageLeg.StrikePrice, brokerageLeg.OptionType.ConvertOptionTypeToOptionRight());
+
+            Assert.IsNotNull(actualLeanSymbol);
+            Assert.That(actualLeanSymbol, Is.EqualTo(expectedLeanSymbol));
+        }
+
+        [Test, TestCaseSource(nameof(BrokerageSymbolTestCases))]
+        public void TryReturnsCorrectLeanSymbol(LegSymbol metaData)
+        {
+            var (brokerageLeg, expectedLeanSymbol) = metaData;
+
+            if (_symbolMapper.TryGetLeanSymbolByBrokerageAssetType(brokerageLeg.AssetType, brokerageLeg.Symbol, brokerageLeg.ExpirationDate, out var actualLeanSymbol))
+            {
+                Assert.That(actualLeanSymbol, Is.EqualTo(expectedLeanSymbol));
+            }
+            else
+            {
+                Assert.Fail("We can not Get Lean Symbol by " + metaData);
+            }
         }
 
         private static IEnumerable<TestCaseData> LeanSymbolTestCases
@@ -73,6 +123,9 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 var indexUnderlying2 = Symbol.Create("VIX", SecurityType.Index, Market.USA);
                 yield return new TestCaseData(indexUnderlying2, "$VIX.X");
                 yield return new TestCaseData(Symbol.CreateOption(indexUnderlying2, Market.USA, OptionStyle.American, OptionRight.Call, 14.5m, new DateTime(2024, 12, 18)), "VIX 241218C14.5");
+
+                var VIXWeeklyOption = Symbol.CreateOption(indexUnderlying2, "VIXW", Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 14.5m, new DateTime(2024, 12, 11));
+                yield return new TestCaseData(VIXWeeklyOption, "VIXW 241211C14.5");
             }
 
         }
