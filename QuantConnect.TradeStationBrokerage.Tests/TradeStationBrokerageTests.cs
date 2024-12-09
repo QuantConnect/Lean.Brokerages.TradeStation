@@ -123,7 +123,8 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             {
                 OrderType.Market => (0m, 0m),
                 OrderType.Limit or OrderType.StopMarket => (AddAndRound(symbolPrice.Ask, 0.1m), SubtractAndRound(symbolPrice.Bid, 0.1m)),
-                OrderType.StopLimit => (AddAndRound(symbolPrice.Bid, 0.1m), AddAndRound(symbolPrice.Ask, 0.2m)), // Limit price must be at or above StopMarketPrice
+                // StopLimit : Limit price must be at or above StopMarketPrice
+                OrderType.StopLimit => (AddAndRound(symbolPrice.Bid, 0.1m), AddAndRound(symbolPrice.Ask, 0.2m)),
                 _ => throw new NotImplementedException("Not supported type of order")
             };
 
@@ -155,7 +156,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             base.LongFromZero(parameters);
         }
 
-        [Test, TestCaseSource(nameof(OrderTestParameters))] 
+        [Test, TestCaseSource(nameof(OrderTestParameters))]
         public void CloseFromLong(OrderTestMetaData orderTestMetaData)
         {
             IsLongOrder = false;
@@ -289,48 +290,6 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             base.LongFromShort(parameters);
         }
 
-        [Test, TestCaseSource(nameof(OrderTestParameters))]
-        public void ShortFromShort(OrderTestParameters parameters)
-        {
-            IsLongOrder = false;
-            parameters = GetLastPriceForShortOrder(parameters);
-
-            Log.Trace("");
-            Log.Trace("SHORT FROM SHORT");
-            Log.Trace("");
-            // first go short
-            PlaceOrderWaitForStatus(parameters.CreateShortMarketOrder(-GetDefaultQuantity()), OrderStatus.Filled);
-
-            // now go short again
-            var order = PlaceOrderWaitForStatus(parameters.CreateShortOrder(-2 * GetDefaultQuantity()), parameters.ExpectedStatus);
-
-            if (parameters.ModifyUntilFilled)
-            {
-                ModifyOrderUntilFilled(order, parameters);
-            }
-        }
-
-        [Test, TestCaseSource(nameof(OrderTestParameters))]
-        public virtual void LongFromLong(OrderTestParameters parameters)
-        {
-            IsLongOrder = true;
-            parameters = GetLastPriceForLongOrder(parameters);
-
-            Log.Trace("");
-            Log.Trace("LONG FROM LONG");
-            Log.Trace("");
-            // first go long
-            PlaceOrderWaitForStatus(parameters.CreateLongMarketOrder(GetDefaultQuantity()));
-
-            // now go long again
-            var order = PlaceOrderWaitForStatus(parameters.CreateLongOrder(2 * GetDefaultQuantity()), parameters.ExpectedStatus);
-
-            if (parameters.ModifyUntilFilled)
-            {
-                ModifyOrderUntilFilled(order, parameters);
-            }
-        }
-
         [Test]
         public void LookupSymbols()
         {
@@ -358,7 +317,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// </summary>
         /// <param name="longQuantityMultiplayer">The multiplier for the long order quantity, relative to the default quantity.</param>
         [TestCase("AAPL", SecurityType.Equity, Market.USA, null, 4)]
-        [TestCase(Futures.Softs.Cotton2, SecurityType.Future, Market.ICE, "2024/10/1", 4, Description = "Pay attention on Config:trade-station-account-type")]
+        [TestCase(Futures.Softs.Cotton2, SecurityType.Future, Market.ICE, "2024/10/1", 4), Explicit("Pay attention on Config:trade-station-account-type")]
         public void MarketCrossZeroLongFromShort(string ticker, SecurityType securityType, string market, DateTime expireDate, decimal longQuantityMultiplayer)
         {
             Log.Trace($"TEST MARKET CROSS ZERO LONG FROM SHORT OF {securityType.ToString().ToUpperInvariant()}");
@@ -776,102 +735,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             };
         }
 
-        /// <summary>
-        /// Retrieves the last price for a short order based on the provided order test parameters.
-        /// </summary>
-        /// <param name="orderTestParameters">The order test parameters.</param>
-        /// <returns>An instance of <see cref="QuantConnect.Tests.Brokerages.OrderTestParameters"/> with the last price for a short order.</returns>
-        private OrderTestParameters GetLastPriceForShortOrder(OrderTestParameters orderTestParameters)
-        {
-            if (orderTestParameters is MarketOrderTestParameters)
-            {
-                return orderTestParameters;
-            }
-            var orderType = GetOrderTypeByOrderTestParameters(orderTestParameters);
-            return GetLastPriceForShortOrder(orderTestParameters.Symbol, orderType);
-        }
 
-        /// <summary>
-        /// Retrieves the last price for a long order based on the provided order test parameters.
-        /// </summary>
-        /// <param name="orderTestParameters">The order test parameters.</param>
-        /// <returns>An instance of <see cref="QuantConnect.Tests.Brokerages.OrderTestParameters"/> with the last price for a long order.</returns>
-        private OrderTestParameters GetLastPriceForLongOrder(OrderTestParameters orderTestParameters)
-        {
-            if (orderTestParameters is MarketOrderTestParameters)
-            {
-                return orderTestParameters;
-            }
-            var orderType = GetOrderTypeByOrderTestParameters(orderTestParameters);
-            return GetLastPriceForLongOrder(orderTestParameters.Symbol, orderType);
-        }
-
-        /// <summary>
-        /// Determines the order type based on the provided order test parameters.
-        /// </summary>
-        /// <param name="orderTestParameters">The order test parameters.</param>
-        /// <returns>The determined <see cref="OrderType"/>.</returns>
-        /// <exception cref="NotImplementedException">Thrown when the order type is not implemented.</exception>
-        private static OrderType GetOrderTypeByOrderTestParameters(OrderTestParameters orderTestParameters) => orderTestParameters switch
-        {
-            LimitOrderTestParameters => OrderType.Limit,
-            StopMarketOrderTestParameters => OrderType.StopMarket,
-            StopLimitOrderTestParameters => OrderType.StopLimit,
-            _ => throw new NotImplementedException($"The order type '{orderTestParameters.GetType().Name}' is not implemented.")
-        };
-
-        /// <summary>
-        /// Retrieves the last price for a short order based on the symbol and order type.
-        /// </summary>
-        /// <param name="symbol">The symbol for the order.</param>
-        /// <param name="orderType">The type of the order.</param>
-        /// <returns>An instance of <see cref="QuantConnect.Tests.Brokerages.OrderTestParameters"/> with the last price for a short order.</returns>
-        /// <exception cref="NotImplementedException">Thrown when the order type is not supported.</exception>
-        private OrderTestParameters GetLastPriceForShortOrder(Symbol symbol, OrderType orderType)
-        {
-            var lastPrice = _brokerage.GetPrice(symbol).Last;
-            return orderType switch
-            {
-                OrderType.Limit => new LimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.03m), SubtractAndRound(lastPrice, 0.03m)),
-                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, SubtractAndRound(lastPrice, 0.03m), SubtractAndRound(lastPrice, 0.06m)),
-                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, SubtractAndRound(lastPrice, 0.03m), SubtractAndRound(lastPrice, 0.03m)),
-                _ => throw new NotImplementedException("Not supported type of order")
-            };
-        }
-
-        /// <summary>
-        /// Retrieves the last price for a long order based on the symbol and order type.
-        /// </summary>
-        /// <param name="symbol">The symbol for the order.</param>
-        /// <param name="orderType">The type of the order.</param>
-        /// <returns>An instance of <see cref="QuantConnect.Tests.Brokerages.OrderTestParameters"/> with the last price for a long order.</returns>
-        /// <exception cref="NotImplementedException">Thrown when the order type is not supported.</exception>
-        private OrderTestParameters GetLastPriceForLongOrder(Symbol symbol, OrderType orderType)
-        {
-            var lastPrice = _brokerage.GetPrice(symbol).Last;
-            return orderType switch
-            {
-                OrderType.Limit => new LimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.05m), SubtractAndRound(lastPrice, 0.05m)),
-                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, AddAndRound(lastPrice, 0.04m), AddAndRound(lastPrice, 0.06m)),
-                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.04m), AddAndRound(lastPrice, 0.06m)),
-                _ => throw new NotImplementedException("Not supported type of order")
-            };
-        }
-
-        public static decimal AddAndRound(decimal number, decimal valueToAdd)
-        {
-            var increment = 0.05m;
-            var result = number + valueToAdd;
-            return Math.Round(Math.Round(result / increment) * increment, 2);
-        }
-
-        public static decimal SubtractAndRound(decimal number, decimal valueToSubtract)
-        {
-            var increment = 0.05m;
-            var result = number - valueToSubtract;
-            var r = Math.Round(result <= 0 ? number : result, 2);
-            return Math.Round(r / increment) * increment;
-        }
 
         [TestCase("CBOE", SecurityType.Equity, new SecurityType[] { SecurityType.Equity, SecurityType.Option }, "CBOE")]
         [TestCase("IEX", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "IEXG")]
@@ -906,5 +770,37 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 Assert.That(routeId, Is.EqualTo(expectedRouteId));
             }
         }
+
+        /// <summary>
+        /// Adds a value to a base number and rounds the result to the nearest specified increment.
+        /// </summary>
+        /// <param name="number">The base number to which the value will be added.</param>
+        /// <param name="valueToAdd">The value to add to the base number.</param>
+        /// <param name="increment">The increment to which the result should be rounded (default is 0.05).</param>
+        /// <returns>The adjusted and rounded result.</returns>
+        private static decimal AddAndRound(decimal number, decimal valueToAdd, decimal increment = 0.05m) =>
+            AdjustAndRound(number + valueToAdd, increment);
+
+        /// <summary>
+        /// Subtracts a value from a base number and rounds the result to the nearest specified increment.
+        /// Ensures that the result does not go below zero unless the base number itself is negative or zero.
+        /// </summary>
+        /// <param name="number">The base number from which the value will be subtracted.</param>
+        /// <param name="valueToSubtract">The value to subtract from the base number.</param>
+        /// <param name="increment">The increment to which the result should be rounded (default is 0.05).</param>
+        /// <returns>The adjusted and rounded result.</returns>
+        private static decimal SubtractAndRound(decimal number, decimal valueToSubtract, decimal increment = 0.05m)
+        {
+            var adjustedValue = number - valueToSubtract <= 0 ? number : number - valueToSubtract;
+            return AdjustAndRound(adjustedValue, increment);
+        }
+
+        /// <summary>
+        /// Rounds a given value to the nearest specified increment and ensures it is rounded to two decimal places.
+        /// </summary>
+        /// <param name="value">The value to adjust and round.</param>
+        /// <param name="increment">The increment to which the value should be rounded.</param>
+        /// <returns>The rounded value, adjusted to two decimal places.</returns>
+        private static decimal AdjustAndRound(decimal value, decimal increment) => Math.Round(Math.Round(value / increment) * increment, 2);
     }
 }
