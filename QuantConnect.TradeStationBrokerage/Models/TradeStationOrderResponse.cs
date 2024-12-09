@@ -326,6 +326,23 @@ public readonly struct Leg
         OptionType = optionType;
         StrikePrice = strikePrice;
     }
+
+    public override string ToString()
+    {
+        return $"Leg Details: " +
+       $"OpenOrClose: {OpenOrClose}, " +
+       $"QuantityOrdered: {QuantityOrdered}, " +
+       $"ExecQuantity: {ExecQuantity}, " +
+       $"QuantityRemaining: {QuantityRemaining}, " +
+       $"BuyOrSell: {BuyOrSell}, " +
+       $"Symbol: {Symbol}, " +
+       $"Underlying: {Underlying}, " +
+       $"AssetType: {AssetType}, " +
+       $"ExecutionPrice: {ExecutionPrice}, " +
+       $"ExpirationDate: {ExpirationDate:yyyy-MM-dd}, " +
+       $"OptionType: {OptionType}, " +
+       $"StrikePrice: {StrikePrice}";
+    }
 }
 
 /// <summary>

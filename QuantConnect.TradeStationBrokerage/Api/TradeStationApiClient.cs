@@ -270,7 +270,7 @@ public class TradeStationApiClient : IDisposable
     /// This method replaces an existing order with new parameters such as quantity, limit price, and stop price.
     /// If any parameter is not provided (null), the corresponding value of the existing order will remain unchanged.
     /// </remarks>
-    public async Task<Models.OrderResponse> ReplaceOrder(string brokerId, OrderType leanOrderType, decimal quantity,
+    public async Task<TradeStationReplaceOrderResponse> ReplaceOrder(string brokerId, OrderType leanOrderType, decimal quantity,
         decimal? limitPrice = null, decimal? stopPrice = null)
     {
         var tradeStationOrder = new TradeStationReplaceOrderRequest(quantity.ToStringInvariant(), _accountID.Value, brokerId);
@@ -290,8 +290,15 @@ public class TradeStationApiClient : IDisposable
         try
         {
 
-            return await RequestAsync<Models.OrderResponse>(_baseUrl, $"/v3/orderexecution/orders/{brokerId}", HttpMethod.Put,
+            var result = await RequestAsync<TradeStationReplaceOrderResponse>(_baseUrl, $"/v3/orderexecution/orders/{brokerId}", HttpMethod.Put,
                 JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
+
+            if (result.Error != null)
+            {
+                throw new Exception(result.Message);
+            }
+
+            return result;
         }
         catch
         {
