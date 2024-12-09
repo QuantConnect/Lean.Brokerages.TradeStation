@@ -17,6 +17,7 @@ using System;
 using QuantConnect.Securities;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using QuantConnect.Securities.IndexOption;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
 
 namespace QuantConnect.Brokerages.TradeStation;
@@ -215,8 +216,8 @@ public class TradeStationSymbolMapper : ISymbolMapper
         // Remove the leading '$' character from the brokerage symbol
         var leanTicker = ConvertIndexBrokerageTickerInLeanTicker(brokerageSymbol);
 
-        var underlyingIndex = Symbol.Create(leanTicker, SecurityType.Index, market);
-        return Symbol.CreateOption(underlyingIndex, underlyingIndex.ID.Market, SecurityType.IndexOption.DefaultOptionStyle(), optionRight, strike, expirationDate);
+        var underlyingIndex = Symbol.Create(IndexOptionSymbol.MapToUnderlying(leanTicker), SecurityType.Index, market);
+        return Symbol.CreateOption(underlyingIndex, leanTicker, underlyingIndex.ID.Market, SecurityType.IndexOption.DefaultOptionStyle(), optionRight, strike, expirationDate);
     }
 
     /// <summary>

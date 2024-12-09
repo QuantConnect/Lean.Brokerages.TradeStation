@@ -79,18 +79,6 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         }
 
         [Test, TestCaseSource(nameof(BrokerageSymbolTestCases))]
-        public void ReturnsCorrectLeanSymbol(LegSymbol metaData)
-        {
-            var (brokerageLeg, expectedLeanSymbol) = metaData;
-
-            var actualLeanSymbol = _symbolMapper.GetLeanSymbol(brokerageLeg.Underlying, brokerageLeg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
-               brokerageLeg.ExpirationDate, brokerageLeg.StrikePrice, brokerageLeg.OptionType.ConvertOptionTypeToOptionRight());
-
-            Assert.IsNotNull(actualLeanSymbol);
-            Assert.That(actualLeanSymbol, Is.EqualTo(expectedLeanSymbol));
-        }
-
-        [Test, TestCaseSource(nameof(BrokerageSymbolTestCases))]
         public void TryReturnsCorrectLeanSymbol(LegSymbol metaData)
         {
             var (brokerageLeg, expectedLeanSymbol) = metaData;
