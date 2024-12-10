@@ -83,14 +83,9 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             var (brokerageLeg, expectedLeanSymbol) = metaData;
 
-            if (_symbolMapper.TryGetLeanSymbolByBrokerageAssetType(brokerageLeg.AssetType, brokerageLeg.Symbol, brokerageLeg.ExpirationDate, out var actualLeanSymbol))
-            {
-                Assert.That(actualLeanSymbol, Is.EqualTo(expectedLeanSymbol));
-            }
-            else
-            {
-                Assert.Fail("We can not Get Lean Symbol by " + metaData);
-            }
+            var actualLeanSymbol = _symbolMapper.GetLeanSymbol(brokerageLeg.Symbol, brokerageLeg.AssetType.ConvertAssetTypeToSecurityType(), expirationDate: brokerageLeg.ExpirationDate);
+
+            Assert.That(actualLeanSymbol, Is.EqualTo(expectedLeanSymbol));
         }
 
         private static IEnumerable<TestCaseData> LeanSymbolTestCases
