@@ -79,7 +79,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         }
 
         [Test, TestCaseSource(nameof(BrokerageSymbolTestCases))]
-        public void TryReturnsCorrectLeanSymbol(LegSymbol metaData)
+        public void ReturnsCorrectLeanSymbol(LegSymbol metaData)
         {
             var (brokerageLeg, expectedLeanSymbol) = metaData;
 
@@ -87,6 +87,25 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
             Assert.That(actualLeanSymbol, Is.EqualTo(expectedLeanSymbol));
         }
+
+        private static IEnumerable<LegSymbol> NotSupportedBrokerageSymbolTestCases
+        {
+            get
+            {
+                var EURUSDLeg = new Leg("", 0m, 0m, 0m, TradeStationTradeActionType.Buy, "EURUSD", "EURUSD", TradeStationAssetType.Forex, 0m, default, default, default);
+                var EURUSD = Symbol.Create("EURUSD", SecurityType.Forex, Market.Oanda);
+                yield return new(EURUSDLeg, EURUSD);
+            }
+        }
+
+        [TestCaseSource(nameof(NotSupportedBrokerageSymbolTestCases))]
+        public void TryConvertNotSupportedBrokerageSymbolToLeanSymbol(LegSymbol metaData)
+        {
+            var (brokerageLeg, expectedLeanSymbol) = metaData;
+
+            Assert.Throws<NotImplementedException>(() => _symbolMapper.GetLeanSymbol(brokerageLeg.Symbol, brokerageLeg.AssetType.ConvertAssetTypeToSecurityType(), expirationDate: brokerageLeg.ExpirationDate));
+        }
+
 
         private static IEnumerable<TestCaseData> LeanSymbolTestCases
         {
