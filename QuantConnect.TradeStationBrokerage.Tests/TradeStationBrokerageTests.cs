@@ -260,7 +260,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             {
                 OrderType.Limit or OrderType.StopMarket => (AddAndRound(symbolPrice.Ask, 0.2m), SubtractAndRound(symbolPrice.Bid, 0.2m)),
                 // StopLimit: Invalid Limit Price - Limit Price must be at or below Stop Price.
-                OrderType.StopLimit => (SubtractAndRound(symbolPrice.Bid, 0.3m), SubtractAndRound(symbolPrice.Ask, 0.2m)),
+                OrderType.StopLimit => (SubtractAndRound(symbolPrice.Bid, 0.05m), SubtractAndRound(symbolPrice.Ask, 0.04m)),
                 _ => throw new NotImplementedException("Not supported type of order")
             };
 

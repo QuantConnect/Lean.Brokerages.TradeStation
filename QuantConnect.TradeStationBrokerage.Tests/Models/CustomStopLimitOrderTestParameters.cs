@@ -17,7 +17,6 @@ using System;
 using QuantConnect.Orders;
 using QuantConnect.Interfaces;
 using QuantConnect.Tests.Brokerages;
-using static QLNet.Callability;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests;
 
@@ -37,17 +36,35 @@ public class CustomStopLimitOrderTestParameters : StopLimitOrderTestParameters
         var previousStopPrice = (order as StopLimitOrder).StopPrice;
         if (order.Quantity > 0)
         {
-
-            // Invalid Stop Price - Stop Price must be above current market.
-            newStopPrice = lastMarketPrice + 0.02m;
-            // Invalid Limit Price - Limit Price must be at or above Stop Price.
-            newLimitPrice = newStopPrice + 0.03m;
+            switch (order.SecurityType)
+            {
+                case SecurityType.Equity:
+                    // Invalid Stop Price - Stop Price must be above current market.
+                    newStopPrice = lastMarketPrice + 0.02m;
+                    // Invalid Limit Price - Limit Price must be at or above Stop Price.
+                    newLimitPrice = newStopPrice + 0.03m;
+                    break;
+                default:
+                    newStopPrice = lastMarketPrice + 0.01m;
+                    newLimitPrice = newStopPrice + 0.02m;
+                    break;
+            }
         }
         else
         {
-            // for stop sells we need to increase the stop price
-            newStopPrice = lastMarketPrice - 0.02m;
-            newLimitPrice = newStopPrice - 0.03m;
+            switch (order.SecurityType)
+            {
+                case SecurityType.Equity:
+                    // for stop sells we need to increase the stop price
+                    newStopPrice = lastMarketPrice - 0.02m;
+                    newLimitPrice = newStopPrice - 0.03m;
+                    break;
+                default:
+                    newStopPrice = lastMarketPrice - 0.01m;
+                    newLimitPrice = newStopPrice - 0.02m;
+                    break;
+            }
+
         }
 
         newLimitPrice = order.SecurityType == SecurityType.IndexOption ? Round(newLimitPrice) : newLimitPrice;
