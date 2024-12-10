@@ -107,12 +107,10 @@ public class TradeStationSymbolMapper : ISymbolMapper
             case SecurityType.Index:
                 return Symbol.Create(ConvertIndexBrokerageTickerInLeanTicker(brokerageSymbol), SecurityType.Index, market);
             case SecurityType.Option:
-                var optionParam = ParsePositionOptionSymbol(brokerageSymbol);
-                var underlying = Symbol.Create(optionParam.symbol, SecurityType.Equity, market);
-                return Symbol.CreateOption(underlying, underlying.ID.Market, SecurityType.Option.DefaultOptionStyle(), optionParam.optionRight, optionParam.strikePrice, expirationDate);
+                var underlying = Symbol.Create(brokerageSymbol, SecurityType.Equity, market);
+                return Symbol.CreateOption(underlying, underlying.ID.Market, SecurityType.Option.DefaultOptionStyle(), optionRight, strike, expirationDate);
             case SecurityType.IndexOption:
-                var indexOptionParam = ParsePositionOptionSymbol(brokerageSymbol);
-                return GetIndexOptionByBrokerageSymbol(indexOptionParam.symbol, securityType, market, expirationDate, indexOptionParam.strikePrice, indexOptionParam.optionRight);
+                return GetIndexOptionByBrokerageSymbol(brokerageSymbol, securityType, market, expirationDate, strike, optionRight);
             case SecurityType.Future:
                 var parsedFutures = SymbolRepresentation.ParseFutureTicker(brokerageSymbol).Underlying;
                 if (!SymbolPropertiesDatabase.FromDataFolder().TryGetMarket(parsedFutures, SecurityType.Future, out market))
@@ -145,7 +143,7 @@ public class TradeStationSymbolMapper : ISymbolMapper
 
         if (!match.Success)
         {
-            throw new FormatException("Invalid option symbol format.");
+            throw new FormatException($"{nameof(TradeStationSymbolMapper)}.{nameof(ParsePositionOptionSymbol)}: Invalid option symbol format: {optionSymbol}");
         }
 
         // Extract matched groups

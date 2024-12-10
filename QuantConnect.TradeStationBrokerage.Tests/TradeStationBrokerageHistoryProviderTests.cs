@@ -23,7 +23,6 @@ using QuantConnect.Logging;
 using QuantConnect.Securities;
 using QuantConnect.Data.Market;
 using System.Collections.Generic;
-using static QuantConnect.Brokerages.TradeStation.Tests.TradeStationBrokerageTests;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests;
 
@@ -35,7 +34,16 @@ public class TradeStationBrokerageHistoryProviderTests
     [OneTimeSetUp]
     public void OneTimeSetUp()
     {
+        Log.Trace("--- OneTimeSetUp: TradeStationBrokerageHistoryProviderTests ---");
         _brokerage = TestSetup.CreateBrokerage(null, null);
+    }
+
+    [OneTimeTearDown]
+    public void OneTimeTearDown()
+    {
+        Log.Trace("--- OneTimeTearDown: TradeStationBrokerageHistoryProviderTests ---");
+        _brokerage.Disconnect();
+        _brokerage.DisposeSafely();
     }
 
     private static IEnumerable<TestCaseData> ValidHistoryParameters

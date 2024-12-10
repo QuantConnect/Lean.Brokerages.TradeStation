@@ -41,7 +41,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
         protected override IBrokerage CreateBrokerage(IOrderProvider orderProvider, ISecurityProvider securityProvider)
         {
-            return TestSetup.CreateBrokerage(orderProvider, securityProvider, forceCreateBrokerageInstance: true);
+            return TestSetup.CreateBrokerage(orderProvider, securityProvider);
         }
         protected override bool IsAsync()
         {
@@ -290,10 +290,24 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             base.LongFromShort(parameters);
         }
 
-        [Test]
-        public void LookupSymbols()
+        [TestCase("AAPL", SecurityType.Option)]
+        [TestCase("SPX", SecurityType.IndexOption)]
+        public void LookupSymbols(string ticker, SecurityType securityType)
         {
-            var option = Symbol.CreateCanonicalOption(Symbols.AAPL);
+            var option = default(Symbol);
+            switch (securityType)
+            {
+                case SecurityType.Option:
+                    var underlying = Symbol.Create(ticker, SecurityType.Equity, Market.USA);
+                    option = Symbol.CreateCanonicalOption(underlying);
+                    break;
+                case SecurityType.IndexOption:
+                    underlying = Symbol.Create(ticker, SecurityType.Index, Market.USA);
+                    option = Symbol.CreateCanonicalOption(underlying);
+                    break;
+                default:
+                    throw new NotImplementedException($"{nameof(TradeStationBrokerageTests)}.{nameof(LookupSymbols)}: Not support SecurityType = {securityType} by Ticker = {ticker}");
+            }
 
             var options = (Brokerage as IDataQueueUniverseProvider).LookupSymbols(option, false).ToList();
             Assert.IsNotNull(options);

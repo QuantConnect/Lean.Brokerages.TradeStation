@@ -83,7 +83,19 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             var (brokerageLeg, expectedLeanSymbol) = metaData;
 
-            var actualLeanSymbol = _symbolMapper.GetLeanSymbol(brokerageLeg.Symbol, brokerageLeg.AssetType.ConvertAssetTypeToSecurityType(), expirationDate: brokerageLeg.ExpirationDate);
+            var ticker = brokerageLeg.Symbol;
+            var optionRight = default(OptionRight);
+            var strikePrice = default(decimal);
+            switch (brokerageLeg.AssetType)
+            {
+                case TradeStationAssetType.IndexOption:
+                case TradeStationAssetType.StockOption:
+                    (ticker, _, optionRight, strikePrice) = _symbolMapper.ParsePositionOptionSymbol(brokerageLeg.Symbol);
+                    break;
+            }
+
+            var actualLeanSymbol = _symbolMapper.GetLeanSymbol(ticker, brokerageLeg.AssetType.ConvertAssetTypeToSecurityType(), expirationDate: brokerageLeg.ExpirationDate,
+                strike: strikePrice, optionRight: optionRight);
 
             Assert.That(actualLeanSymbol, Is.EqualTo(expectedLeanSymbol));
         }

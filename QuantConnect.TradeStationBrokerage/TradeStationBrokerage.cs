@@ -554,7 +554,7 @@ public partial class TradeStationBrokerage : Brokerage
             foreach (var order in orders)
             {
                 // Check if the order failed due to an existing position. Reason: [EC601,EC602,EC701,EC702]: You are long/short N shares.
-                if (brokerageOrder.Message.Contains("Order failed", StringComparison.InvariantCultureIgnoreCase))
+                if (!string.IsNullOrEmpty(brokerageOrder.Error))
                 {
                     OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
                     { Status = OrderStatus.Invalid, Message = brokerageOrder.Message });
@@ -1244,7 +1244,19 @@ public partial class TradeStationBrokerage : Brokerage
     {
         try
         {
-            leanSymbol = _symbolMapper.GetLeanSymbol(brokerageSymbol, tradeStationAssetType.ConvertAssetTypeToSecurityType(), expirationDate: expirationDateTime);
+            var ticker = brokerageSymbol;
+            var optionRight = default(OptionRight);
+            var strikePrice = default(decimal);
+            switch (tradeStationAssetType)
+            {
+                case TradeStationAssetType.IndexOption:
+                case TradeStationAssetType.StockOption:
+                    (ticker, _, optionRight, strikePrice) = _symbolMapper.ParsePositionOptionSymbol(brokerageSymbol);
+                    break;
+            }
+
+            leanSymbol = _symbolMapper.GetLeanSymbol(ticker, tradeStationAssetType.ConvertAssetTypeToSecurityType(),
+                expirationDate: expirationDateTime, strike: strikePrice, optionRight: optionRight);
             return true;
         }
         catch

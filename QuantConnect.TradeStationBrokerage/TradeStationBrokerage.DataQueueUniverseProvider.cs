@@ -51,14 +51,15 @@ public partial class TradeStationBrokerage : IDataQueueUniverseProvider
 
         Task.Run(async () =>
         {
-            var underlying = symbol.Underlying.Value;
-            await foreach (var optionParameters in _tradeStationApiClient.GetOptionExpirationsAndStrikes(underlying))
+            var brokerageSymbol = _symbolMapper.GetBrokerageSymbol(symbol.Underlying);
+            var underlying = symbol.ID.Symbol;
+            await foreach (var optionParameters in _tradeStationApiClient.GetOptionExpirationsAndStrikes(brokerageSymbol))
             {
                 foreach (var optionStrike in optionParameters.strikes)
                 {
                     foreach (var right in _optionRights)
                     {
-                        blockingOptionCollection.Add(_symbolMapper.GetLeanSymbol(underlying, SecurityType.Option, Market.USA,
+                        blockingOptionCollection.Add(_symbolMapper.GetLeanSymbol(underlying, symbol.SecurityType, Market.USA,
                             optionParameters.expirationDate, optionStrike, right));
                     }
                 }
