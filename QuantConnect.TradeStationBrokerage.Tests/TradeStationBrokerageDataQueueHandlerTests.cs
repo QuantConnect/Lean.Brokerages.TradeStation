@@ -60,7 +60,7 @@ public partial class TradeStationBrokerageTests
             {
                 Symbols.AAPL,
                 Symbol.CreateFuture(Futures.Softs.Cotton2, Market.ICE, new DateTime(2024, 12, 1)),
-                Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 245m, new DateTime(2024, 12, 06))
+                Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 245m, new DateTime(2024, 12, 13))
             }, Resolution.Tick);
 
             var index = Symbol.Create("VIX", SecurityType.Index, Market.USA);

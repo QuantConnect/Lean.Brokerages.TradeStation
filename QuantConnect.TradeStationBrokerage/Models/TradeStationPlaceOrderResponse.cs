@@ -53,6 +53,11 @@ public readonly struct TradeStationPlaceOrderResponse : ITradeStationError
 public class OrderResponse
 {
     /// <summary>
+    /// Represents an error that occurred during the retrieval of trading account information.
+    /// </summary>
+    public string Error { get; }
+
+    /// <summary>
     /// The order message.
     /// </summary>
     public string Message { get; }
@@ -68,8 +73,9 @@ public class OrderResponse
     /// <param name="message">The order message, if any, related to the order.</param>
     /// <param name="orderID">The ID of the order.</param>
     [JsonConstructor]
-    public OrderResponse(string message, string orderID)
+    public OrderResponse(string error, string message, string orderID)
     {
+        Error = error;
         Message = message;
         OrderID = orderID;
     }
