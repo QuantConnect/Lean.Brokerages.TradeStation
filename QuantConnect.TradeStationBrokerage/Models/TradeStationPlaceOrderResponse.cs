@@ -50,7 +50,7 @@ public readonly struct TradeStationPlaceOrderResponse : ITradeStationError
 /// <summary>
 /// Represents a response for an individual order.
 /// </summary>
-public readonly struct OrderResponse
+public class OrderResponse
 {
     /// <summary>
     /// The order message.

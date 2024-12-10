@@ -69,7 +69,8 @@ public partial class TradeStationBrokerageTests
                 index,
                 Symbol.CreateOption(index, Market.USA, OptionStyle.American, OptionRight.Call, 14.5m, new DateTime(2024, 12, 18)),
                 Symbol.CreateOption(index, Market.USA, OptionStyle.American, OptionRight.Call, 70m, new DateTime(2025, 06, 18)),
-                Symbol.CreateOption(index, Market.USA, OptionStyle.American, OptionRight.Call, 15m, new DateTime(2024, 12, 18))
+                Symbol.CreateOption(index, Market.USA, OptionStyle.American, OptionRight.Call, 15m, new DateTime(2024, 12, 18)),
+                Symbol.CreateOption(index, "VIXW", Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 14.5m, new DateTime(2024, 12, 11))
             }, Resolution.Tick);
         }
     }

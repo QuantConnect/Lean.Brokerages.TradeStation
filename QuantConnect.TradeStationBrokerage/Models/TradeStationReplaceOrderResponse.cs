@@ -20,22 +20,12 @@ namespace QuantConnect.Brokerages.TradeStation.Models;
 /// <summary>
 /// Represents the response for a replace order operation in TradeStation.
 /// </summary>
-public class TradeStationReplaceOrderResponse
+public class TradeStationReplaceOrderResponse : OrderResponse
 {
     /// <summary>
     /// Represents an error that occurred during the retrieval of trading account information.
     /// </summary>
     public string Error { get; }
-
-    /// <summary>
-    /// The order message.
-    /// </summary>
-    public string Message { get; }
-
-    /// <summary>
-    /// Gets the ID of the order.
-    /// </summary>
-    public string OrderID { get; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TradeStationReplaceOrderResponse"/> class.
@@ -44,10 +34,8 @@ public class TradeStationReplaceOrderResponse
     /// <param name="message">The informational message associated with the operation.</param>
     /// <param name="orderID">The unique identifier of the order.</param>
     [JsonConstructor]
-    public TradeStationReplaceOrderResponse(string error, string message, string orderID)
+    public TradeStationReplaceOrderResponse(string error, string message, string orderID) : base(message, orderID)
     {
         Error = error;
-        Message = message;
-        OrderID = orderID;
     }
 }
