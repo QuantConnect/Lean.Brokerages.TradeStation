@@ -287,24 +287,16 @@ public class TradeStationApiClient : IDisposable
 
         tradeStationOrder.OrderType = leanOrderType.ConvertLeanOrderTypeToTradeStation();
 
-        try
+
+        var result = await RequestAsync<TradeStationReplaceOrderResponse>(_baseUrl, $"/v3/orderexecution/orders/{brokerId}", HttpMethod.Put,
+            JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
+
+        if (result.Error != null)
         {
-
-            var result = await RequestAsync<TradeStationReplaceOrderResponse>(_baseUrl, $"/v3/orderexecution/orders/{brokerId}", HttpMethod.Put,
-                JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
-
-            if (result.Error != null)
-            {
-                throw new Exception(result.Message);
-            }
-
-            return result;
+            throw new Exception(result.Message);
         }
-        catch
-        {
-            // rethrow an exception
-            throw;
-        }
+
+        return result;
     }
 
     /// <summary>
