@@ -353,7 +353,7 @@ public partial class TradeStationBrokerage : Brokerage
         var holdings = new List<Holding>();
         foreach (var position in positions.Positions)
         {
-            if (!TryGetLeanSymbol(position.Symbol, position.AssetType, position.ExpirationDate, out var leanSymbol))
+            if (!_symbolMapper.TryGetLeanSymbol(position.Symbol, position.AssetType, position.ExpirationDate, out var leanSymbol))
             {
                 OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, 1, $"The asset type '{position.AssetType}' for symbol '{position.Symbol}' is not supported. This position has been skipped."));
                 continue;
@@ -872,7 +872,7 @@ public partial class TradeStationBrokerage : Brokerage
                         legOrderStatus = OrderStatus.Filled;
                     }
 
-                    if (!TryGetLeanSymbol(leg.Symbol, leg.AssetType, leg.ExpirationDate, out var leanSymbol))
+                    if (!_symbolMapper.TryGetLeanSymbol(leg.Symbol, leg.AssetType, leg.ExpirationDate, out var leanSymbol))
                     {
                         OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}: " +
                             $"Failed to map a Lean Symbol using the following details:: {leg} "));
@@ -1090,7 +1090,7 @@ public partial class TradeStationBrokerage : Brokerage
         var orderQuantity = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.QuantityOrdered) : leg.QuantityOrdered;
 
         leanOrder = default;
-        if (!TryGetLeanSymbol(leg.Symbol, leg.AssetType, leg.ExpirationDate, out var leanSymbol))
+        if (!_symbolMapper.TryGetLeanSymbol(leg.Symbol, leg.AssetType, leg.ExpirationDate, out var leanSymbol))
         {
             OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, 1, $"The asset type '{leg.AssetType}' for symbol '{leg.Symbol}' is not supported. This position has been skipped."));
             return false;
@@ -1228,42 +1228,6 @@ public partial class TradeStationBrokerage : Brokerage
         }
 
         return !string.IsNullOrEmpty(routeId);
-    }
-
-    /// <summary>
-    /// Attempts to map a TradeStation brokerage symbol to a Lean symbol.
-    /// </summary>
-    /// <param name="brokerageSymbol">The brokerage symbol to be mapped to a Lean symbol.</param>
-    /// <param name="tradeStationAssetType">The asset type of the TradeStation symbol, used to determine the corresponding Lean security type.</param>
-    /// <param name="expirationDateTime">The expiration date and time for the symbol, relevant for options or futures.</param>
-    /// <param name="leanSymbol">When this method returns, contains the Lean symbol if mapping was successful; otherwise, contains the default value of <see cref="Symbol"/>.</param>
-    /// <returns>
-    /// <c>true</c> if the Lean symbol was successfully mapped; otherwise, <c>false</c>.
-    /// </returns>
-    private bool TryGetLeanSymbol(string brokerageSymbol, TradeStationAssetType tradeStationAssetType, DateTime expirationDateTime, out Symbol leanSymbol)
-    {
-        try
-        {
-            var ticker = brokerageSymbol;
-            var optionRight = default(OptionRight);
-            var strikePrice = default(decimal);
-            switch (tradeStationAssetType)
-            {
-                case TradeStationAssetType.IndexOption:
-                case TradeStationAssetType.StockOption:
-                    (ticker, _, optionRight, strikePrice) = _symbolMapper.ParsePositionOptionSymbol(brokerageSymbol);
-                    break;
-            }
-
-            leanSymbol = _symbolMapper.GetLeanSymbol(ticker, tradeStationAssetType.ConvertAssetTypeToSecurityType(),
-                expirationDate: expirationDateTime, strike: strikePrice, optionRight: optionRight);
-            return true;
-        }
-        catch
-        {
-            leanSymbol = default;
-            return false;
-        }
     }
 
     private class ModulesReadLicenseRead : QuantConnect.Api.RestResponse

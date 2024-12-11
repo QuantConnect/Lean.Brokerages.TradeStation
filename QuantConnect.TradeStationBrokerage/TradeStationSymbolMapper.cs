@@ -88,6 +88,41 @@ public class TradeStationSymbolMapper : ISymbolMapper
     }
 
     /// <summary>
+    /// Attempts to map a TradeStation brokerage symbol to a Lean symbol.
+    /// </summary>
+    /// <param name="brokerageSymbol">The brokerage symbol to be mapped to a Lean symbol.</param>
+    /// <param name="tradeStationAssetType">The asset type of the TradeStation symbol, used to determine the corresponding Lean security type.</param>
+    /// <param name="expirationDateTime">The expiration date and time for the symbol, relevant for options or futures.</param>
+    /// <param name="leanSymbol">When this method returns, contains the Lean symbol if mapping was successful; otherwise, contains the default value of <see cref="Symbol"/>.</param>
+    /// <returns>
+    /// <c>true</c> if the Lean symbol was successfully mapped; otherwise, <c>false</c>.
+    /// </returns>
+    public bool TryGetLeanSymbol(string brokerageSymbol, TradeStationAssetType tradeStationAssetType, DateTime expirationDateTime, out Symbol leanSymbol)
+    {
+        try
+        {
+            var ticker = brokerageSymbol;
+            var optionRight = default(OptionRight);
+            var strikePrice = default(decimal);
+            switch (tradeStationAssetType)
+            {
+                case TradeStationAssetType.IndexOption:
+                case TradeStationAssetType.StockOption:
+                    (ticker, _, optionRight, strikePrice) = ParsePositionOptionSymbol(brokerageSymbol);
+                    break;
+            }
+
+            leanSymbol = GetLeanSymbol(ticker, tradeStationAssetType.ConvertAssetTypeToSecurityType(), expirationDate: expirationDateTime, strike: strikePrice, optionRight: optionRight);
+            return true;
+        }
+        catch
+        {
+            leanSymbol = default;
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Converts a brokerage symbol to a Lean symbol instance
     /// </summary>
     /// <param name="brokerageSymbol">The brokerage symbol</param>
