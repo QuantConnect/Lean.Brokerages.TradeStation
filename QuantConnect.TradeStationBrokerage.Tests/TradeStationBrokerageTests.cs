@@ -24,6 +24,7 @@ using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using System.Collections.Generic;
 using QuantConnect.Tests.Brokerages;
+using QuantConnect.Securities.IndexOption;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests
 {
@@ -291,7 +292,13 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         }
 
         [TestCase("AAPL", SecurityType.Option)]
+        [TestCase("SPY", SecurityType.Option)]
         [TestCase("SPX", SecurityType.IndexOption)]
+        [TestCase("SPXW", SecurityType.IndexOption)]
+        [TestCase("VIX", SecurityType.IndexOption)]
+        [TestCase("VIXW", SecurityType.IndexOption)]
+        [TestCase("NDX", SecurityType.IndexOption)]
+        [TestCase("NDXP", SecurityType.IndexOption)]
         public void LookupSymbols(string ticker, SecurityType securityType)
         {
             var option = default(Symbol);
@@ -302,8 +309,8 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                     option = Symbol.CreateCanonicalOption(underlying);
                     break;
                 case SecurityType.IndexOption:
-                    underlying = Symbol.Create(ticker, SecurityType.Index, Market.USA);
-                    option = Symbol.CreateCanonicalOption(underlying);
+                    underlying = Symbol.Create(IndexOptionSymbol.MapToUnderlying(ticker), SecurityType.Index, Market.USA);
+                    option = Symbol.CreateCanonicalOption(underlying, targetOption: ticker);
                     break;
                 default:
                     throw new NotImplementedException($"{nameof(TradeStationBrokerageTests)}.{nameof(LookupSymbols)}: Not support SecurityType = {securityType} by Ticker = {ticker}");

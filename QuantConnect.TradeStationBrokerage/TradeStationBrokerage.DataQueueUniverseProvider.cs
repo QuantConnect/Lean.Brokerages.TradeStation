@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -13,12 +13,14 @@
  * limitations under the License.
 */
 
+using System;
 using System.Linq;
 using QuantConnect.Logging;
 using System.Threading.Tasks;
 using QuantConnect.Interfaces;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using QuantConnect.Brokerages.TradeStation.Models.Enums;
 
 namespace QuantConnect.Brokerages.TradeStation;
 
@@ -51,15 +53,17 @@ public partial class TradeStationBrokerage : IDataQueueUniverseProvider
 
         Task.Run(async () =>
         {
-            var brokerageSymbol = _symbolMapper.GetBrokerageSymbol(symbol.Underlying);
-            var underlying = symbol.ID.Symbol;
+            var underlying = symbol.Underlying;
+            var brokerageSymbol = _symbolMapper.GetBrokerageSymbol(symbol);
             await foreach (var optionParameters in _tradeStationApiClient.GetOptionExpirationsAndStrikes(brokerageSymbol))
             {
+                var ticker = TakeCorrectSymbolByExpirationType(optionParameters.expirationType, symbol.Underlying.Value, symbol.ID.Symbol);
+
                 foreach (var optionStrike in optionParameters.strikes)
                 {
                     foreach (var right in _optionRights)
                     {
-                        blockingOptionCollection.Add(_symbolMapper.GetLeanSymbol(underlying, symbol.SecurityType, Market.USA,
+                        blockingOptionCollection.Add(_symbolMapper.GetLeanSymbol(ticker, symbol.SecurityType, Market.USA,
                             optionParameters.expirationDate, optionStrike, right));
                     }
                 }
@@ -75,6 +79,32 @@ public partial class TradeStationBrokerage : IDataQueueUniverseProvider
         }
 
         return options;
+    }
+
+    /// <summary>
+    /// Determines the correct symbol to use based on the specified expiration type.
+    /// </summary>
+    /// <param name="expirationType">The type of expiration cycle (e.g., Monthly, Weekly).</param>
+    /// <param name="underlyingValue">The underlying value symbol for the expiration type.</param>
+    /// <param name="mainSymbol">The main symbol used for the expiration type.</param>
+    /// <returns>
+    /// The appropriate symbol based on the expiration type. 
+    /// For Monthly and EOM, it returns the <paramref name="underlyingValue"/>. 
+    /// For Weekly and Quarterly, it returns the <paramref name="mainSymbol"/>.
+    /// </returns>
+    private string TakeCorrectSymbolByExpirationType(ExpirationType expirationType, string underlyingValue, string mainSymbol)
+    {
+        switch (expirationType)
+        {
+            case ExpirationType.Monthly:
+            case ExpirationType.EOM:
+                return underlyingValue;
+            case ExpirationType.Weekly:
+            case ExpirationType.Quarterly:
+                return mainSymbol;
+            default:
+                throw new NotSupportedException($"{nameof(TradeStationBrokerage)}.{nameof(TakeCorrectSymbolByExpirationType)}: Not Supported ExpirationType = {expirationType} for Underlying = {underlyingValue} or Main = {mainSymbol}");
+        };
     }
 
     /// <summary>

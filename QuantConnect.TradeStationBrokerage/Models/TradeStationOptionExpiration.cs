@@ -16,6 +16,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
+using QuantConnect.Brokerages.TradeStation.Models.Enums;
 
 namespace QuantConnect.Brokerages.TradeStation.Models;
 
@@ -50,7 +51,7 @@ public readonly struct Expiration
     /// <summary>
     /// Gets the type of the expiration.
     /// </summary>
-    public string Type { get; }
+    public ExpirationType Type { get; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Expiration"/> struct.
@@ -58,5 +59,5 @@ public readonly struct Expiration
     /// <param name="date">The date of the expiration.</param>
     /// <param name="type">The type of the expiration.</param>
     [JsonConstructor]
-    public Expiration(DateTime date, string type) => (Date, Type) = (date, type); 
+    public Expiration(DateTime date, ExpirationType type) => (Date, Type) = (date, type);
 }
