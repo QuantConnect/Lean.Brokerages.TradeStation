@@ -353,22 +353,10 @@ public partial class TradeStationBrokerage : Brokerage
         var holdings = new List<Holding>();
         foreach (var position in positions.Positions)
         {
-            var leanSymbol = default(Symbol);
-            switch (position.AssetType)
+            if (!_symbolMapper.TryGetLeanSymbol(position.Symbol, position.AssetType, position.ExpirationDate, out var leanSymbol))
             {
-                case TradeStationAssetType.Future:
-                    leanSymbol = _symbolMapper.GetLeanSymbol(SymbolRepresentation.ParseFutureTicker(position.Symbol).Underlying, SecurityType.Future, Market.USA, position.ExpirationDate);
-                    break;
-                case TradeStationAssetType.Stock:
-                    leanSymbol = _symbolMapper.GetLeanSymbol(position.Symbol, SecurityType.Equity, Market.USA);
-                    break;
-                case TradeStationAssetType.StockOption:
-                    var optionParam = _symbolMapper.ParsePositionOptionSymbol(position.Symbol);
-                    leanSymbol = _symbolMapper.GetLeanSymbol(optionParam.symbol, SecurityType.Option, Market.USA, optionParam.expiryDate, optionParam.strikePrice, optionParam.optionRight == 'C' ? OptionRight.Call : OptionRight.Put);
-                    break;
-                default:
-                    OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, 1, $"The asset type '{position.AssetType}' for symbol '{position.Symbol}' is not supported. This position has been skipped."));
-                    continue;
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, 1, $"The asset type '{position.AssetType}' for symbol '{position.Symbol}' is not supported. This position has been skipped."));
+                continue;
             }
 
             if (leanSymbol.SecurityType is SecurityType.Future or SecurityType.Option && leanSymbol.ID.Date.Date < DateTime.UtcNow.ConvertFromUtc(leanSymbol.GetSymbolExchangeTimeZone()).Date)
@@ -566,7 +554,7 @@ public partial class TradeStationBrokerage : Brokerage
             foreach (var order in orders)
             {
                 // Check if the order failed due to an existing position. Reason: [EC601,EC602,EC701,EC702]: You are long/short N shares.
-                if (brokerageOrder.Message.Contains("Order failed", StringComparison.InvariantCultureIgnoreCase))
+                if (!string.IsNullOrEmpty(brokerageOrder.Error))
                 {
                     OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
                     { Status = OrderStatus.Invalid, Message = brokerageOrder.Message });
@@ -812,6 +800,11 @@ public partial class TradeStationBrokerage : Brokerage
             var jObj = JObject.Parse(json);
             if (_isSubscribeOnStreamOrderUpdate && jObj["AccountID"] != null)
             {
+                if (Log.DebuggingEnabled)
+                {
+                    Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}.WebSocket.JSON: {json}");
+                }
+
                 var brokerageOrder = jObj.ToObject<TradeStationOrder>();
 
                 var globalLeanOrderStatus = default(OrderStatus);
@@ -879,8 +872,12 @@ public partial class TradeStationBrokerage : Brokerage
                         legOrderStatus = OrderStatus.Filled;
                     }
 
-                    var leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
-                        leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
+                    if (!_symbolMapper.TryGetLeanSymbol(leg.Symbol, leg.AssetType, leg.ExpirationDate, out var leanSymbol))
+                    {
+                        OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}: " +
+                            $"Failed to map a Lean Symbol using the following details:: {leg} "));
+                        return;
+                    }
 
                     // Ensure there is an order with the specific symbol in leanOrders.
                     var leanOrder = leanOrders.FirstOrDefault(order => order.Symbol == leanSymbol);
@@ -889,10 +886,7 @@ public partial class TradeStationBrokerage : Brokerage
                     {
                         OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"Error in {nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}: " +
                             $"Could not find order with symbol '{leanSymbol}' in leanOrders. " +
-                            $"Brokerage Order ID: {brokerageOrder.OrderID}. " +
-                            $"Leg details - Symbol: {leg.Symbol}, Underlying: {leg.Underlying}, " +
-                            $"Asset Type: {leg.AssetType}, Expiration Date: {leg.ExpirationDate}, " +
-                            $"Strike Price: {leg.StrikePrice}, Option Type: {leg.OptionType}. " +
+                            $"Brokerage Order ID: {brokerageOrder.OrderID}. Leg details - {leg}" +
                             $"Please verify that the order was correctly added to leanOrders."));
                         return;
                     }
@@ -1018,23 +1012,24 @@ public partial class TradeStationBrokerage : Brokerage
         {
             case SecurityType.Equity:
             case SecurityType.Option:
+            case SecurityType.IndexOption:
                 switch (orderPosition)
                 {
                     // Increasing existing long position or opening new long position from zero
                     case OrderPosition.BuyToOpen:
-                        tradeAction = securityType == SecurityType.Option ? TradeStationTradeActionType.BuyToOpen : TradeStationTradeActionType.Buy;
+                        tradeAction = securityType.IsOption() ? TradeStationTradeActionType.BuyToOpen : TradeStationTradeActionType.Buy;
                         break;
                     // Decreasing existing short position or opening new short position from zero
                     case OrderPosition.SellToOpen:
-                        tradeAction = securityType == SecurityType.Option ? TradeStationTradeActionType.SellToOpen : TradeStationTradeActionType.SellShort;
+                        tradeAction = securityType.IsOption() ? TradeStationTradeActionType.SellToOpen : TradeStationTradeActionType.SellShort;
                         break;
                     // Buying from an existing short position (reducing, closing or flipping)
                     case OrderPosition.BuyToClose:
-                        tradeAction = securityType == SecurityType.Option ? TradeStationTradeActionType.BuyToClose : TradeStationTradeActionType.BuyToCover;
+                        tradeAction = securityType.IsOption() ? TradeStationTradeActionType.BuyToClose : TradeStationTradeActionType.BuyToCover;
                         break;
                     // Selling from an existing long position (reducing, closing or flipping)
                     case OrderPosition.SellToClose:
-                        tradeAction = securityType == SecurityType.Option ? TradeStationTradeActionType.SellToClose : TradeStationTradeActionType.Sell;
+                        tradeAction = securityType.IsOption() ? TradeStationTradeActionType.SellToClose : TradeStationTradeActionType.Sell;
                         break;
                     // This should never happen
                     default:
@@ -1095,15 +1090,9 @@ public partial class TradeStationBrokerage : Brokerage
         var orderQuantity = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.QuantityOrdered) : leg.QuantityOrdered;
 
         leanOrder = default;
-        var leanSymbol = default(Symbol);
-        try
+        if (!_symbolMapper.TryGetLeanSymbol(leg.Symbol, leg.AssetType, leg.ExpirationDate, out var leanSymbol))
         {
-            leanSymbol = _symbolMapper.GetLeanSymbol(leg.Underlying ?? leg.Symbol, leg.AssetType.ConvertAssetTypeToSecurityType(), Market.USA,
-                                                      leg.ExpirationDate, leg.StrikePrice, leg.OptionType.ConvertOptionTypeToOptionRight());
-        }
-        catch (Exception ex)
-        {
-            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, 1, $"{ex.Message}"));
+            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, 1, $"The asset type '{leg.AssetType}' for symbol '{leg.Symbol}' is not supported. This position has been skipped."));
             return false;
         }
 

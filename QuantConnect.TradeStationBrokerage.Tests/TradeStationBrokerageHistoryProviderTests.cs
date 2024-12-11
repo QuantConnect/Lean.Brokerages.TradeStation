@@ -19,33 +19,49 @@ using System.Linq;
 using NUnit.Framework;
 using QuantConnect.Util;
 using QuantConnect.Data;
+using QuantConnect.Logging;
 using QuantConnect.Securities;
 using QuantConnect.Data.Market;
 using System.Collections.Generic;
-using QuantConnect.Data.Fundamental;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests;
 
 [TestFixture]
-public partial class TradeStationBrokerageTests
+public class TradeStationBrokerageHistoryProviderTests
 {
+    private TradeStationBrokerageTest _brokerage;
+
+    [OneTimeSetUp]
+    public void OneTimeSetUp()
+    {
+        Log.Trace("--- OneTimeSetUp: TradeStationBrokerageHistoryProviderTests ---");
+        _brokerage = TestSetup.CreateBrokerage(null, null);
+    }
+
+    [OneTimeTearDown]
+    public void OneTimeTearDown()
+    {
+        Log.Trace("--- OneTimeTearDown: TradeStationBrokerageHistoryProviderTests ---");
+        _brokerage.Disconnect();
+        _brokerage.DisposeSafely();
+    }
+
     private static IEnumerable<TestCaseData> ValidHistoryParameters
     {
         get
         {
             var AAPL = CreateSymbol("AAPL", SecurityType.Equity);
-            yield return new TestCaseData(AAPL, Resolution.Minute, new DateTime(2024, 06, 18), new DateTime(2024,07,18));
-            yield return new TestCaseData(AAPL, Resolution.Hour, new DateTime(2024,06,18), new DateTime(2024,07,18));
-            yield return new TestCaseData(AAPL, Resolution.Daily, new DateTime(2024,06,18), new DateTime(2024,07,18));
-            yield return new TestCaseData(AAPL, Resolution.Minute, new DateTime(2023,06,18), new DateTime(2024,07,18));
-            yield return new TestCaseData(AAPL, Resolution.Minute, new DateTime(2024,02,12), new DateTime(2024,03,23));
+            yield return new TestCaseData(AAPL, Resolution.Minute, new DateTime(2024, 06, 18), new DateTime(2024, 07, 18));
+            yield return new TestCaseData(AAPL, Resolution.Hour, new DateTime(2024, 06, 18), new DateTime(2024, 07, 18));
+            yield return new TestCaseData(AAPL, Resolution.Daily, new DateTime(2024, 06, 18), new DateTime(2024, 07, 18));
+            yield return new TestCaseData(AAPL, Resolution.Minute, new DateTime(2023, 06, 18), new DateTime(2024, 07, 18));
+            yield return new TestCaseData(AAPL, Resolution.Minute, new DateTime(2024, 02, 12), new DateTime(2024, 03, 23));
 
-            var AAPLOption = CreateSymbol("AAPL", SecurityType.Option, OptionRight.Call, 225m, new DateTime(2024, 07, 19));
-            yield return new TestCaseData(AAPLOption, Resolution.Minute, new DateTime(2024, 06, 18), new DateTime(2024, 07, 18));
-            yield return new TestCaseData(AAPLOption, Resolution.Hour, new DateTime(2024, 06, 18), new DateTime(2024, 07, 18));
-            yield return new TestCaseData(AAPLOption, Resolution.Daily, new DateTime(2024, 06, 18), new DateTime(2024, 07, 18));
-            yield return new TestCaseData(AAPLOption, Resolution.Minute, new DateTime(2023, 06, 18), new DateTime(2024, 07, 18));
-            yield return new TestCaseData(AAPLOption, Resolution.Minute, new DateTime(2024, 02, 12), new DateTime(2024, 03, 23));
+            var AAPLOption = CreateSymbol("AAPL", SecurityType.Option, OptionRight.Call, 200m, new DateTime(2024, 12, 13));
+            yield return new TestCaseData(AAPLOption, Resolution.Minute, new DateTime(2024, 11, 06), new DateTime(2024, 12, 06));
+            yield return new TestCaseData(AAPLOption, Resolution.Hour, new DateTime(2024, 11, 06), new DateTime(2024, 12, 06));
+            yield return new TestCaseData(AAPLOption, Resolution.Daily, new DateTime(2024, 11, 06), new DateTime(2024, 12, 06));
+            yield return new TestCaseData(AAPLOption, Resolution.Minute, new DateTime(2023, 11, 06), new DateTime(2024, 12, 06));
 
             var COTTON = Symbol.CreateFuture(Futures.Softs.Cotton2, Market.ICE, new DateTime(2024, 7, 1));
             yield return new TestCaseData(COTTON, Resolution.Minute, new DateTime(2024, 06, 18), new DateTime(2024, 07, 18));
@@ -53,6 +69,19 @@ public partial class TradeStationBrokerageTests
             yield return new TestCaseData(COTTON, Resolution.Daily, new DateTime(2024, 06, 18), new DateTime(2024, 07, 18));
             yield return new TestCaseData(COTTON, Resolution.Minute, new DateTime(2023, 06, 18), new DateTime(2024, 07, 18));
             yield return new TestCaseData(COTTON, Resolution.Minute, new DateTime(2024, 02, 12), new DateTime(2024, 03, 23));
+
+            var VIX = Symbol.Create("VIX", SecurityType.Index, Market.USA);
+            yield return new TestCaseData(VIX, Resolution.Minute, new DateTime(2024, 06, 18), new DateTime(2024, 07, 18));
+            yield return new TestCaseData(VIX, Resolution.Hour, new DateTime(2024, 06, 18), new DateTime(2024, 07, 18));
+            yield return new TestCaseData(VIX, Resolution.Daily, new DateTime(2024, 06, 18), new DateTime(2024, 07, 18));
+            yield return new TestCaseData(VIX, Resolution.Minute, new DateTime(2023, 06, 18), new DateTime(2024, 07, 18));
+            yield return new TestCaseData(VIX, Resolution.Minute, new DateTime(2024, 02, 12), new DateTime(2024, 03, 23));
+
+            var VIXOption = Symbol.CreateOption(VIX, Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 17m, new DateTime(2024, 12, 18));
+            yield return new TestCaseData(VIXOption, Resolution.Minute, new DateTime(2024, 11, 06), new DateTime(2024, 12, 06));
+            yield return new TestCaseData(VIXOption, Resolution.Hour, new DateTime(2024, 11, 06), new DateTime(2024, 12, 06));
+            yield return new TestCaseData(VIXOption, Resolution.Daily, new DateTime(2024, 11, 06), new DateTime(2024, 12, 06));
+            yield return new TestCaseData(VIXOption, Resolution.Minute, new DateTime(2023, 11, 06), new DateTime(2024, 12, 06));
         }
     }
 
@@ -61,7 +90,7 @@ public partial class TradeStationBrokerageTests
     {
         var historyRequest = CreateHistoryRequest(symbol, resolution, TickType.Trade, startDate, endDate);
 
-        var history = Brokerage.GetHistory(historyRequest);
+        var history = _brokerage.GetHistory(historyRequest);
 
         Assert.IsNotNull(history);
         Assert.IsNotEmpty(history);
@@ -69,7 +98,7 @@ public partial class TradeStationBrokerageTests
         AssertTradeBars(history.Select(x => x as TradeBar), symbol, resolution.ToTimeSpan());
     }
 
-    [TestCase("AAPL", SecurityType.Equity, Resolution.Tick, TickType.Trade, Description = "Not supported Resolution.Tick")]
+    [TestCase("AAPL", Resolution.Tick, TickType.Trade, Description = "Not supported Resolution.Tick")]
     [TestCase("AAPL", Resolution.Second, TickType.Trade, Description = "Not supported Resolution.Second")]
     [TestCase("AAPL", Resolution.Minute, TickType.OpenInterest, Description = "Not supported TickType.OpenInterest")]
     [TestCase("AAPL", Resolution.Minute, TickType.Quote, Description = "Not supported TickType.Quote")]
@@ -79,13 +108,14 @@ public partial class TradeStationBrokerageTests
 
         var historyRequest = CreateHistoryRequest(symbol, resolution, tickType, new DateTime(2024, 06, 19), new DateTime(2024, 07, 19));
 
-        var history = Brokerage.GetHistory(historyRequest);
+        var history = _brokerage.GetHistory(historyRequest);
 
         Assert.IsNull(history);
     }
 
     public static void AssertTradeBars(IEnumerable<TradeBar> tradeBars, Symbol symbol, TimeSpan period)
     {
+        var counterTradeBar = default(int);
         foreach (var tradeBar in tradeBars)
         {
             Assert.That(tradeBar.Symbol, Is.EqualTo(symbol));
@@ -98,7 +128,9 @@ public partial class TradeStationBrokerageTests
             Assert.That(tradeBar.Volume, Is.GreaterThanOrEqualTo(0));
             Assert.That(tradeBar.Time, Is.GreaterThan(default(DateTime)));
             Assert.That(tradeBar.EndTime, Is.GreaterThan(default(DateTime)));
+            counterTradeBar++;
         }
+        Log.Trace($"{nameof(AssertTradeBars)}: Successfully validated {counterTradeBar} trade bars for symbol '{symbol}' with period '{period}'.");
     }
 
     private static HistoryRequest CreateHistoryRequest(Symbol symbol, Resolution resolution, TickType tickType, DateTime startDateTime, DateTime endDateTime,

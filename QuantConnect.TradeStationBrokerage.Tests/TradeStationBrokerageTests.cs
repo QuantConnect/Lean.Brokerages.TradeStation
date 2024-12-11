@@ -22,9 +22,9 @@ using QuantConnect.Orders;
 using QuantConnect.Logging;
 using QuantConnect.Interfaces;
 using QuantConnect.Securities;
-using QuantConnect.Configuration;
 using System.Collections.Generic;
 using QuantConnect.Tests.Brokerages;
+using QuantConnect.Securities.IndexOption;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests
 {
@@ -42,27 +42,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
         protected override IBrokerage CreateBrokerage(IOrderProvider orderProvider, ISecurityProvider securityProvider)
         {
-            var clientId = Config.Get("trade-station-client-id");
-            var clientSecret = Config.Get("trade-station-client-secret");
-            var restApiUrl = Config.Get("trade-station-api-url");
-            var accountType = Config.Get("trade-station-account-type");
-            var refreshToken = Config.Get("trade-station-refresh-token");
-
-            if (string.IsNullOrEmpty(refreshToken))
-            {
-                var redirectUrl = Config.Get("trade-station-redirect-url");
-                var authorizationCode = Config.Get("trade-station-authorization-code");
-
-                if (new string[] { redirectUrl, authorizationCode }.Any(string.IsNullOrEmpty))
-                {
-                    throw new ArgumentException("RedirectUrl or AuthorizationCode cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
-                }
-
-                return new TradeStationBrokerageTest(clientId, clientSecret, restApiUrl, redirectUrl, authorizationCode, string.Empty,
-                    accountType, orderProvider, securityProvider);
-            }
-
-            return new TradeStationBrokerageTest(clientId, clientSecret, restApiUrl, string.Empty, string.Empty, refreshToken, accountType, orderProvider, securityProvider);
+            return TestSetup.CreateBrokerage(orderProvider, securityProvider);
         }
         protected override bool IsAsync()
         {
@@ -85,171 +65,264 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// <returns>The ask price for the specified symbol.</returns>
         protected override decimal GetAskPrice(Symbol symbol)
         {
-            var lastPrice = _brokerage.GetPrice(symbol).Last;
-            if (IsLongOrder)
-            {
-                return AddAndRound(lastPrice, 0.03m);
-            }
-            return SubtractAndRound(lastPrice, 0.03m);
+            var lastPrice = _brokerage.GetPrice(symbol);
+
+            return IsLongOrder ? lastPrice.Ask : lastPrice.Bid;
         }
 
-        /// <summary>
-        /// Provides the data required to test each order type in various cases
-        /// </summary>
-        private static IEnumerable<TestCaseData> EquityMarketOrderParameters
+        private static OrderTestParameters GetOrderTestParameters(OrderType orderType, Symbol symbol, decimal highLimit = 0m, decimal lowLimit = 0m)
+        {
+            return orderType switch
+            {
+                OrderType.Market => new MarketOrderTestParameters(symbol),
+                OrderType.Limit => new CustomLimitOrderTestParameters(symbol, highLimit, lowLimit),
+                OrderType.StopMarket => new CustomStopMarketOrderTestParameters(symbol, highLimit, lowLimit),
+                OrderType.StopLimit => new CustomStopLimitOrderTestParameters(symbol, highLimit, lowLimit),
+                _ => throw new NotImplementedException($"{nameof(TradeStationBrokerageTests)}.{nameof(GetOrderTestParameters)}: The specified order type '{orderType}' is not supported.")
+            };
+        }
+
+        private static IEnumerable<OrderTestMetaData> OrderTestParameters
         {
             get
             {
-                var EPU = Symbol.Create("AAPL", SecurityType.Equity, Market.USA);
-                yield return new TestCaseData(new MarketOrderTestParameters(EPU));
-            }
-        }
-
-        [Test, TestCaseSource(nameof(EquityMarketOrderParameters))]
-        public void ShortFromZeroEquity(OrderTestParameters parameters)
-        {
-            base.ShortFromZero(parameters);
-        }
-
-        [Test, TestCaseSource(nameof(EquityMarketOrderParameters))]
-        public void ShortFromLongEquity(OrderTestParameters parameters)
-        {
-            base.ShortFromLong(parameters);
-        }
-
-        [Test, TestCaseSource(nameof(EquityMarketOrderParameters))]
-        public void LongFromShortEquity(OrderTestParameters parameters)
-        {
-            base.LongFromShort(parameters);
-        }
-
-        private static IEnumerable<TestCaseData> OrderTestParameters
-        {
-            get
-            {
-                TestGlobals.Initialize();
                 var INTL = Symbol.Create("INTL", SecurityType.Equity, Market.USA);
-                yield return new TestCaseData(new LimitOrderTestParameters(INTL, 23m, 22m)).SetCategory("Equity").SetName("INTL|EQUITY|LIMIT");
-                yield return new TestCaseData(new StopMarketOrderTestParameters(INTL, 23m, 22m)).SetCategory("Equity").SetName("INTL|EQUITY|STOPMARKET");
-                yield return new TestCaseData(new StopLimitOrderTestParameters(INTL, 23m, 23m)).SetCategory("Equity").SetName("INTL|EQUITY|STOPLIMIT");
+                yield return new OrderTestMetaData(OrderType.Market, INTL);
+                yield return new OrderTestMetaData(OrderType.Limit, INTL);
+                yield return new OrderTestMetaData(OrderType.StopMarket, INTL);
+                yield return new OrderTestMetaData(OrderType.StopLimit, INTL);
 
-                var AAPLOption = Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 100m, new DateTime(2024, 9, 6));
-                yield return new TestCaseData(new LimitOrderTestParameters(AAPLOption, 15.85m, 14.85m)).SetCategory("Option").SetName("AAPL|OPTION|LIMIT");
-                yield return new TestCaseData(new StopMarketOrderTestParameters(AAPLOption, 15.1m, 15.1m)).SetCategory("Option").SetName("AAPL|OPTION|STOPMARKET");
-                yield return new TestCaseData(new StopLimitOrderTestParameters(AAPLOption, 15.1m, 15.1m)).SetCategory("Option").SetName("AAPL|OPTION|STOPLIMIT");
+                var AAPLOption = Symbol.CreateOption(Symbols.AAPL, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 200m, new DateTime(2024, 12, 13));
+                yield return new OrderTestMetaData(OrderType.Market, AAPLOption);
+                yield return new OrderTestMetaData(OrderType.Limit, AAPLOption);
+                yield return new OrderTestMetaData(OrderType.StopMarket, AAPLOption);
+                yield return new OrderTestMetaData(OrderType.StopLimit, AAPLOption);
 
-                var COTTON = Symbol.CreateFuture(Futures.Softs.Cotton2, Market.ICE, new DateTime(2024, 10, 1));
-                yield return new TestCaseData(new LimitOrderTestParameters(COTTON, 72m, 70m)).SetCategory("Future").SetName("COTTON|FUTURE|LIMIT").Explicit("At the first, setup specific `trade-station-account-type` in config file.");
-                yield return new TestCaseData(new StopMarketOrderTestParameters(COTTON, 72m, 70m)).SetCategory("Future").SetName("COTTON|FUTURE|STOPMARKET").Explicit("At the first, setup specific `trade-station-account-type` in config file.");
-                yield return new TestCaseData(new StopLimitOrderTestParameters(COTTON, 72m, 72m)).SetCategory("Future").SetName("COTTON|FUTURE|STOPLIMIT").Explicit("At the first, setup specific `trade-station-account-type` in config file.");
+                var index = Symbol.Create("VIX", SecurityType.Index, Market.USA);
+                var VIXOption = Symbol.CreateOption(index, Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 13m, new DateTime(2024, 12, 18));
+                yield return new OrderTestMetaData(OrderType.Market, VIXOption);
+                yield return new OrderTestMetaData(OrderType.Limit, VIXOption);
+                yield return new OrderTestMetaData(OrderType.StopMarket, VIXOption);
+                yield return new OrderTestMetaData(OrderType.StopLimit, VIXOption);
+
+                // At the first, setup specific `trade-station-account-type` in config file.
+                //Config.Set("trade-station-account-type", "Future");
+                //var COTTON = Symbol.CreateFuture(Futures.Softs.Cotton2, Market.ICE, new DateTime(2024, 10, 1));
+                //yield return new OrderTestMetaData(OrderType.Market, COTTON);
+                //yield return new OrderTestMetaData(OrderType.Limit, COTTON);
+                //yield return new OrderTestMetaData(OrderType.StopMarket, COTTON);
+                //yield return new OrderTestMetaData(OrderType.StopLimit, COTTON);
             }
         }
 
         [TestCaseSource(nameof(OrderTestParameters))]
-        public override void CancelOrders(OrderTestParameters parameters)
+        public void CancelOrders(OrderTestMetaData orderTestMetaData)
         {
-            parameters = GetLastPriceForLongOrder(parameters);
+            var symbolPrice = _brokerage.GetPrice(orderTestMetaData.Symbol);
+
+            var (highPrice, lowPrice) = orderTestMetaData.OrderType switch
+            {
+                OrderType.Market => (0m, 0m),
+                OrderType.Limit or OrderType.StopMarket => (AddAndRound(symbolPrice.Ask, 0.1m), SubtractAndRound(symbolPrice.Bid, 0.1m)),
+                // StopLimit : Limit price must be at or above StopMarketPrice
+                OrderType.StopLimit => (AddAndRound(symbolPrice.Bid, 0.1m), AddAndRound(symbolPrice.Ask, 0.2m)),
+                _ => throw new NotImplementedException("Not supported type of order")
+            };
+
+            Log.Trace($"CANCEL ORDERS: OrderType = {orderTestMetaData.OrderType}, Symbol = {orderTestMetaData.Symbol}, HighPrice = {highPrice}, LowPrice = {lowPrice}");
+
+            var parameters = GetOrderTestParameters(orderTestMetaData.OrderType, orderTestMetaData.Symbol, highPrice, lowPrice);
             base.CancelOrders(parameters);
         }
 
         [Test, TestCaseSource(nameof(OrderTestParameters))]
-        public override void LongFromZero(OrderTestParameters parameters)
+        public void LongFromZero(OrderTestMetaData orderTestMetaData)
         {
-            parameters = GetLastPriceForLongOrder(parameters);
+            var symbolPrice = _brokerage.GetPrice(orderTestMetaData.Symbol);
+
+            var (highPrice, lowPrice) = orderTestMetaData.OrderType switch
+            {
+                OrderType.Market => (0m, 0m),
+                OrderType.Limit => (AddAndRound(symbolPrice.Ask, 0.01m), SubtractAndRound(symbolPrice.Bid, 0.01m)),
+                // StopMarket: Stop Price - Stop Price must be above current market.
+                OrderType.StopMarket => (AddAndRound(symbolPrice.Ask, 0.06m), SubtractAndRound(symbolPrice.Bid, 0.01m)),
+                // StopLimit: Limit price must be at or above StopMarketPrice || Invalid Stop Price - Stop Price must be above current market.
+                OrderType.StopLimit => (AddAndRound(symbolPrice.Bid, 0.1m), AddAndRound(symbolPrice.Ask, 0.1m)),
+                _ => throw new NotImplementedException("Not supported type of order")
+            };
+            Log.Trace($"LONG FROM ZERO ORDERS: OrderType = {orderTestMetaData.OrderType}, Symbol = {orderTestMetaData.Symbol}, HighPrice = {highPrice}, LowPrice = {lowPrice}");
+
+            var parameters = GetOrderTestParameters(orderTestMetaData.OrderType, orderTestMetaData.Symbol, highPrice, lowPrice);
+
             base.LongFromZero(parameters);
         }
 
         [Test, TestCaseSource(nameof(OrderTestParameters))]
-        public override void CloseFromLong(OrderTestParameters parameters)
+        public void CloseFromLong(OrderTestMetaData orderTestMetaData)
         {
             IsLongOrder = false;
-            parameters = GetLastPriceForShortOrder(parameters);
+            var symbolPrice = _brokerage.GetPrice(orderTestMetaData.Symbol);
+
+            var (highPrice, lowPrice) = orderTestMetaData.OrderType switch
+            {
+                OrderType.Market => (0m, 0m),
+                OrderType.Limit or OrderType.StopMarket => (AddAndRound(symbolPrice.Ask, 0.2m), SubtractAndRound(symbolPrice.Bid, 0.2m)),
+                // StopLimit: Invalid Limit Price - Limit Price must be at or below Stop Price.
+                OrderType.StopLimit => (SubtractAndRound(symbolPrice.Bid, 0.3m), SubtractAndRound(symbolPrice.Ask, 0.2m)),
+                _ => throw new NotImplementedException("Not supported type of order")
+            };
+
+            Log.Trace($"CLOSE FROM LONG: OrderType = {orderTestMetaData.OrderType}, Symbol = {orderTestMetaData.Symbol}, HighPrice = {highPrice}, LowPrice = {lowPrice}");
+
+            var parameters = GetOrderTestParameters(orderTestMetaData.OrderType, orderTestMetaData.Symbol, highPrice, lowPrice);
             base.CloseFromLong(parameters);
         }
 
         [Test, TestCaseSource(nameof(OrderTestParameters))]
-        public override void ShortFromZero(OrderTestParameters parameters)
+        public void ShortFromZero(OrderTestMetaData orderTestMetaData)
         {
-            parameters = GetLastPriceForShortOrder(parameters);
+            var symbolPrice = _brokerage.GetPrice(orderTestMetaData.Symbol);
+
+            var (highPrice, lowPrice) = orderTestMetaData.OrderType switch
+            {
+                OrderType.Market => (0m, 0m),
+                OrderType.Limit => (AddAndRound(symbolPrice.Ask, 0.01m), SubtractAndRound(symbolPrice.Bid, 0.01m)),
+                // StopMarket: Stop Price - Stop Price must be above current market.
+                OrderType.StopMarket => (AddAndRound(symbolPrice.Ask, 0.06m), SubtractAndRound(symbolPrice.Bid, 0.01m)),
+                // StopLimit: Limit price must be at or above StopMarketPrice || Message: Invalid Stop Price - Stop Price must be below current market.
+                OrderType.StopLimit => (SubtractAndRound(symbolPrice.Bid, 0.1m), SubtractAndRound(symbolPrice.Ask, 0.1m)),
+                _ => throw new NotImplementedException("Not supported type of order")
+            };
+            Log.Trace($"SHORT FROM ZERO: OrderType = {orderTestMetaData.OrderType}, Symbol = {orderTestMetaData.Symbol}, HighPrice = {highPrice}, LowPrice = {lowPrice}");
+
+            var parameters = GetOrderTestParameters(orderTestMetaData.OrderType, orderTestMetaData.Symbol, highPrice, lowPrice);
+
             base.ShortFromZero(parameters);
         }
 
         [Test, TestCaseSource(nameof(OrderTestParameters))]
-        public override void CloseFromShort(OrderTestParameters parameters)
+        public void CloseFromShort(OrderTestMetaData orderTestMetaData)
         {
             IsLongOrder = true;
-            parameters = GetLastPriceForLongOrder(parameters);
+
+            var symbolPrice = _brokerage.GetPrice(orderTestMetaData.Symbol);
+
+            var (highPrice, lowPrice) = orderTestMetaData.OrderType switch
+            {
+                OrderType.Market => (0m, 0m),
+                OrderType.Limit => (AddAndRound(symbolPrice.Ask, 0.01m), SubtractAndRound(symbolPrice.Bid, 0.01m)),
+                // StopMarket: Stop Price - Stop Price must be above current market.
+                OrderType.StopMarket => (AddAndRound(symbolPrice.Ask, 0.06m), SubtractAndRound(symbolPrice.Bid, 0.01m)),
+                // StopLimit: Limit price must be at or above StopMarketPrice || Invalid Stop Price - Stop Price must be above current market.
+                OrderType.StopLimit => (AddAndRound(symbolPrice.Bid, 0.1m), AddAndRound(symbolPrice.Ask, 0.1m)),
+                _ => throw new NotImplementedException("Not supported type of order")
+            };
+            Log.Trace($"SHORT FROM ZERO: OrderType = {orderTestMetaData.OrderType}, Symbol = {orderTestMetaData.Symbol}, HighPrice = {highPrice}, LowPrice = {lowPrice}");
+
+            var parameters = GetOrderTestParameters(orderTestMetaData.OrderType, orderTestMetaData.Symbol, highPrice, lowPrice);
+
             base.CloseFromShort(parameters);
         }
 
-        [Test, TestCaseSource(nameof(OrderTestParameters))]
-        public override void ShortFromLong(OrderTestParameters parameters)
+        private static IEnumerable<OrderTestMetaData> MostActiveOrderTestParameters
+        {
+            get
+            {
+                var NVDA = Symbol.Create("NVDA", SecurityType.Equity, Market.USA);
+                yield return new OrderTestMetaData(OrderType.Limit, NVDA);
+                yield return new OrderTestMetaData(OrderType.StopMarket, NVDA);
+                yield return new OrderTestMetaData(OrderType.StopLimit, NVDA);
+
+                var NVDAOption = Symbol.CreateOption(NVDA, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 139m, new DateTime(2024, 12, 13));
+                yield return new OrderTestMetaData(OrderType.Limit, NVDAOption);
+                yield return new OrderTestMetaData(OrderType.StopMarket, NVDAOption);
+                yield return new OrderTestMetaData(OrderType.StopLimit, NVDAOption);
+
+                var index = Symbol.Create("VIX", SecurityType.Index, Market.USA);
+                var VIXOption = Symbol.CreateOption(index, Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 15m, new DateTime(2024, 12, 18));
+                yield return new OrderTestMetaData(OrderType.Limit, VIXOption);
+                yield return new OrderTestMetaData(OrderType.StopMarket, VIXOption);
+                yield return new OrderTestMetaData(OrderType.StopLimit, VIXOption);
+
+                var VIXWeeklyOption = Symbol.CreateOption(index, "VIXW", Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 14.5m, new DateTime(2024, 12, 11));
+                yield return new OrderTestMetaData(OrderType.Limit, VIXWeeklyOption);
+                yield return new OrderTestMetaData(OrderType.StopMarket, VIXWeeklyOption);
+                yield return new OrderTestMetaData(OrderType.StopLimit, VIXWeeklyOption);
+            }
+        }
+
+        [Test, TestCaseSource(nameof(MostActiveOrderTestParameters))]
+        public void ShortFromLong(OrderTestMetaData orderTestMetaData)
         {
             IsLongOrder = false;
-            parameters = GetLastPriceForShortOrder(parameters);
+            var symbolPrice = _brokerage.GetPrice(orderTestMetaData.Symbol);
+
+            var (highPrice, lowPrice) = orderTestMetaData.OrderType switch
+            {
+                OrderType.Limit or OrderType.StopMarket => (AddAndRound(symbolPrice.Ask, 0.2m), SubtractAndRound(symbolPrice.Bid, 0.2m)),
+                // StopLimit: Invalid Limit Price - Limit Price must be at or below Stop Price.
+                OrderType.StopLimit => (SubtractAndRound(symbolPrice.Bid, 0.05m), SubtractAndRound(symbolPrice.Ask, 0.04m)),
+                _ => throw new NotImplementedException("Not supported type of order")
+            };
+
+            Log.Trace($"SHORT FROM LONG: OrderType = {orderTestMetaData.OrderType}, Symbol = {orderTestMetaData.Symbol}, HighPrice = {highPrice}, LowPrice = {lowPrice}");
+
+            var parameters = GetOrderTestParameters(orderTestMetaData.OrderType, orderTestMetaData.Symbol, highPrice, lowPrice);
             base.ShortFromLong(parameters);
         }
 
-        [Test, TestCaseSource(nameof(OrderTestParameters))]
-        public override void LongFromShort(OrderTestParameters parameters)
+        [Test, TestCaseSource(nameof(MostActiveOrderTestParameters))]
+        public void LongFromShort(OrderTestMetaData orderTestMetaData)
         {
             IsLongOrder = true;
-            parameters = GetLastPriceForLongOrder(parameters);
+            var symbolPrice = _brokerage.GetPrice(orderTestMetaData.Symbol);
+
+            var (highPrice, lowPrice) = orderTestMetaData.OrderType switch
+            {
+                OrderType.Limit or OrderType.StopMarket => (AddAndRound(symbolPrice.Ask, 0.2m), SubtractAndRound(symbolPrice.Bid, 0.2m)),
+                // StopLimit: Invalid Limit Price - Limit Price must be at or below Stop Price.
+                OrderType.StopLimit => (AddAndRound(symbolPrice.Bid, 0.2m), AddAndRound(symbolPrice.Ask, 0.3m)),
+                _ => throw new NotImplementedException("Not supported type of order")
+            };
+
+            Log.Trace($"LONG FROM SHORT: OrderType = {orderTestMetaData.OrderType}, Symbol = {orderTestMetaData.Symbol}, HighPrice = {highPrice}, LowPrice = {lowPrice}");
+
+            var parameters = GetOrderTestParameters(orderTestMetaData.OrderType, orderTestMetaData.Symbol, highPrice, lowPrice);
             base.LongFromShort(parameters);
         }
 
-        [Test, TestCaseSource(nameof(OrderTestParameters))]
-        public void ShortFromShort(OrderTestParameters parameters)
+        [TestCase("AAPL", SecurityType.Option)]
+        [TestCase("SPY", SecurityType.Option)]
+        [TestCase("SPX", SecurityType.IndexOption)]
+        [TestCase("VIX", SecurityType.IndexOption)]
+        [TestCase("VIXW", SecurityType.IndexOption)]
+        [TestCase("NDX", SecurityType.IndexOption)]
+        [TestCase("NDXP", SecurityType.IndexOption)]
+        public void LookupSymbols(string ticker, SecurityType securityType)
         {
-            IsLongOrder = false;
-            parameters = GetLastPriceForShortOrder(parameters);
-
-            Log.Trace("");
-            Log.Trace("SHORT FROM SHORT");
-            Log.Trace("");
-            // first go short
-            PlaceOrderWaitForStatus(parameters.CreateShortMarketOrder(-GetDefaultQuantity()), OrderStatus.Filled);
-
-            // now go short again
-            var order = PlaceOrderWaitForStatus(parameters.CreateShortOrder(-2 * GetDefaultQuantity()), parameters.ExpectedStatus);
-
-            if (parameters.ModifyUntilFilled)
+            var option = default(Symbol);
+            switch (securityType)
             {
-                ModifyOrderUntilFilled(order, parameters);
+                case SecurityType.Option:
+                    var underlying = Symbol.Create(ticker, SecurityType.Equity, Market.USA);
+                    option = Symbol.CreateCanonicalOption(underlying);
+                    break;
+                case SecurityType.IndexOption:
+                    underlying = Symbol.Create(IndexOptionSymbol.MapToUnderlying(ticker), SecurityType.Index, Market.USA);
+                    option = Symbol.CreateCanonicalOption(underlying, targetOption: ticker);
+                    break;
+                default:
+                    throw new NotImplementedException($"{nameof(TradeStationBrokerageTests)}.{nameof(LookupSymbols)}: Not support SecurityType = {securityType} by Ticker = {ticker}");
             }
-        }
-
-        [Test, TestCaseSource(nameof(OrderTestParameters))]
-        public virtual void LongFromLong(OrderTestParameters parameters)
-        {
-            IsLongOrder = true;
-            parameters = GetLastPriceForLongOrder(parameters);
-
-            Log.Trace("");
-            Log.Trace("LONG FROM LONG");
-            Log.Trace("");
-            // first go long
-            PlaceOrderWaitForStatus(parameters.CreateLongMarketOrder(GetDefaultQuantity()));
-
-            // now go long again
-            var order = PlaceOrderWaitForStatus(parameters.CreateLongOrder(2 * GetDefaultQuantity()), parameters.ExpectedStatus);
-
-            if (parameters.ModifyUntilFilled)
-            {
-                ModifyOrderUntilFilled(order, parameters);
-            }
-        }
-
-        [Test]
-        public void LookupSymbols()
-        {
-            var option = Symbol.CreateCanonicalOption(Symbols.AAPL);
 
             var options = (Brokerage as IDataQueueUniverseProvider).LookupSymbols(option, false).ToList();
             Assert.IsNotNull(options);
             Assert.True(options.Any());
             Assert.Greater(options.Count, 0);
             Assert.That(options.Distinct().ToList().Count, Is.EqualTo(options.Count));
+
+            var mainSymbol = option.ID.Symbol;
+            Assert.IsTrue(options.All(x => x.ID.Symbol == mainSymbol));
         }
         /// <summary>
         /// Tests the scenario where a market order transitions from a short position to a long position,
@@ -267,11 +340,11 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// </summary>
         /// <param name="longQuantityMultiplayer">The multiplier for the long order quantity, relative to the default quantity.</param>
         [TestCase("AAPL", SecurityType.Equity, Market.USA, null, 4)]
-        [TestCase(Futures.Softs.Cotton2, SecurityType.Future, Market.ICE, "2024/10/1", 4, Description = "Pay attention on Config:trade-station-account-type")]
+        [TestCase(Futures.Softs.Cotton2, SecurityType.Future, Market.ICE, "2024/10/1", 4), Explicit("Pay attention on Config:trade-station-account-type")]
         public void MarketCrossZeroLongFromShort(string ticker, SecurityType securityType, string market, DateTime expireDate, decimal longQuantityMultiplayer)
         {
             Log.Trace($"TEST MARKET CROSS ZERO LONG FROM SHORT OF {securityType.ToString().ToUpperInvariant()}");
-            var symbol = CreateSymbol(ticker, securityType, expirationDate: expireDate, market: market);
+            var symbol = TradeStationBrokerageHistoryProviderTests.CreateSymbol(ticker, securityType, expirationDate: expireDate, market: market);
             var expectedOrderStatusChangedOrdering = new[] { OrderStatus.Submitted, OrderStatus.PartiallyFilled, OrderStatus.Filled };
             var actualCrossZeroOrderStatusOrdering = new Queue<OrderStatus>();
 
@@ -685,99 +758,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             };
         }
 
-        /// <summary>
-        /// Retrieves the last price for a short order based on the provided order test parameters.
-        /// </summary>
-        /// <param name="orderTestParameters">The order test parameters.</param>
-        /// <returns>An instance of <see cref="QuantConnect.Tests.Brokerages.OrderTestParameters"/> with the last price for a short order.</returns>
-        private OrderTestParameters GetLastPriceForShortOrder(OrderTestParameters orderTestParameters)
-        {
-            if (orderTestParameters is MarketOrderTestParameters)
-            {
-                return orderTestParameters;
-            }
-            var orderType = GetOrderTypeByOrderTestParameters(orderTestParameters);
-            return GetLastPriceForShortOrder(orderTestParameters.Symbol, orderType);
-        }
 
-        /// <summary>
-        /// Retrieves the last price for a long order based on the provided order test parameters.
-        /// </summary>
-        /// <param name="orderTestParameters">The order test parameters.</param>
-        /// <returns>An instance of <see cref="QuantConnect.Tests.Brokerages.OrderTestParameters"/> with the last price for a long order.</returns>
-        private OrderTestParameters GetLastPriceForLongOrder(OrderTestParameters orderTestParameters)
-        {
-            if (orderTestParameters is MarketOrderTestParameters)
-            {
-                return orderTestParameters;
-            }
-            var orderType = GetOrderTypeByOrderTestParameters(orderTestParameters);
-            return GetLastPriceForLongOrder(orderTestParameters.Symbol, orderType);
-        }
-
-        /// <summary>
-        /// Determines the order type based on the provided order test parameters.
-        /// </summary>
-        /// <param name="orderTestParameters">The order test parameters.</param>
-        /// <returns>The determined <see cref="OrderType"/>.</returns>
-        /// <exception cref="NotImplementedException">Thrown when the order type is not implemented.</exception>
-        private static OrderType GetOrderTypeByOrderTestParameters(OrderTestParameters orderTestParameters) => orderTestParameters switch
-        {
-            LimitOrderTestParameters => OrderType.Limit,
-            StopMarketOrderTestParameters => OrderType.StopMarket,
-            StopLimitOrderTestParameters => OrderType.StopLimit,
-            _ => throw new NotImplementedException($"The order type '{orderTestParameters.GetType().Name}' is not implemented.")
-        };
-
-        /// <summary>
-        /// Retrieves the last price for a short order based on the symbol and order type.
-        /// </summary>
-        /// <param name="symbol">The symbol for the order.</param>
-        /// <param name="orderType">The type of the order.</param>
-        /// <returns>An instance of <see cref="QuantConnect.Tests.Brokerages.OrderTestParameters"/> with the last price for a short order.</returns>
-        /// <exception cref="NotImplementedException">Thrown when the order type is not supported.</exception>
-        private OrderTestParameters GetLastPriceForShortOrder(Symbol symbol, OrderType orderType)
-        {
-            var lastPrice = _brokerage.GetPrice(symbol).Last;
-            return orderType switch
-            {
-                OrderType.Limit => new LimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.03m), SubtractAndRound(lastPrice, 0.03m)),
-                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, SubtractAndRound(lastPrice, 0.03m), SubtractAndRound(lastPrice, 0.06m)),
-                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, SubtractAndRound(lastPrice, 0.03m), SubtractAndRound(lastPrice, 0.03m)),
-                _ => throw new NotImplementedException("Not supported type of order")
-            };
-        }
-
-        /// <summary>
-        /// Retrieves the last price for a long order based on the symbol and order type.
-        /// </summary>
-        /// <param name="symbol">The symbol for the order.</param>
-        /// <param name="orderType">The type of the order.</param>
-        /// <returns>An instance of <see cref="QuantConnect.Tests.Brokerages.OrderTestParameters"/> with the last price for a long order.</returns>
-        /// <exception cref="NotImplementedException">Thrown when the order type is not supported.</exception>
-        private OrderTestParameters GetLastPriceForLongOrder(Symbol symbol, OrderType orderType)
-        {
-            var lastPrice = _brokerage.GetPrice(symbol).Last;
-            return orderType switch
-            {
-                OrderType.Limit => new LimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.02m), SubtractAndRound(lastPrice, 0.02m)),
-                OrderType.StopMarket => new StopMarketOrderTestParameters(symbol, AddAndRound(lastPrice, 0.04m), AddAndRound(lastPrice, 0.06m)),
-                OrderType.StopLimit => new StopLimitOrderTestParameters(symbol, AddAndRound(lastPrice, 0.04m), AddAndRound(lastPrice, 0.06m)),
-                _ => throw new NotImplementedException("Not supported type of order")
-            };
-        }
-
-        public static decimal AddAndRound(decimal number, decimal valueToAdd)
-        {
-            decimal result = number + valueToAdd;
-            return Math.Round(result, 2);
-        }
-
-        public static decimal SubtractAndRound(decimal number, decimal valueToSubtract)
-        {
-            decimal result = number - valueToSubtract;
-            return Math.Round(result, 2);
-        }
 
         [TestCase("CBOE", SecurityType.Equity, new SecurityType[] { SecurityType.Equity, SecurityType.Option }, "CBOE")]
         [TestCase("IEX", SecurityType.Equity, new SecurityType[] { SecurityType.Equity }, "IEXG")]
@@ -813,45 +794,36 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             }
         }
 
-        public class TradeStationBrokerageTest : TradeStationBrokerage
+        /// <summary>
+        /// Adds a value to a base number and rounds the result to the nearest specified increment.
+        /// </summary>
+        /// <param name="number">The base number to which the value will be added.</param>
+        /// <param name="valueToAdd">The value to add to the base number.</param>
+        /// <param name="increment">The increment to which the result should be rounded (default is 0.05).</param>
+        /// <returns>The adjusted and rounded result.</returns>
+        private static decimal AddAndRound(decimal number, decimal valueToAdd, decimal increment = 0.05m) =>
+            AdjustAndRound(number + valueToAdd, increment);
+
+        /// <summary>
+        /// Subtracts a value from a base number and rounds the result to the nearest specified increment.
+        /// Ensures that the result does not go below zero unless the base number itself is negative or zero.
+        /// </summary>
+        /// <param name="number">The base number from which the value will be subtracted.</param>
+        /// <param name="valueToSubtract">The value to subtract from the base number.</param>
+        /// <param name="increment">The increment to which the result should be rounded (default is 0.05).</param>
+        /// <returns>The adjusted and rounded result.</returns>
+        private static decimal SubtractAndRound(decimal number, decimal valueToSubtract, decimal increment = 0.05m)
         {
-            /// <summary>
-            /// Constructor for the TradeStation brokerage.
-            /// </summary>
-            /// <remarks>
-            /// This constructor initializes a new instance of the TradeStationBrokerage class with the provided parameters.
-            /// </remarks>
-            /// <param name="apiKey">The API key for authentication.</param>
-            /// <param name="apiKeySecret">The API key secret for authentication.</param>
-            /// <param name="restApiUrl">The URL of the REST API.</param>
-            /// <param name="redirectUrl">The redirect URL to generate great link to get right "authorizationCodeFromUrl"</param>
-            /// <param name="authorizationCode">The authorization code obtained from the URL.</param>
-            /// <param name="refreshToken">The refresh token used to obtain new access tokens for authentication.</param>
-            /// <param name="accountType">The type of TradeStation account for the current session.
-            /// For <see cref="TradeStationAccountType.Cash"/> or <seealso cref="TradeStationAccountType.Margin"/> accounts, it is used for trading <seealso cref="SecurityType.Equity"/> and <seealso cref="SecurityType.Option"/>.
-            /// For <seealso cref="TradeStationAccountType.Futures"/> accounts, it is used for trading <seealso cref="SecurityType.Future"/> contracts.</param>
-            /// <param name="orderProvider">The order provider.</param>
-            /// <param name="accountId">The specific user account id.</param>
-            public TradeStationBrokerageTest(string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl,
-                string authorizationCode, string refreshToken, string accountType, IOrderProvider orderProvider, ISecurityProvider securityProvider, string accountId = "")
-                : base(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider, accountId)
-            { }
-
-            /// <summary>
-            /// Retrieves the last price of the specified symbol.
-            /// </summary>
-            /// <param name="symbol">The symbol for which to retrieve the last price.</param>
-            /// <returns>The last price of the specified symbol as a decimal.</returns>
-            public Models.Quote GetPrice(Symbol symbol)
-            {
-                return GetQuote(symbol).Quotes.Single();
-            }
-
-            public bool GetTradeStationOrderRouteIdByOrder(TradeStationOrderProperties tradeStationOrderProperties, IReadOnlyCollection<SecurityType> securityTypes, out string routeId)
-            {
-                routeId = default;
-                return GetTradeStationOrderRouteIdByOrderSecurityTypes(tradeStationOrderProperties, securityTypes, out routeId);
-            }
+            var adjustedValue = number - valueToSubtract <= 0 ? number : number - valueToSubtract;
+            return AdjustAndRound(adjustedValue, increment);
         }
+
+        /// <summary>
+        /// Rounds a given value to the nearest specified increment and ensures it is rounded to two decimal places.
+        /// </summary>
+        /// <param name="value">The value to adjust and round.</param>
+        /// <param name="increment">The increment to which the value should be rounded.</param>
+        /// <returns>The rounded value, adjusted to two decimal places.</returns>
+        private static decimal AdjustAndRound(decimal value, decimal increment) => Math.Round(Math.Round(value / increment) * increment, 2);
     }
 }

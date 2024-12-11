@@ -17,6 +17,8 @@ using System;
 using QuantConnect.Securities;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using QuantConnect.Securities.IndexOption;
+using QuantConnect.Brokerages.TradeStation.Models.Enums;
 
 namespace QuantConnect.Brokerages.TradeStation;
 
@@ -36,7 +38,7 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// <remarks>
     /// This HashSet contains the supported security types that are allowed within the system.
     /// </remarks>
-    public readonly HashSet<SecurityType> SupportedSecurityType = new() { SecurityType.Equity, SecurityType.Option, SecurityType.Future };
+    public readonly HashSet<SecurityType> SupportedSecurityType = new() { SecurityType.Equity, SecurityType.Option, SecurityType.Future, SecurityType.Index, SecurityType.IndexOption };
 
     /// <summary>
     /// Converts a Lean symbol instance to a brokerage symbol
@@ -50,7 +52,10 @@ public class TradeStationSymbolMapper : ISymbolMapper
         {
             case SecurityType.Equity:
                 return symbol.Value;
+            case SecurityType.Index:
+                return "$" + symbol.Value + ".X";
             case SecurityType.Option:
+            case SecurityType.IndexOption:
                 return GenerateBrokerageOption(symbol);
             case SecurityType.Future:
                 return GenerateBrokerageFuture(symbol);
@@ -79,13 +84,57 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// <example>{AAPL 240510C167.5}</example>
     private string GenerateBrokerageOption(Symbol symbol)
     {
-        return $"{symbol.Underlying.Value} {symbol.ID.Date:yyMMdd}{symbol.ID.OptionRight.ToString()[0]}{symbol.ID.StrikePrice}";
+        return $"{symbol.ID.Symbol} {symbol.ID.Date:yyMMdd}{symbol.ID.OptionRight.ToString()[0]}{symbol.ID.StrikePrice}";
+    }
+
+    /// <summary>
+    /// Attempts to map a TradeStation brokerage symbol to a Lean symbol.
+    /// </summary>
+    /// <param name="brokerageSymbol">The brokerage symbol to be mapped to a Lean symbol.</param>
+    /// <param name="tradeStationAssetType">The asset type of the TradeStation symbol, used to determine the corresponding Lean security type.</param>
+    /// <param name="expirationDateTime">The expiration date and time for the symbol, relevant for options or futures.</param>
+    /// <param name="leanSymbol">When this method returns, contains the Lean symbol if mapping was successful; otherwise, contains the default value of <see cref="Symbol"/>.</param>
+    /// <returns>
+    /// <c>true</c> if the Lean symbol was successfully mapped; otherwise, <c>false</c>.
+    /// </returns>
+    public bool TryGetLeanSymbol(string brokerageSymbol, TradeStationAssetType tradeStationAssetType, DateTime expirationDateTime, out Symbol leanSymbol)
+    {
+        try
+        {
+            var ticker = brokerageSymbol;
+            var optionRight = default(OptionRight);
+            var strikePrice = default(decimal);
+            switch (tradeStationAssetType)
+            {
+                case TradeStationAssetType.StockOption:
+                    (ticker, optionRight, strikePrice) = ParsePositionOptionSymbol(brokerageSymbol);
+                    break;
+                case TradeStationAssetType.IndexOption:
+                    (ticker, optionRight, strikePrice) = ParsePositionOptionSymbol(brokerageSymbol);
+                    ticker = ConvertIndexBrokerageTickerInLeanTicker(ticker);
+                    break;
+                case TradeStationAssetType.Future:
+                    ticker = SymbolRepresentation.ParseFutureTicker(brokerageSymbol).Underlying;
+                    break;
+                case TradeStationAssetType.Index:
+                    ticker = ConvertIndexBrokerageTickerInLeanTicker(ticker);
+                    break;
+            }
+
+            leanSymbol = GetLeanSymbol(ticker, tradeStationAssetType.ConvertAssetTypeToSecurityType(), expirationDate: expirationDateTime, strike: strikePrice, optionRight: optionRight);
+            return true;
+        }
+        catch
+        {
+            leanSymbol = default;
+            return false;
+        }
     }
 
     /// <summary>
     /// Converts a brokerage symbol to a Lean symbol instance
     /// </summary>
-    /// <param name="brokerageSymbol">The brokerage symbol</param>
+    /// <param name="ticker">The brokerage symbol</param>
     /// <param name="securityType">The security type</param>
     /// <param name="market">The market</param>
     /// <param name="expirationDate">Expiration date of the security(if applicable)</param>
@@ -93,24 +142,27 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// <param name="optionRight">The option right of the security (if applicable)</param>
     /// <returns>A new Lean Symbol instance</returns>
     /// <exception cref="NotImplementedException">The security type is not implemented or not supported.</exception>
-    public Symbol GetLeanSymbol(string brokerageSymbol, SecurityType securityType, string market, DateTime expirationDate = default, decimal strike = 0, OptionRight optionRight = OptionRight.Call)
+    public Symbol GetLeanSymbol(string ticker, SecurityType securityType, string market = Market.USA, DateTime expirationDate = default, decimal strike = 0, OptionRight optionRight = OptionRight.Call)
     {
         switch (securityType)
         {
+            case SecurityType.Index:
             case SecurityType.Equity:
-                return Symbol.Create(brokerageSymbol, SecurityType.Equity, market);
+                return Symbol.Create(ticker, securityType, market);
             case SecurityType.Option:
-                var underlying = Symbol.Create(brokerageSymbol, SecurityType.Equity, market);
+                var underlying = Symbol.Create(ticker, SecurityType.Equity, market);
                 return Symbol.CreateOption(underlying, underlying.ID.Market, SecurityType.Option.DefaultOptionStyle(), optionRight, strike, expirationDate);
+            case SecurityType.IndexOption:
+                return GetIndexOptionByBrokerageSymbol(ticker, securityType, market, expirationDate, strike, optionRight);
             case SecurityType.Future:
-                if (!SymbolPropertiesDatabase.FromDataFolder().TryGetMarket(brokerageSymbol, SecurityType.Future, out market))
+                if (!SymbolPropertiesDatabase.FromDataFolder().TryGetMarket(ticker, SecurityType.Future, out market))
                 {
                     market = DefaultBrokerageModel.DefaultMarketMap[SecurityType.Future];
                 }
-                return Symbol.CreateFuture(brokerageSymbol, market, expirationDate);
+                return Symbol.CreateFuture(ticker, market, expirationDate);
             default:
                 throw new NotImplementedException($"{nameof(TradeStationSymbolMapper)}.{nameof(GetLeanSymbol)}: " +
-                    $"The security type '{securityType}' with brokerage symbol '{brokerageSymbol}' is not supported.");
+                    $"The security type '{securityType}' with brokerage symbol '{ticker}' is not supported.");
         }
     }
 
@@ -126,22 +178,66 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// - strikePrice: The strike price of the option.
     /// </returns>
     /// <exception cref="FormatException">Thrown when the option symbol has an invalid format.</exception>
-    public (string symbol, DateTime expiryDate, char optionRight, decimal strikePrice) ParsePositionOptionSymbol(string optionSymbol)
+    protected (string symbol, OptionRight optionRight, decimal strikePrice) ParsePositionOptionSymbol(string optionSymbol)
     {
         // Match the pattern against the option symbol
-        Match match = Regex.Match(optionSymbol, _optionPatternRegex);
+        var match = Regex.Match(optionSymbol, _optionPatternRegex);
 
         if (!match.Success)
         {
-            throw new FormatException("Invalid option symbol format.");
+            throw new FormatException($"{nameof(TradeStationSymbolMapper)}.{nameof(ParsePositionOptionSymbol)}: Invalid option symbol format: {optionSymbol}");
         }
 
         // Extract matched groups
-        string symbol = match.Groups["symbol"].Value;
-        DateTime expiryDate = DateTime.ParseExact(match.Groups["expiryDate"].Value, "yyMMdd", null);
-        char optionRight = match.Groups["optionRight"].Value[0];
-        decimal strikePrice = decimal.Parse(match.Groups["strikePrice"].Value);
+        var symbol = match.Groups["symbol"].Value;
+        var expiryDate = DateTime.ParseExact(match.Groups["expiryDate"].Value, "yyMMdd", null);
+        var optionRight = match.Groups["optionRight"].Value[0] switch
+        {
+            'C' => OptionRight.Call,
+            'P' => OptionRight.Put,
+            _ => throw new ArgumentException($"{nameof(TradeStationSymbolMapper)}.{nameof(ParsePositionOptionSymbol)}: Invalid option right '{match.Groups["optionRight"].Value[0]}'. Expected 'C' or 'P'.")
+        };
 
-        return (symbol, expiryDate, optionRight, strikePrice);
+        var strikePrice = decimal.Parse(match.Groups["strikePrice"].Value);
+
+        return (symbol, optionRight, strikePrice);
+    }
+
+    /// <summary>
+    /// Maps a brokerage index option symbol to a Lean <see cref="Symbol"/> object.
+    /// </summary>
+    /// <param name="brokerageSymbol">The brokerage-specific symbol for the index option, expected to start with '$'.</param>
+    /// <param name="securityType">The type of security. Must be <see cref="SecurityType.IndexOption"/>.</param>
+    /// <param name="market">The market in which the security is traded.</param>
+    /// <param name="expirationDate">The expiration date of the option.</param>
+    /// <param name="strike">The strike price of the option.</param>
+    /// <param name="optionRight">The option type: <see cref="OptionRight.Call"/> or <see cref="OptionRight.Put"/>.</param>
+    /// <returns>A Lean <see cref="Symbol"/> representing the index option.</returns>
+    /// <exception cref="ArgumentException">Thrown if <paramref name="securityType"/> is not <see cref="SecurityType.IndexOption"/>.</exception>
+    private Symbol GetIndexOptionByBrokerageSymbol(string ticker, SecurityType securityType, string market, DateTime expirationDate, decimal strike, OptionRight optionRight)
+    {
+        if (securityType != SecurityType.IndexOption)
+        {
+            throw new ArgumentException($"{nameof(TradeStationSymbolMapper)}.{nameof(GetIndexOptionByBrokerageSymbol)}: Expected {SecurityType.IndexOption}, but received {securityType}.");
+        }
+
+        var underlyingIndex = Symbol.Create(IndexOptionSymbol.MapToUnderlying(ticker), SecurityType.Index, market);
+        return Symbol.CreateOption(underlyingIndex, ticker, underlyingIndex.ID.Market, SecurityType.IndexOption.DefaultOptionStyle(), optionRight, strike, expirationDate);
+    }
+
+    /// <summary>
+    /// Converts an index brokerage ticker to a Lean-compatible ticker by removing specific characters.
+    /// </summary>
+    /// <param name="indexBrokerageTicker">The brokerage-specific ticker for an index, typically containing special characters like '$' and '.X'.</param>
+    /// <returns>
+    /// A Lean-compatible ticker string with the '$' and '.X' characters removed.
+    /// </returns>
+    /// <example>
+    /// Input: "$RUTW.X"  
+    /// Output: "RUTW"
+    /// </example>
+    private static string ConvertIndexBrokerageTickerInLeanTicker(string indexBrokerageTicker)
+    {
+        return indexBrokerageTicker.Replace("$", string.Empty).Replace(".X", string.Empty);
     }
 }

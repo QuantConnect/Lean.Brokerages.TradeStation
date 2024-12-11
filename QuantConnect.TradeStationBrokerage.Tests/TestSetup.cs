@@ -15,10 +15,13 @@
 
 using System;
 using System.IO;
+using System.Linq;
 using NUnit.Framework;
 using System.Collections;
 using QuantConnect.Logging;
+using QuantConnect.Securities;
 using QuantConnect.Configuration;
+using static QuantConnect.Brokerages.TradeStation.Tests.TradeStationBrokerageTests;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests
 {
@@ -28,6 +31,31 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         [Test, TestCaseSource(nameof(TestParameters))]
         public void TestSetupCase()
         {
+        }
+
+        public static TradeStationBrokerageTest CreateBrokerage(IOrderProvider orderProvider, ISecurityProvider securityProvider)
+        {
+            var clientId = Config.Get("trade-station-client-id");
+            var clientSecret = Config.Get("trade-station-client-secret");
+            var restApiUrl = Config.Get("trade-station-api-url");
+            var accountType = Config.Get("trade-station-account-type");
+            var refreshToken = Config.Get("trade-station-refresh-token");
+
+            if (string.IsNullOrEmpty(refreshToken))
+            {
+                var redirectUrl = Config.Get("trade-station-redirect-url");
+                var authorizationCode = Config.Get("trade-station-authorization-code");
+
+                if (new string[] { redirectUrl, authorizationCode }.Any(string.IsNullOrEmpty))
+                {
+                    throw new ArgumentException("RedirectUrl or AuthorizationCode cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
+                }
+
+                return new TradeStationBrokerageTest(clientId, clientSecret, restApiUrl, redirectUrl, authorizationCode, string.Empty,
+                    accountType, orderProvider, securityProvider);
+            }
+
+            return new TradeStationBrokerageTest(clientId, clientSecret, restApiUrl, string.Empty, string.Empty, refreshToken, accountType, orderProvider, securityProvider);
         }
 
         public static void ReloadConfiguration()
@@ -71,7 +99,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             get
             {
                 SetUp();
-                return new [] { new TestCaseData() };
+                return new[] { new TestCaseData() };
             }
         }
     }

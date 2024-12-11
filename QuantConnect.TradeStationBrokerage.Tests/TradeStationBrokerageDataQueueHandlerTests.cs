@@ -52,16 +52,26 @@ public partial class TradeStationBrokerageTests
         }
     }
 
-    private static IEnumerable<IReadOnlyCollection<Symbol>> SubscribeDifferentSecurityTypeTestParameters
+    private static IEnumerable<TestCaseData> SubscribeDifferentSecurityTypeTestParameters
     {
         get
         {
-            yield return new List<Symbol>()
+            yield return new TestCaseData(new[]
             {
                 Symbols.AAPL,
-                Symbol.CreateFuture(Futures.Softs.Cotton2, Market.ICE, new DateTime(2024, 10, 1)),
-                Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 225m, new DateTime(2024, 07, 19))
-            };
+                Symbol.CreateFuture(Futures.Softs.Cotton2, Market.ICE, new DateTime(2024, 12, 1)),
+                Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 245m, new DateTime(2024, 12, 13))
+            }, Resolution.Tick);
+
+            var index = Symbol.Create("VIX", SecurityType.Index, Market.USA);
+            yield return new TestCaseData(new[]
+            {
+                index,
+                Symbol.CreateOption(index, Market.USA, OptionStyle.American, OptionRight.Call, 14.5m, new DateTime(2024, 12, 18)),
+                Symbol.CreateOption(index, Market.USA, OptionStyle.American, OptionRight.Call, 70m, new DateTime(2025, 06, 18)),
+                Symbol.CreateOption(index, Market.USA, OptionStyle.American, OptionRight.Call, 15m, new DateTime(2024, 12, 18)),
+                Symbol.CreateOption(index, "VIXW", Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 14.5m, new DateTime(2024, 12, 11))
+            }, Resolution.Tick);
         }
     }
 
@@ -193,8 +203,8 @@ public partial class TradeStationBrokerageTests
         cancelationToken.Cancel();
     }
 
-    [TestCaseSource(nameof(SubscribeDifferentSecurityTypeTestParameters))]
-    public void SubscriptionOnDifferentSymbolSecurityTypes(IReadOnlyCollection<Symbol> subscribeSymbols)
+    [Test, TestCaseSource(nameof(SubscribeDifferentSecurityTypeTestParameters))]
+    public void SubscriptionOnDifferentSymbolSecurityTypes(Symbol[] subscribeSymbols, Resolution resolution)
     {
         var lockObject = new object();
         var cancelationToken = new CancellationTokenSource();
@@ -204,7 +214,7 @@ public partial class TradeStationBrokerageTests
 
         foreach (var symbol in subscribeSymbols)
         {
-            foreach (var config in GetSubscriptionDataConfigs(symbol, Resolution.Tick))
+            foreach (var config in GetSubscriptionDataConfigs(symbol, resolution))
             {
                 // Try to add a new entry with a single-element array containing the current config
                 if (!configBySymbol.TryAdd(config.Symbol, new List<SubscriptionDataConfig> { config }))
@@ -227,7 +237,7 @@ public partial class TradeStationBrokerageTests
                             {
                                 amountDataBySymbol.AddOrUpdate(baseData.Symbol, 1, (k, o) => o + 1);
 
-                                if (amountDataBySymbol.Values.Count == subscribeSymbols.Count && amountDataBySymbol.Values.All(x => x > 2))
+                                if (amountDataBySymbol.Values.Count == subscribeSymbols.Length && amountDataBySymbol.Values.All(x => x > 2))
                                 {
                                     resetEvent.Set();
                                 }
