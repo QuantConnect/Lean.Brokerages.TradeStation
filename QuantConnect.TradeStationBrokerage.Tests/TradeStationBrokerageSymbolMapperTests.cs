@@ -29,14 +29,22 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// <summary>
         /// Provides the mapping between Lean symbols and brokerage specific symbols.
         /// </summary>
-        private TradeStationSymbolMapper _symbolMapper;
+        private TradeStationSymbolMapperTest _symbolMapper;
 
         [OneTimeSetUp]
         public void OneTimeSetUp()
         {
-            _symbolMapper = new TradeStationSymbolMapper();
+            _symbolMapper = new TradeStationSymbolMapperTest();
         }
 
+
+        private class TradeStationSymbolMapperTest : TradeStationSymbolMapper
+        {
+            public (string symbol, OptionRight optionRight, decimal strikePrice) PublicParsePositionOptionSymbol(string optionSymbol)
+            {
+                return ParsePositionOptionSymbol(optionSymbol);
+            }
+        }
 
 
         private static IEnumerable<LegSymbol> BrokerageSymbolTestCases
@@ -90,7 +98,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             {
                 case TradeStationAssetType.IndexOption:
                 case TradeStationAssetType.StockOption:
-                    (ticker, _, optionRight, strikePrice) = _symbolMapper.ParsePositionOptionSymbol(brokerageLeg.Symbol);
+                    (ticker, optionRight, strikePrice) = _symbolMapper.PublicParsePositionOptionSymbol(brokerageLeg.Symbol);
                     break;
             }
 
@@ -163,22 +171,21 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.That(symbol.Underlying, Is.EqualTo(expectedTicker));
         }
 
-        [TestCase("AAPL 240517C185", "AAPL", "2024/05/17", OptionRight.Call, 185)]
-        [TestCase("AAPL 111111C111.1", "AAPL", "2011/11/11", OptionRight.Call, 111.1)]
-        [TestCase("AAPL 111111P111.1", "AAPL", "2011/11/11", OptionRight.Put, 111.1)]
-        [TestCase("AAPL 240517C187.5", "AAPL", "2024/05/17", OptionRight.Call, 187.5)]
-        [TestCase("T 240517C16", "T", "2024/05/17", OptionRight.Call, 16)]
-        [TestCase("TT 240517C300", "TT", "2024/05/17", OptionRight.Call, 300)]
-        [TestCase("TT 250618C300", "TT", "2025/06/18", OptionRight.Call, 300)]
-        [TestCase("NANOS 241206C605", "NANOS", "2024/12/06", OptionRight.Call, 605)]
-        [TestCase("RUTW 241206C2415", "RUTW", "2024/12/06", OptionRight.Call, 2415)]
-        public void ParseTradeStationPositionOptionSymbol(string ticker, string expectedSymbol, DateTime expectedDate, OptionRight expectedRight, decimal expectedStrikePrice)
+        [TestCase("AAPL 240517C185", "AAPL", OptionRight.Call, 185)]
+        [TestCase("AAPL 111111C111.1", "AAPL", OptionRight.Call, 111.1)]
+        [TestCase("AAPL 111111P111.1", "AAPL", OptionRight.Put, 111.1)]
+        [TestCase("AAPL 240517C187.5", "AAPL", OptionRight.Call, 187.5)]
+        [TestCase("T 240517C16", "T", OptionRight.Call, 16)]
+        [TestCase("TT 240517C300", "TT", OptionRight.Call, 300)]
+        [TestCase("TT 250618C300", "TT", OptionRight.Call, 300)]
+        [TestCase("NANOS 241206C605", "NANOS", OptionRight.Call, 605)]
+        [TestCase("RUTW 241206C2415", "RUTW", OptionRight.Call, 2415)]
+        public void ParseTradeStationPositionOptionSymbol(string ticker, string expectedSymbol, OptionRight expectedRight, decimal expectedStrikePrice)
         {
-            var optionParam = _symbolMapper.ParsePositionOptionSymbol(ticker);
+            var optionParam = _symbolMapper.PublicParsePositionOptionSymbol(ticker);
 
             Assert.IsNotNull(optionParam);
             Assert.That(optionParam.symbol, Is.EqualTo(expectedSymbol));
-            Assert.That(optionParam.expiryDate, Is.EqualTo(expectedDate));
             Assert.That(optionParam.optionRight, Is.EqualTo(expectedRight));
             Assert.That(optionParam.strikePrice, Is.EqualTo(expectedStrikePrice));
         }
