@@ -294,7 +294,6 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         [TestCase("AAPL", SecurityType.Option)]
         [TestCase("SPY", SecurityType.Option)]
         [TestCase("SPX", SecurityType.IndexOption)]
-        [TestCase("SPXW", SecurityType.IndexOption)]
         [TestCase("VIX", SecurityType.IndexOption)]
         [TestCase("VIXW", SecurityType.IndexOption)]
         [TestCase("NDX", SecurityType.IndexOption)]
@@ -321,6 +320,9 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.True(options.Any());
             Assert.Greater(options.Count, 0);
             Assert.That(options.Distinct().ToList().Count, Is.EqualTo(options.Count));
+
+            var mainSymbol = option.ID.Symbol;
+            Assert.IsTrue(options.All(x => x.ID.Symbol == mainSymbol));
         }
         /// <summary>
         /// Tests the scenario where a market order transitions from a short position to a long position,

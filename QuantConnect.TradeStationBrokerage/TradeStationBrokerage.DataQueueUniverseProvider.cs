@@ -54,10 +54,17 @@ public partial class TradeStationBrokerage : IDataQueueUniverseProvider
         Task.Run(async () =>
         {
             var underlying = symbol.Underlying;
-            var brokerageSymbol = _symbolMapper.GetBrokerageSymbol(symbol);
+            var brokerageSymbol = _symbolMapper.GetBrokerageSymbol(underlying);
             await foreach (var optionParameters in _tradeStationApiClient.GetOptionExpirationsAndStrikes(brokerageSymbol))
             {
                 var ticker = TakeCorrectSymbolByExpirationType(optionParameters.expirationType, symbol.Underlying.Value, symbol.ID.Symbol);
+
+                if (ticker != symbol.ID.Symbol)
+                {
+                    // Skip this iteration if the ticker does not match the main symbol (e.g., NDXP 3JLXPT2SU). 
+                    // This ensures we only process options data relevant to the current symbol.
+                    continue;
+                }
 
                 foreach (var optionStrike in optionParameters.strikes)
                 {
