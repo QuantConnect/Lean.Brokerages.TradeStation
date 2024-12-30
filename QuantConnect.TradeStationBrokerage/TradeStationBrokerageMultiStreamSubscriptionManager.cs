@@ -66,6 +66,18 @@ namespace QuantConnect.Brokerages.TradeStation
         private TradeStationSymbolMapper _symbolMapper;
 
         /// <summary>
+        /// The event handler responsible for processing brokerage messages, such as status updates, errors, or information 
+        /// received from the TradeStation API.
+        /// </summary>
+        private readonly EventHandler<BrokerageMessageEvent> _brokerageEventHandler;
+
+        /// <summary>
+        /// A thread-safe dictionary used to track whether delay checks have been performed for specific symbols.
+        /// The key represents the symbol, and the value indicates whether the delay has been verified.
+        /// </summary>
+        private readonly ConcurrentDictionary<Symbol, bool> _symbolsDelayChecked = new();
+
+        /// <summary>
         /// A thread-safe dictionary that maps a <see cref="Symbol"/> to a <see cref="DateTimeZone"/>.
         /// </summary>
         /// <remarks>
@@ -75,16 +87,31 @@ namespace QuantConnect.Brokerages.TradeStation
         private readonly ConcurrentDictionary<Symbol, DateTimeZone> _exchangeTimeZoneByLeanSymbol = new();
 
         /// <summary>
-        /// 
+        /// Indicates whether delayed streaming data is enabled for the application.
         /// </summary>
-        /// <param name="tradeStationApiClient"></param>
-        /// <param name="symbolMapper"></param>
-        /// <param name="aggregator"></param>
-        public TradeStationBrokerageMultiStreamSubscriptionManager(TradeStationApiClient tradeStationApiClient, TradeStationSymbolMapper symbolMapper, IDataAggregator aggregator)
+        private readonly bool _enableDelayedStreamingData;
+
+        /// <summary>
+        /// Manages multi-stream subscriptions for TradeStation Brokerage, allowing for real-time and delayed market data streaming.
+        /// </summary>
+        /// <param name="tradeStationApiClient"> The API client for interacting with TradeStation's brokerage services.</param>
+        /// <param name="symbolMapper"> An object responsible for mapping between Lean and TradeStation symbol representations.</param>
+        /// <param name="aggregator">The data aggregator for combining and processing market data streams.</param>
+        /// <param name="enableDelayedStreamingData">
+        /// A value indicating whether delayed market data streaming is enabled. 
+        /// <see langword="true"/> enables delayed streaming; <see langword="false"/> enables real-time streaming.
+        /// </param>
+        /// <param name="brokerageEventHandler">
+        /// The event handler for receiving and processing brokerage messages, such as connection status updates or error notifications.
+        /// </param>
+        public TradeStationBrokerageMultiStreamSubscriptionManager(TradeStationApiClient tradeStationApiClient, TradeStationSymbolMapper symbolMapper, IDataAggregator aggregator,
+            bool enableDelayedStreamingData, EventHandler<BrokerageMessageEvent> brokerageEventHandler)
         {
             _aggregator = aggregator;
             _symbolMapper = symbolMapper;
             _tradeStationApiClient = tradeStationApiClient;
+            _brokerageEventHandler = brokerageEventHandler;
+            _enableDelayedStreamingData = enableDelayedStreamingData;
 
             SubscribeImpl = (symbols, _) => Subscribe(symbols);
             UnsubscribeImpl = (symbols, _) => UnSubscribe(symbols);
@@ -176,6 +203,12 @@ namespace QuantConnect.Brokerages.TradeStation
         {
             if (_orderBooks.TryGetValue(quote.Symbol, out var orderBook))
             {
+                if (!_enableDelayedStreamingData && quote.MarketFlags.IsDelayed != null && quote.MarketFlags.IsDelayed.Value && _symbolsDelayChecked.TryAdd(orderBook.Symbol, true))
+                {
+                    _brokerageEventHandler.Invoke(this,
+                        new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"{nameof(TradeStationBrokerageMultiStreamSubscriptionManager)}: Detected delay streaming data for {orderBook.Symbol}. Expected delayed streaming data to be '{_enableDelayedStreamingData}', but received '{quote.MarketFlags.IsDelayed}'."));
+                }
+
                 if (quote.Ask > 0 && quote.AskSize > 0)
                 {
                     orderBook.UpdateAskRow(quote.Ask, quote.AskSize);

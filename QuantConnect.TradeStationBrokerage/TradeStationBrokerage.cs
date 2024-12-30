@@ -277,7 +277,8 @@ public partial class TradeStationBrokerage : Brokerage
             _aggregator = Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(aggregatorName);
         }
 
-        SubscriptionManager = new TradeStationBrokerageMultiStreamSubscriptionManager(_tradeStationApiClient, _symbolMapper, _aggregator);
+        SubscriptionManager = new TradeStationBrokerageMultiStreamSubscriptionManager(_tradeStationApiClient, _symbolMapper, _aggregator,
+            Config.GetBool("trade-station-enable-delayed-streaming-data"), OnBrokerageMessageEventHandler);
 
         _routes = new Lazy<Dictionary<SecurityType, ReadOnlyCollection<Route>>>(() =>
         {
@@ -729,6 +730,13 @@ public partial class TradeStationBrokerage : Brokerage
 
         return _symbolMapper.SupportedSecurityType.Contains(symbol.SecurityType);
     }
+
+    /// <summary>
+    /// Handles brokerage message events by invoking the appropriate message processing logic.
+    /// </summary>
+    /// <param name="_">The sender of the event, typically unused in this implementation.</param>
+    /// <param name="brokerageMessageEvent">The event data containing details of the brokerage message, such as type and content.</param>
+    private void OnBrokerageMessageEventHandler(object _, BrokerageMessageEvent brokerageMessageEvent) => OnMessage(brokerageMessageEvent);
 
     /// <summary>
     /// Determines if the provided <paramref name="securityType"/> matches the <see cref="TradeStationAccountType"/>.
