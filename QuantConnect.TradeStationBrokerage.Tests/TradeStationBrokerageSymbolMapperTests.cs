@@ -148,6 +148,11 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
                 var VIXWeeklyOption = Symbol.CreateOption(indexUnderlying2, "VIXW", Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 14.5m, new DateTime(2024, 12, 11));
                 yield return new TestCaseData(VIXWeeklyOption, "VIXW 241211C14.5");
+
+                // GOOGL - Equity
+                var GOOGL = Symbol.Create("GOOGL", SecurityType.Equity, Market.USA);
+                yield return new TestCaseData(GOOGL, "GOOGL");
+                yield return new TestCaseData(Symbol.CreateOption(GOOGL, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Put, 180m, new DateTime(2024, 12, 06)), "GOOGL 241206P180");
             }
 
         }
