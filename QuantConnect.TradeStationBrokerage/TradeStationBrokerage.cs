@@ -86,11 +86,6 @@ public partial class TradeStationBrokerage : Brokerage
     private readonly ManualResetEvent _orderUpdateEndManualResetEvent = new(false);
 
     /// <summary>
-    /// Indicates whether delayed streaming data is enabled for the application.
-    /// </summary>
-    private readonly bool _enableDelayedStreamingData = Config.GetBool("trade-station-enable-delayed-streaming-data");
-
-    /// <summary>
     /// A thread-safe dictionary to track the response result submission status by brokerage ID.
     /// </summary>
     /// <remarks>
@@ -282,7 +277,7 @@ public partial class TradeStationBrokerage : Brokerage
             _aggregator = Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(aggregatorName);
         }
 
-        SubscriptionManager = new TradeStationBrokerageMultiStreamSubscriptionManager(_tradeStationApiClient, _symbolMapper, _aggregator, _enableDelayedStreamingData, OnBrokerageMessageEventHandler);
+        SubscriptionManager = new TradeStationBrokerageMultiStreamSubscriptionManager(_tradeStationApiClient, _symbolMapper, _aggregator, OnBrokerageMessageEventHandler);
 
         _routes = new Lazy<Dictionary<SecurityType, ReadOnlyCollection<Route>>>(() =>
         {

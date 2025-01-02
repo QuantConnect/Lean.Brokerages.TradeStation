@@ -22,6 +22,7 @@ using QuantConnect.Util;
 using QuantConnect.Logging;
 using System.Threading.Tasks;
 using QuantConnect.Data.Market;
+using QuantConnect.Configuration;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using QuantConnect.Brokerages.TradeStation.Api;
@@ -89,7 +90,7 @@ namespace QuantConnect.Brokerages.TradeStation
         /// <summary>
         /// Indicates whether delayed streaming data is enabled for the application.
         /// </summary>
-        private readonly bool _enableDelayedStreamingData;
+        private readonly bool _enableDelayedStreamingData = Config.GetBool("trade-station-enable-delayed-streaming-data");
 
         /// <summary>
         /// Manages multi-stream subscriptions for TradeStation Brokerage, allowing for real-time and delayed market data streaming.
@@ -105,13 +106,12 @@ namespace QuantConnect.Brokerages.TradeStation
         /// The event handler for receiving and processing brokerage messages, such as connection status updates or error notifications.
         /// </param>
         public TradeStationBrokerageMultiStreamSubscriptionManager(TradeStationApiClient tradeStationApiClient, TradeStationSymbolMapper symbolMapper, IDataAggregator aggregator,
-            bool enableDelayedStreamingData, EventHandler<BrokerageMessageEvent> brokerageEventHandler)
+            EventHandler<BrokerageMessageEvent> brokerageEventHandler)
         {
             _aggregator = aggregator;
             _symbolMapper = symbolMapper;
             _tradeStationApiClient = tradeStationApiClient;
             _brokerageEventHandler = brokerageEventHandler;
-            _enableDelayedStreamingData = enableDelayedStreamingData;
 
             SubscribeImpl = (symbols, _) => Subscribe(symbols);
             UnsubscribeImpl = (symbols, _) => UnSubscribe(symbols);
