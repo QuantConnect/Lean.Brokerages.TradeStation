@@ -327,7 +327,7 @@ public readonly struct MarketFlag
     /// <summary>
     /// Is delayed.
     /// </summary>
-    public bool IsDelayed { get; }
+    public bool? IsDelayed { get; }
 
     /// <summary>
     /// Is halted.
@@ -338,4 +338,19 @@ public readonly struct MarketFlag
     /// Is hard to borrow.
     /// </summary>
     public bool IsHardToBorrow { get; }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="MarketFlag"/> struct with the specified market flags.
+    /// </summary>
+    /// <param name="isBats">A value indicating whether the market is BATS.</param>
+    /// <param name="isDelayed">A nullable value indicating whether the market data is delayed.</param>
+    /// <param name="isHalted">A value indicating whether the market is halted.</param>
+    /// <param name="isHardToBorrow">A value indicating whether the symbol is hard to borrow.</param>
+    public MarketFlag(bool isBats, bool? isDelayed, bool isHalted, bool isHardToBorrow)
+    {
+        IsBats = isBats;
+        IsDelayed = isDelayed;
+        IsHalted = isHalted;
+        IsHardToBorrow = isHardToBorrow;
+    }
 }

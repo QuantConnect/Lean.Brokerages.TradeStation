@@ -6,5 +6,6 @@
   "trade-station-refresh-token": "",
   "trade-station-api-url": "https://sim-api.tradestation.com",
   "trade-station-account-type": "Margin",
-  "trade-station-account-id": ""
+  "trade-station-account-id": "",
+  "trade-station-enable-delayed-streaming-data": false
 }
