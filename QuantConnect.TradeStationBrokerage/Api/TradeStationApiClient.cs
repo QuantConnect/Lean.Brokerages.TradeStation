@@ -176,16 +176,8 @@ public class TradeStationApiClient : IDisposable
     /// </param>
     public async Task<bool> CancelOrder(string orderID)
     {
-        try
-        {
-            await RequestAsync<TradeStationAccount>(_baseUrl, $"/v3/orderexecution/orders/{orderID}", HttpMethod.Delete);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex);
-            return false;
-        }
+        await RequestAsync<TradeStationAccount>(_baseUrl, $"/v3/orderexecution/orders/{orderID}", HttpMethod.Delete);
+        return true;
     }
 
     /// <summary>

@@ -659,9 +659,20 @@ public partial class TradeStationBrokerage : Brokerage
         var result = default(bool);
         _messageHandler.WithLockedStream(() =>
         {
-            if (_tradeStationApiClient.CancelOrder(brokerageOrderId).SynchronouslyAwaitTaskResult())
+            try
             {
-                result = true;
+                if (_tradeStationApiClient.CancelOrder(brokerageOrderId).SynchronouslyAwaitTaskResult())
+                {
+                    result = true;
+                }
+            }
+            catch (Exception ex) when (ex.Message.Equals("Not an open order.", StringComparison.InvariantCultureIgnoreCase))
+            {
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "CancelNotOpenOrder", $"Failed to cancel Order: OrderId: {order.Id} (BrokerId: {brokerageOrderId}) for {order.Symbol}, the order is already closed"));
+            }
+            catch (Exception ex)
+            {
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, "CancelOrderInvalid", ex.Message));
             }
         });
         return result;
