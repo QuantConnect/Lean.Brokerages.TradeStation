@@ -630,9 +630,13 @@ public partial class TradeStationBrokerage : Brokerage
                 response = true;
                 _updateSubmittedResponseResultByBrokerageID[brokerageOrderId] = true;
             }
+            catch (Exception exception) when (exception.Message.Equals("Failed to Cancel/Replace order: Not an open order.", StringComparison.InvariantCultureIgnoreCase))
+            {
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "UpdateNotOpenOrder", exception.Message));
+            }
             catch (Exception exception)
             {
-                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "UpdateOrderInvalid", exception.Message));
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, "UpdateOrderInvalid", exception.Message));
             }
         });
         return response;
