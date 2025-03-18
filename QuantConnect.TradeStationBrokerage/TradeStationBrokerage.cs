@@ -632,8 +632,7 @@ public partial class TradeStationBrokerage : Brokerage
             }
             catch (Exception exception)
             {
-                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, "UpdateOrderInvalid", exception.Message));
-                response = false;
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "UpdateOrderInvalid", exception.Message));
             }
         });
         return response;
