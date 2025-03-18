@@ -632,7 +632,7 @@ public partial class TradeStationBrokerage : Brokerage
             }
             catch (Exception exception) when (exception.Message.Equals("Failed to Cancel/Replace order: Not an open order.", StringComparison.InvariantCultureIgnoreCase))
             {
-                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "UpdateNotOpenOrder", exception.Message));
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "UpdateNotOpenOrder", "Failed to Replace order: " + order));
             }
             catch (Exception exception)
             {

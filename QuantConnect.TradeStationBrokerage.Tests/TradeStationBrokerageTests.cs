@@ -810,7 +810,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Brokerage.Message += (_, brokerageMessage) =>
             {
                 Assert.AreEqual(BrokerageMessageType.Warning, brokerageMessage.Type);
-                Assert.AreEqual("Failed to Cancel/Replace order: Not an open order.", brokerageMessage.Message);
+                Assert.IsTrue(brokerageMessage.Message.StartsWith("Failed to Replace order:", StringComparison.InvariantCultureIgnoreCase));
             };
 
             Brokerage.OrdersStatusChanged += (_, orderEvents) =>
