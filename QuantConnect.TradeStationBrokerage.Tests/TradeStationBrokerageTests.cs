@@ -794,6 +794,73 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             }
         }
 
+        [Test]
+        public void UpdateAlreadyCanceledOrder()
+        {
+            Log.Trace("UPDATE ALREADY CANCELED ORDER");
+            var symbol = Symbols.AAPL;
+            var lastPrice = _brokerage.GetPrice(symbol).Last;
+            var limitPrice = SubtractAndRound(lastPrice, 0.5m);
+            var limitOrder = new LimitOrder(Symbols.AAPL, 1, limitPrice, DateTime.UtcNow);
+            OrderProvider.Add(limitOrder);
+
+            var submittedResetEvent = new AutoResetEvent(false);
+            var cancelledResetEvent = new AutoResetEvent(false);
+
+            Brokerage.Message += (_, brokerageMessage) =>
+            {
+                Assert.AreEqual(BrokerageMessageType.Warning, brokerageMessage.Type);
+                Assert.IsTrue(brokerageMessage.Message.StartsWith("Failed to update Order: OrderId:", StringComparison.InvariantCultureIgnoreCase));
+            };
+
+            Brokerage.OrdersStatusChanged += (_, orderEvents) =>
+            {
+                var orderEvent = orderEvents[0];
+
+                Log.Trace("");
+                Log.Trace($"{nameof(UpdateAlreadyCanceledOrder)}.OrderEvent.Status: {orderEvent.Status}");
+                Log.Trace("");
+
+                switch (orderEvent.Status)
+                {
+                    case OrderStatus.Submitted:
+                        submittedResetEvent.Set();
+                        break;
+                    case OrderStatus.Canceled:
+                        cancelledResetEvent.Set();
+                        break;
+                }
+            };
+
+            if (!Brokerage.PlaceOrder(limitOrder))
+            {
+                Assert.Fail("Brokerage failed to place the order: " + limitOrder);
+            }
+
+            if (!submittedResetEvent.WaitOne(TimeSpan.FromSeconds(5)))
+            {
+                Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage doesn't return {OrderStatus.Submitted}");
+            }
+
+            var order = OrderProvider.GetOrderById(1);
+            if (!Brokerage.CancelOrder(order))
+            {
+                Assert.Fail("Brokerage failed to cancel the order: " + order);
+            }
+
+            if (!cancelledResetEvent.WaitOne(TimeSpan.FromSeconds(5)))
+            {
+                Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage doesn't return {OrderStatus.Canceled}");
+            }
+
+            order.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, order.Id, new() { LimitPrice = limitPrice - 0.01m }));
+
+            if (Brokerage.UpdateOrder(order))
+            {
+                Assert.Fail("Brokerage can not update already cancelled order: " + order);
+            }
+        }
+
         /// <summary>
         /// Adds a value to a base number and rounds the result to the nearest specified increment.
         /// </summary>
