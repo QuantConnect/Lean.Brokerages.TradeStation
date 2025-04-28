@@ -102,7 +102,10 @@ public static class TradeStationExtensions
     /// </summary>
     /// <param name="leanOrderTimeInForce">Lean Order TimeInForce</param>
     /// <returns>brokerage:(expirationType and expirationTimestamp)</returns>
-    public static (TradeStationDuration Duration, string expiryDateTime) GetBrokerageTimeInForce(this Orders.TimeInForce leanOrderTimeInForce, OrderType leanOrderType)
+    public static (TradeStationDuration Duration, string expiryDateTime) GetBrokerageTimeInForce(
+        this Orders.TimeInForce leanOrderTimeInForce,
+        OrderType leanOrderType,
+        bool? outsideRegularTradingHours)
     {
         var duration = default(TradeStationDuration);
         var expiryDateTime = default(string);
@@ -118,15 +121,21 @@ public static class TradeStationExtensions
             default:
                 switch (leanOrderTimeInForce)
                 {
-                    case DayTimeInForce:
-                        duration = TradeStationDuration.Day;
+                    case DayTimeInForce _:
+                        duration = outsideRegularTradingHours == true
+                            ? TradeStationDuration.DayPlus
+                            : TradeStationDuration.Day;
                         break;
-                    case GoodTilDateTimeInForce goodTilDateTime:
-                        duration = TradeStationDuration.GoodThroughDate;
-                        expiryDateTime = goodTilDateTime.Expiry.ToIso8601Invariant();
+                    case GoodTilDateTimeInForce gt:
+                        duration = outsideRegularTradingHours == true
+                            ? TradeStationDuration.GoodThroughDatePlus
+                            : TradeStationDuration.GoodThroughDate;
+                        expiryDateTime = gt.Expiry.ToIso8601Invariant();
                         break;
-                    case GoodTilCanceledTimeInForce:
-                        duration = TradeStationDuration.GoodTillCanceled;
+                    case GoodTilCanceledTimeInForce _:
+                        duration = outsideRegularTradingHours == true
+                            ? TradeStationDuration.GoodTillCanceledPlus
+                            : TradeStationDuration.GoodTillCanceled;
                         break;
                 }
                 break;
@@ -170,10 +179,19 @@ public static class TradeStationExtensions
             case TradeStationDuration.Day:
                 orderProperties.TimeInForce = Orders.TimeInForce.Day;
                 return true;
+            case TradeStationDuration.DayPlus:
+                orderProperties.TimeInForce = Orders.TimeInForce.Day;
+                return true;
             case TradeStationDuration.GoodThroughDate:
                 orderProperties.TimeInForce = Orders.TimeInForce.GoodTilDate(goodTilDateTime);
                 return true;
+            case TradeStationDuration.GoodThroughDatePlus:
+                orderProperties.TimeInForce = Orders.TimeInForce.GoodTilDate(goodTilDateTime);
+                return true;
             case TradeStationDuration.GoodTillCanceled:
+                orderProperties.TimeInForce = Orders.TimeInForce.GoodTilCanceled;
+                return true;
+            case TradeStationDuration.GoodTillCanceledPlus:
                 orderProperties.TimeInForce = Orders.TimeInForce.GoodTilCanceled;
                 return true;
             case TradeStationDuration.Close:
@@ -182,7 +200,8 @@ public static class TradeStationExtensions
                 return true;
             default:
                 return false;
-        };
+        }
+        ;
     }
 
     /// <summary>
