@@ -311,16 +311,16 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.Greater(cashBalance[0].Amount, 0);
         }
 
-        [TestCase(OrderType.Limit, "GoodTilCanceled", null, TradeStationDuration.GoodTillCanceled)]
-        [TestCase(OrderType.Limit, "GoodTilCanceled", true, TradeStationDuration.GoodTillCanceledPlus)]
-        [TestCase(OrderType.Limit, "GoodTilCanceled", false, TradeStationDuration.GoodTillCanceled)]
-        [TestCase(OrderType.Limit, "Day", null, TradeStationDuration.Day)]
-        [TestCase(OrderType.Limit, "Day", true, TradeStationDuration.DayPlus)]
-        [TestCase(OrderType.Limit, "Day", false, TradeStationDuration.Day)]
-        [TestCase(OrderType.Limit, "GoodTilDate", null, TradeStationDuration.GoodThroughDate)]
-        [TestCase(OrderType.Limit, "GoodTilDate", true, TradeStationDuration.GoodThroughDatePlus)]
-        [TestCase(OrderType.Limit, "GoodTilDate", false, TradeStationDuration.GoodThroughDate)]
-        public void GetBrokerageTimeInForceByLeanTimeInForce(OrderType orderType, string timeInForceName, bool? outsideRegularTradingHours, TradeStationDuration expectedDuration)
+        [TestCase(OrderType.Limit, "GoodTilCanceled", null, PlaceOrderDuration.GoodTillCanceled)]
+        [TestCase(OrderType.Limit, "GoodTilCanceled", true, PlaceOrderDuration.GoodTillCanceledPlus)]
+        [TestCase(OrderType.Limit, "GoodTilCanceled", false, PlaceOrderDuration.GoodTillCanceled)]
+        [TestCase(OrderType.Limit, "Day", null, PlaceOrderDuration.Day)]
+        [TestCase(OrderType.Limit, "Day", true, PlaceOrderDuration.DayPlus)]
+        [TestCase(OrderType.Limit, "Day", false, PlaceOrderDuration.Day)]
+        [TestCase(OrderType.Limit, "GoodTilDate", null, PlaceOrderDuration.GoodThroughDate)]
+        [TestCase(OrderType.Limit, "GoodTilDate", true, PlaceOrderDuration.GoodThroughDatePlus)]
+        [TestCase(OrderType.Limit, "GoodTilDate", false, PlaceOrderDuration.GoodThroughDate)]
+        public void GetBrokerageTimeInForceByLeanTimeInForce(OrderType orderType, string timeInForceName, bool? outsideRegularTradingHours, PlaceOrderDuration expectedDuration)
         {
             var leanTimeInForce = default(Orders.TimeInForce);
             var orderExpiryTime = default(DateTime);

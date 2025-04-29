@@ -24,6 +24,7 @@ using QuantConnect.Interfaces;
 using QuantConnect.Securities;
 using System.Collections.Generic;
 using QuantConnect.Tests.Brokerages;
+using QuantConnect.Orders.TimeInForces;
 using QuantConnect.Securities.IndexOption;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests
@@ -858,6 +859,105 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             if (Brokerage.UpdateOrder(order))
             {
                 Assert.Fail("Brokerage can not update already cancelled order: " + order);
+            }
+        }
+
+        [TestCase("Day")]
+        [TestCase("GoodTilDate")]
+        [TestCase("GoodTilCanceled")]
+        public void PlaceOutsideMarketHours(string timeInForceName)
+        {
+            Log.Trace("PLACE LONG OUTSIDE MARKET HOURS LIMIT ORDER");
+            var symbol = Symbols.AAPL;
+            var lastPrice = _brokerage.GetPrice(symbol).Last;
+            var limitPrice = SubtractAndRound(lastPrice, 0.5m);
+            var limitOrder = new LimitOrder(Symbols.AAPL, 1, limitPrice, DateTime.UtcNow, properties: new TradeStationOrderProperties() { OutsideRegularTradingHours = true });
+
+            var orderExpiryDate = default(DateTime);
+            switch (timeInForceName)
+            {
+                case "GoodTilCanceled":
+                    limitOrder.Properties.TimeInForce = TimeInForce.GoodTilCanceled;
+                    break;
+                case "Day":
+                    limitOrder.Properties.TimeInForce = TimeInForce.Day;
+                    break;
+                case "GoodTilDate":
+                    orderExpiryDate = DateTime.UtcNow.AddDays(1);
+                    limitOrder.Properties.TimeInForce = TimeInForce.GoodTilDate(orderExpiryDate);
+                    break;
+                default:
+                    throw new NotSupportedException($"{nameof(TradeStationBrokerageTests)}.{nameof(PlaceOutsideMarketHours)}: The specified TimeInForce '{timeInForceName}' is not supported.");
+            }
+
+            OrderProvider.Add(limitOrder);
+
+            var submittedResetEvent = new AutoResetEvent(false);
+            var cancelledResetEvent = new AutoResetEvent(false);
+
+            Brokerage.Message += (_, brokerageMessage) =>
+            {
+                Assert.AreEqual(BrokerageMessageType.Warning, brokerageMessage.Type);
+                Assert.IsTrue(brokerageMessage.Message.StartsWith("Failed to update Order: OrderId:", StringComparison.InvariantCultureIgnoreCase));
+            };
+
+            Brokerage.OrdersStatusChanged += (_, orderEvents) =>
+            {
+                var orderEvent = orderEvents[0];
+
+                Log.Trace("");
+                Log.Trace($"{nameof(UpdateAlreadyCanceledOrder)}.OrderEvent.Status: {orderEvent.Status}");
+                Log.Trace("");
+
+                switch (orderEvent.Status)
+                {
+                    case OrderStatus.Submitted:
+                        submittedResetEvent.Set();
+                        break;
+                    case OrderStatus.Canceled:
+                        cancelledResetEvent.Set();
+                        break;
+                }
+            };
+
+            if (!Brokerage.PlaceOrder(limitOrder))
+            {
+                Assert.Fail("Brokerage failed to place the order: " + limitOrder);
+            }
+
+            if (!submittedResetEvent.WaitOne(TimeSpan.FromSeconds(5)))
+            {
+                Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage doesn't return {OrderStatus.Submitted}");
+            }
+
+            var openOrder = Brokerage.GetOpenOrders().Single();
+
+            var orderProperties = openOrder.Properties as TradeStationOrderProperties;
+            Assert.True(orderProperties.OutsideRegularTradingHours);
+
+            switch (timeInForceName)
+            {
+                case "Day":
+                    Assert.That(orderProperties.TimeInForce, Is.TypeOf<DayTimeInForce>());
+                    break;
+                case "GoodTilCanceled":
+                    Assert.That(orderProperties.TimeInForce, Is.TypeOf<GoodTilCanceledTimeInForce>());
+                    break;
+                case "GoodTilDate":
+                    Assert.That(orderProperties.TimeInForce, Is.TypeOf<GoodTilDateTimeInForce>());
+                    Assert.AreEqual(orderExpiryDate.Date, (orderProperties.TimeInForce as GoodTilDateTimeInForce).Expiry.Date);
+                    break;
+            }
+
+            var order = OrderProvider.GetOrderById(1);
+            if (!Brokerage.CancelOrder(order))
+            {
+                Assert.Fail("Brokerage failed to cancel the order: " + order);
+            }
+
+            if (!cancelledResetEvent.WaitOne(TimeSpan.FromSeconds(5)))
+            {
+                Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage doesn't return {OrderStatus.Canceled}");
             }
         }
 
