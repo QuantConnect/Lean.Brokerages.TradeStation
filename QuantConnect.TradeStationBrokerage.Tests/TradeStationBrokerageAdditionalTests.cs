@@ -18,11 +18,13 @@ using System.Linq;
 using Newtonsoft.Json;
 using NUnit.Framework;
 using System.Threading;
+using QuantConnect.Orders;
 using QuantConnect.Logging;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using QuantConnect.Configuration;
 using QuantConnect.Algorithm.CSharp;
+using QuantConnect.Orders.TimeInForces;
 using QuantConnect.Brokerages.TradeStation.Api;
 using QuantConnect.Brokerages.TradeStation.Models;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
@@ -307,6 +309,83 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
             Assert.IsNotEmpty(cashBalance);
             Assert.Greater(cashBalance[0].Amount, 0);
+        }
+
+        [TestCase(OrderType.Limit, "GoodTilCanceled", null, TradeStationDuration.GoodTillCanceled)]
+        [TestCase(OrderType.Limit, "GoodTilCanceled", true, TradeStationDuration.GoodTillCanceledPlus)]
+        [TestCase(OrderType.Limit, "GoodTilCanceled", false, TradeStationDuration.GoodTillCanceled)]
+        [TestCase(OrderType.Limit, "Day", null, TradeStationDuration.Day)]
+        [TestCase(OrderType.Limit, "Day", true, TradeStationDuration.DayPlus)]
+        [TestCase(OrderType.Limit, "Day", false, TradeStationDuration.Day)]
+        [TestCase(OrderType.Limit, "GoodTilDate", null, TradeStationDuration.GoodThroughDate)]
+        [TestCase(OrderType.Limit, "GoodTilDate", true, TradeStationDuration.GoodThroughDatePlus)]
+        [TestCase(OrderType.Limit, "GoodTilDate", false, TradeStationDuration.GoodThroughDate)]
+        public void GetBrokerageTimeInForceByLeanTimeInForce(OrderType orderType, string timeInForceName, bool? outsideRegularTradingHours, TradeStationDuration expectedDuration)
+        {
+            var leanTimeInForce = default(Orders.TimeInForce);
+            var orderExpiryTime = default(DateTime);
+            switch (timeInForceName)
+            {
+                case "GoodTilCanceled":
+                    leanTimeInForce = Orders.TimeInForce.GoodTilCanceled;
+                    break;
+                case "Day":
+                    leanTimeInForce = Orders.TimeInForce.Day;
+                    break;
+                case "GoodTilDate":
+                    orderExpiryTime = new DateTime(2025, 04, 29);
+                    leanTimeInForce = Orders.TimeInForce.GoodTilDate(orderExpiryTime);
+                    break;
+                default:
+                    throw new NotSupportedException($"{nameof(TradeStationBrokerageAdditionalTests)}.{nameof(GetBrokerageTimeInForceByLeanTimeInForce)}: The specified TimeInForce '{timeInForceName}' is not supported.");
+            }
+
+            var orderProperties = new OrderProperties() { TimeInForce = leanTimeInForce };
+            if (outsideRegularTradingHours != null)
+            {
+                orderProperties = new TradeStationOrderProperties() { TimeInForce = orderProperties.TimeInForce, OutsideRegularTradingHours = outsideRegularTradingHours.Value };
+            }
+
+            var (actualDuration, actualExpiryDateTime) = TradeStationExtensions.GetBrokerageTimeInForce(leanTimeInForce, orderType, (orderProperties as TradeStationOrderProperties)?.OutsideRegularTradingHours ?? false);
+
+            Assert.AreEqual(expectedDuration, actualDuration);
+
+            if (timeInForceName.Equals("GoodTilDate", StringComparison.InvariantCultureIgnoreCase))
+            {
+                Assert.AreEqual(orderExpiryTime.ToIso8601Invariant(), actualExpiryDateTime);
+            }
+        }
+
+        [TestCase(TradeStationDuration.DayPlus, true)]
+        [TestCase(TradeStationDuration.Day, false)]
+        [TestCase(TradeStationDuration.GoodTillCanceledPlus, true)]
+        [TestCase(TradeStationDuration.GoodTillCanceled, false)]
+        [TestCase(TradeStationDuration.GoodThroughDatePlus, true)]
+        [TestCase(TradeStationDuration.GoodThroughDate, false)]
+        public void GetLeanTimeInForceByBrokerageTimeInForce(TradeStationDuration brokerageDuration, bool expectedOutsideRegularTradingHours)
+        {
+            var goodTillDate = new DateTime(2025, 04, 29);
+            var orderProperties = new TradeStationOrderProperties();
+            Assert.True(orderProperties.GetLeanTimeInForce(brokerageDuration, goodTillDate));
+
+            Assert.AreEqual(expectedOutsideRegularTradingHours, orderProperties.OutsideRegularTradingHours);
+
+            switch (brokerageDuration)
+            {
+                case TradeStationDuration.Day:
+                case TradeStationDuration.DayPlus:
+                    Assert.That(orderProperties.TimeInForce, Is.TypeOf<DayTimeInForce>());
+                    break;
+                case TradeStationDuration.GoodTillCanceled:
+                case TradeStationDuration.GoodTillCanceledPlus:
+                    Assert.That(orderProperties.TimeInForce, Is.TypeOf<GoodTilCanceledTimeInForce>());
+                    break;
+                case TradeStationDuration.GoodThroughDate:
+                case TradeStationDuration.GoodThroughDatePlus:
+                    Assert.That(orderProperties.TimeInForce, Is.TypeOf<GoodTilDateTimeInForce>());
+                    Assert.AreEqual(goodTillDate, (orderProperties.TimeInForce as GoodTilDateTimeInForce).Expiry);
+                    break;
+            }
         }
 
         private TradeStationApiClient CreateTradeStationApiClient()

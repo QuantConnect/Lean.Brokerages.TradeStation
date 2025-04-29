@@ -207,11 +207,8 @@ public class TradeStationApiClient : IDisposable
         TradeStationOrderProperties tradeStationOrderProperties = null)
     {
         var orderType = leanOrderType.ConvertLeanOrderTypeToTradeStation();
-        
 
-        var outsideRegularTradingHours = tradeStationOrderProperties?.OutsideRegularTradingHours ?? false;
-
-        var (duration, expiryDateTime) = leanTimeInForce.GetBrokerageTimeInForce(leanOrderType, outsideRegularTradingHours);
+        var (duration, expiryDateTime) = leanTimeInForce.GetBrokerageTimeInForce(leanOrderType, tradeStationOrderProperties?.OutsideRegularTradingHours ?? false);
 
         var tradeStationOrder = new TradeStationPlaceOrderRequest(
             _accountID.Value,
