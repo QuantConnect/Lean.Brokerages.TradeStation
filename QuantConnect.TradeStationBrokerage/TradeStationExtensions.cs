@@ -135,7 +135,7 @@ public static class TradeStationExtensions
                     case GoodTilDateTimeInForce gt:
                         duration = outsideRegularTradingHours ? PlaceOrderDuration.GoodThroughDatePlus : PlaceOrderDuration.GoodThroughDate;
                         // The TS API requires the expiry time in UTC format
-                        expiryDateTime = new DateTime(gt.Expiry.Ticks, DateTimeKind.Utc).ToIso8601Invariant();
+                        expiryDateTime = DateTime.SpecifyKind(gt.Expiry, DateTimeKind.Utc).ToIso8601Invariant();
                         break;
                     case GoodTilCanceledTimeInForce:
                         duration = outsideRegularTradingHours ? PlaceOrderDuration.GoodTillCanceledPlus : PlaceOrderDuration.GoodTillCanceled;
