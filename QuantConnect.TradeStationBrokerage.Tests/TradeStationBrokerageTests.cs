@@ -1128,7 +1128,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
             if (!filledEvent.WaitOne(TimeSpan.FromSeconds(10)))
             {
-                Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage doesn't return {OrderStatus.Filled}");
+                Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage didn't return {OrderStatus.Filled}");
             }
         }
 
