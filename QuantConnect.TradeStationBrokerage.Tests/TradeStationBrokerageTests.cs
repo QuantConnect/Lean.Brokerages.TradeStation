@@ -1102,6 +1102,19 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 Assert.Fail($"{nameof(PlaceTrailingStopOrder)}: the brokerage didn't acknowledge order submission");
             }
 
+            // Fetch open orders, make sure the order trailing stop is correctly parsed
+            var openOrders = Brokerage.GetOpenOrders();
+            Assert.AreEqual(1, openOrders.Count);
+            var openOrder = (TrailingStopOrder)openOrders[0];
+            var localOrder = (TrailingStopOrder)OrderProvider.GetOrderById(1);
+            Assert.AreEqual(localOrder.Type, openOrder.Type);
+            Assert.AreEqual(localOrder.Symbol, openOrder.Symbol);
+            Assert.AreEqual(localOrder.Quantity, openOrder.Quantity);
+            Assert.AreEqual(localOrder.Direction, openOrder.Direction);
+            Assert.AreEqual(localOrder.TrailingAmount, openOrder.TrailingAmount);
+            Assert.AreEqual(localOrder.TrailingAsPercentage, openOrder.TrailingAsPercentage);
+
+            // Test update:
             var order = OrderProvider.GetOrderById(1);
 
             trailingAmount = trailingAsPercentage ? trailingPercentage : trailingAmount;

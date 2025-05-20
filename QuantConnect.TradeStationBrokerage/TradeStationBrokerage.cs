@@ -1154,6 +1154,9 @@ public partial class TradeStationBrokerage : Brokerage
                         orderProperties.PostOnly = advancedOptions.Contains("BKO") && advancedOptions.Contains("PSO");
                         postOnlyChecked = true;
                         break;
+                    // Ignore trailing stop option, the order's AdvancedOptions property has it
+                    case "TRL":
+                        break;
                     default:
                         OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $" Detected unsupported Lean.TradeStationOrderProperties: {option}, ignoring"));
                         break;

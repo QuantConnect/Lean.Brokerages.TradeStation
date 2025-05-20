@@ -494,11 +494,11 @@ public readonly struct TrailingStop
     {
         if (!string.IsNullOrEmpty(Amount))
         {
-            return (decimal.Parse(Amount), true);
+            return (decimal.Parse(Amount), false);
         }
         else if (!string.IsNullOrEmpty(Percent))
         {
-            return (decimal.Parse(Percent) / 100, false);
+            return (decimal.Parse(Percent) / 100, true);
         }
         return (0, false);
     }
