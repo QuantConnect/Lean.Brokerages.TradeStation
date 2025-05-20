@@ -246,8 +246,11 @@ public class TradeStationAdvancedOptions
     public bool BookOnly { get; set; }
 
     /// <summary>
+    /// TrailingStop offset; amount or percent.
     /// Makes the order post-only by setting the AddLiquidity and BookOnly properties to true.
     /// </summary>
+    public TrailingStop? TrailingStop { get; set; }
+
     public void MakePostOnly()
     {
         AddLiquidity = true;

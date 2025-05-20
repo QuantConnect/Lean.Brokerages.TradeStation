@@ -356,7 +356,7 @@ public readonly struct ConditionalOrder
     public string AccountID { get; }
 
     /// <summary>
-    /// Describes the relationship of a linked order within a group order to the current returned order. 
+    /// Describes the relationship of a linked order within a group order to the current returned order.
     /// Valid Values are: BRK, OSP (linked parent), OSO (linked child), and OCO.
     /// </summary>
     public string Relationship { get; }
@@ -429,7 +429,7 @@ public readonly struct MarketActivationRule
 public readonly struct TimeActivationRule
 {
     /// <summary>
-    /// Timestamp represented as an RFC3339 formatted date, a profile of the ISO 8601 date standard. 
+    /// Timestamp represented as an RFC3339 formatted date, a profile of the ISO 8601 date standard.
     /// For time activated orders, the date portion is required but not relevant. E.g. 2023-01-01T23:30:30Z.
     /// </summary>
     public string TimeUtc { get; }
@@ -461,5 +461,45 @@ public readonly struct TrailingStop
     {
         Amount = amount;
         Percent = percent;
+    }
+
+    public TrailingStop(decimal amount, bool asPercentage)
+    {
+        if (asPercentage)
+        {
+            Amount = null;
+            Percent = (amount * 100).ToString();
+        }
+        else
+        {
+            Amount = amount.ToString();
+            Percent = null;
+        }
+    }
+
+    /// <summary>
+    /// Checks if this instance models a valid trailing stop.
+    /// A trailing stop is valid if either Amount or Percent is set.
+    /// </summary>
+    public bool IsValid()
+    {
+        return !string.IsNullOrEmpty(Amount) || !string.IsNullOrEmpty(Percent);
+    }
+
+    /// <summary>
+    /// Gets the value of the trailing stop for Lean usage, returning the amount
+    /// (either the actual price amount or the percentage) and a boolean indicating if it's a percentage.
+    /// </summary>
+    public (decimal, bool) GetValue()
+    {
+        if (!string.IsNullOrEmpty(Amount))
+        {
+            return (decimal.Parse(Amount), true);
+        }
+        else if (!string.IsNullOrEmpty(Percent))
+        {
+            return (decimal.Parse(Percent) / 100, false);
+        }
+        return (0, false);
     }
 }
