@@ -1053,8 +1053,8 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 trailingAmount = Math.Abs(lastPrice - initialStopPrice);
             }
 
-            var trailingStopOrder = new TrailingStopOrder(symbol, 1, initialStopPrice, trailingAsPercentage ? trailingPercentage : trailingAmount,
-                trailingAsPercentage, DateTime.UtcNow);
+            var trailingStopOrder = new TrailingStopOrder(symbol, orderDirection == OrderDirection.Buy ? 1 : -1,
+                initialStopPrice, trailingAsPercentage ? trailingPercentage : trailingAmount, trailingAsPercentage, DateTime.UtcNow);
 
             var submittedEvent = new AutoResetEvent(false);
             var cancelledEvent = new ManualResetEvent(false);
@@ -1141,7 +1141,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
             if (!filledEvent.WaitOne(TimeSpan.FromSeconds(10)))
             {
-                Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage didn't return {OrderStatus.Filled}");
+                Assert.Fail($"{nameof(PlaceTrailingStopOrder)}: the brokerage didn't return {OrderStatus.Filled}");
             }
         }
 
