@@ -222,7 +222,11 @@ public class TradeStationApiClient : IDisposable
 
         if (tradeStationOrderProperties != null)
         {
-            tradeStationOrder.AdvancedOptions = new TradeStationAdvancedOptions(tradeStationOrderProperties.AllOrNone);
+            tradeStationOrder.AdvancedOptions = new TradeStationAdvancedOptions() { AllOrNone = tradeStationOrderProperties.AllOrNone };
+            if (tradeStationOrderProperties.PostOnly)
+            {
+                tradeStationOrder.AdvancedOptions.MakePostOnly();
+            }
         }
 
         if (!string.IsNullOrEmpty(routeId))
@@ -360,8 +364,8 @@ public class TradeStationApiClient : IDisposable
     /// Thrown if the account ID is missing or invalid, or if the account cannot be found.
     /// </exception>
     /// <remarks>
-    /// This method checks if the account ID is provided, and if so, it retrieves the associated account 
-    /// details from TradeStation and returns the account type. If no valid account ID is provided, 
+    /// This method checks if the account ID is provided, and if so, it retrieves the associated account
+    /// details from TradeStation and returns the account type. If no valid account ID is provided,
     /// an exception is thrown.
     /// </remarks>
     public async Task<TradeStationAccountType> GetAccountType()
@@ -395,7 +399,7 @@ public class TradeStationApiClient : IDisposable
     }
 
     /// <summary>
-    /// Fetches marketdata bars for the given symbol, interval, and timeframe. 
+    /// Fetches marketdata bars for the given symbol, interval, and timeframe.
     /// The maximum amount of intraday bars a user can fetch is 57,600 per request.
     /// </summary>
     /// <param name="symbol">The valid symbol string.</param>
@@ -458,7 +462,7 @@ public class TradeStationApiClient : IDisposable
     }
 
     /// <summary>
-    /// Fetches marketdata bars for the given symbol, interval, and timeframe. 
+    /// Fetches marketdata bars for the given symbol, interval, and timeframe.
     /// The maximum amount of intraday bars a user can fetch is 57,500 per request.
     /// </summary>
     /// <param name="symbol">The valid symbol string.</param>
@@ -553,7 +557,7 @@ public class TradeStationApiClient : IDisposable
     /// </summary>
     /// <param name="accountType">The type of TradeStation account to retrieve the ID for.</param>
     /// <returns>
-    /// A task that represents the asynchronous operation. The task result contains the account ID 
+    /// A task that represents the asynchronous operation. The task result contains the account ID
     /// for the specified account type.
     /// </returns>
     /// <remarks>
@@ -599,7 +603,7 @@ public class TradeStationApiClient : IDisposable
     /// </summary>
     /// <returns>The URL string used for signing in.</returns>
     /// <remarks>
-    /// This method creates a URL for signing in to TradeStation's API. Pay attention to the "Scope" part, 
+    /// This method creates a URL for signing in to TradeStation's API. Pay attention to the "Scope" part,
     /// which determines the areas of access granted by the TradeStation API. For more information on scopes,
     /// refer to the <a href="https://api.tradestation.com/docs/fundamentals/authentication/scopes">TradeStation API documentation</a>.
     /// </remarks>
@@ -678,11 +682,11 @@ public class TradeStationApiClient : IDisposable
     /// <exception cref="TaskCanceledException">Thrown if the operation is canceled.</exception>
     /// <exception cref="OperationCanceledException">Thrown if the operation is canceled via the <paramref name="cancellationToken"/>.</exception>
     /// <remarks>
-    /// This method sends an HTTP GET request to the specified URI and streams the response content line by line. 
+    /// This method sends an HTTP GET request to the specified URI and streams the response content line by line.
     /// It ensures that the HTTP response is successful and then reads the response stream asynchronously.
     /// Each line from the response is yielded as a string.
-    /// 
-    /// The <paramref name="cancellationToken"/> can be used to cancel the operation at any time. 
+    ///
+    /// The <paramref name="cancellationToken"/> can be used to cancel the operation at any time.
     /// If the cancellation is requested, the method will stop reading and yielding lines.
     /// </remarks>
     private async IAsyncEnumerable<string> StreamRequestAsyncEnumerable(string requestUri, [EnumeratorCancellation] CancellationToken cancellationToken)
