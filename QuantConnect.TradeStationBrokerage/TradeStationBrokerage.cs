@@ -1208,9 +1208,8 @@ public partial class TradeStationBrokerage : Brokerage
                 }
                 break;
             case TradeStationOrderType.StopMarket:
-                if (order.TrailingStop.IsValid())
+                if (order.TrailingStop.TryGetValue(out var trailingAmount, out var trailingAsPercentage))
                 {
-                    var (trailingAmount, trailingAsPercentage) = order.TrailingStop.GetValue();
                     leanOrder = new TrailingStopOrder(leanSymbol, orderQuantity, trailingAmount, trailingAsPercentage, order.OpenedDateTime, properties: orderProperties);
                 }
                 else

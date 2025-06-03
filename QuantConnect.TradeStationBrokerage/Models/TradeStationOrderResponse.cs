@@ -468,7 +468,7 @@ public readonly struct TrailingStop
         if (asPercentage)
         {
             Amount = null;
-            Percent = (amount * 100).ToString();
+            Percent = (amount * 100m).ToString();
         }
         else
         {
@@ -478,28 +478,27 @@ public readonly struct TrailingStop
     }
 
     /// <summary>
-    /// Checks if this instance models a valid trailing stop.
-    /// A trailing stop is valid if either Amount or Percent is set.
-    /// </summary>
-    public bool IsValid()
-    {
-        return !string.IsNullOrEmpty(Amount) || !string.IsNullOrEmpty(Percent);
-    }
-
-    /// <summary>
     /// Gets the value of the trailing stop for Lean usage, returning the amount
     /// (either the actual price amount or the percentage) and a boolean indicating if it's a percentage.
     /// </summary>
-    public (decimal, bool) GetValue()
+    public bool TryGetValue(out decimal amount, out bool amountAsPercentage)
     {
         if (!string.IsNullOrEmpty(Amount))
         {
-            return (decimal.Parse(Amount), false);
+            amount = decimal.Parse(Amount);
+            amountAsPercentage = false;
+            return true;
         }
-        else if (!string.IsNullOrEmpty(Percent))
+
+        if (!string.IsNullOrEmpty(Percent))
         {
-            return (decimal.Parse(Percent) / 100, true);
+            amount = decimal.Parse(Percent) / 100m;
+            amountAsPercentage = true;
+            return true;
         }
-        return (0, false);
+
+        amount = 0m;
+        amountAsPercentage = false;
+        return false;
     }
 }
