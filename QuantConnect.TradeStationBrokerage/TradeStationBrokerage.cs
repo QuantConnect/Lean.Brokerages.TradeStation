@@ -89,8 +89,8 @@ public partial class TradeStationBrokerage : Brokerage
     /// A thread-safe dictionary to track the response result submission status by brokerage ID.
     /// </summary>
     /// <remarks>
-    /// This dictionary uses brokerage IDs as keys (of type <see cref="string"/>) 
-    /// and a boolean value as the value to indicate whether the response result has been 
+    /// This dictionary uses brokerage IDs as keys (of type <see cref="string"/>)
+    /// and a boolean value as the value to indicate whether the response result has been
     /// submitted (<see langword="true"/>) or not (<see langword="false"/>).
     /// </remarks>
     private ConcurrentDictionary<string, bool> _updateSubmittedResponseResultByBrokerageID = new();
@@ -122,7 +122,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// Maps various exchanges to their corresponding routing codes.
     /// </summary>
     /// <remarks>
-    /// This dictionary is used to convert exchange identifiers to their specific routing strings 
+    /// This dictionary is used to convert exchange identifiers to their specific routing strings
     /// required for order placement or other exchange-specific operations.
     /// </remarks>
     private readonly Dictionary<Exchange, string> _leanExchangeToTradeStationRoute = new()
@@ -835,7 +835,7 @@ public partial class TradeStationBrokerage : Brokerage
                         // Remove the order entry when the order is acknowledged (indicating successful submission)
                         _updateSubmittedResponseResultByBrokerageID.TryRemove(new(brokerageOrder.OrderID, true));
                         return;
-                    // Sometimes, a filled event is received without the ClosedDateTime property set. 
+                    // Sometimes, a filled event is received without the ClosedDateTime property set.
                     // Subsequently, another event is received with the ClosedDateTime property correctly populated.
                     case TradeStationOrderStatusType.Fll:
                     case TradeStationOrderStatusType.Brf:
@@ -850,7 +850,7 @@ public partial class TradeStationBrokerage : Brokerage
                     case TradeStationOrderStatusType.Bro:
                         globalLeanOrderStatus = OrderStatus.Invalid;
                         break;
-                    // Sometimes, a Out event is received without the ClosedDateTime property set. 
+                    // Sometimes, a Out event is received without the ClosedDateTime property set.
                     // Subsequently, another event is received with the ClosedDateTime property correctly populated.
                     case TradeStationOrderStatusType.Out when brokerageOrder.ClosedDateTime != default:
                         // Remove the order entry if it was marked as submitted but is now out
@@ -1126,12 +1126,18 @@ public partial class TradeStationBrokerage : Brokerage
         if (!string.IsNullOrEmpty(order.AdvancedOptions))
         {
             var advancedOptions = order.AdvancedOptions.Split(';', StringSplitOptions.RemoveEmptyEntries);
+            var postOnlyChecked = false;
             foreach (var option in advancedOptions)
             {
-                switch (option)
+                var key = option.Split('=', StringSplitOptions.RemoveEmptyEntries)[0];
+                switch (key)
                 {
                     case "AON":
                         orderProperties.AllOrNone = true;
+                        break;
+                    case "BKO" or "PSO" when !postOnlyChecked:
+                        orderProperties.PostOnly = advancedOptions.Contains("BKO") && advancedOptions.Contains("PSO");
+                        postOnlyChecked = true;
                         break;
                     default:
                         OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $" Detected unsupported Lean.TradeStationOrderProperties: {option}, ignoring"));
@@ -1210,16 +1216,16 @@ public partial class TradeStationBrokerage : Brokerage
     /// The route ID is determined by matching the exchange with one of the security types.
     /// </param>
     /// <param name="routeId">
-    /// When this method returns, contains the route ID for the specified exchange and security types, 
+    /// When this method returns, contains the route ID for the specified exchange and security types,
     /// or <c>null</c> if no matching route was found.
     /// </param>
     /// <returns>
-    /// <c>true</c> if either the exchange is not provided, indicating that no routing is required, 
+    /// <c>true</c> if either the exchange is not provided, indicating that no routing is required,
     /// or if a valid route ID is found; otherwise, <c>false</c>.
     /// </returns>
     /// <remarks>
-    /// This method will return <c>true</c> when no exchange is set in the <paramref name="orderProperties"/>, 
-    /// since this implies that no specific routing is needed. The route ID is determined by attempting to match 
+    /// This method will return <c>true</c> when no exchange is set in the <paramref name="orderProperties"/>,
+    /// since this implies that no specific routing is needed. The route ID is determined by attempting to match
     /// the provided exchange with a route for one of the security types.
     /// </remarks>
     protected bool GetTradeStationOrderRouteIdByOrderSecurityTypes(OrderProperties orderProperties, IReadOnlyCollection<SecurityType> securityTypes, out string routeId)

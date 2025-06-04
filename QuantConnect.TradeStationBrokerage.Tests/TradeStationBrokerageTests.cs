@@ -58,8 +58,8 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         private bool IsLongOrder = false;
 
         /// <summary>
-        /// Gets the ask price for a given symbol. If the order is a long order, 
-        /// it returns the last price plus 0.1, rounded to 2 decimal places. 
+        /// Gets the ask price for a given symbol. If the order is a long order,
+        /// it returns the last price plus 0.1, rounded to 2 decimal places.
         /// Otherwise, it returns the last price minus 0.1, rounded to 2 decimal places.
         /// </summary>
         /// <param name="symbol">The symbol for which to get the ask price.</param>
@@ -329,7 +329,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// Tests the scenario where a market order transitions from a short position to a long position,
         /// crossing zero in the process. This test ensures the order status change events occur in the expected
         /// sequence: Submitted, PartiallyFilled, and Filled.
-        /// 
+        ///
         /// The method performs the following steps:
         /// <list type="number">
         /// <item>Creates a market order for the AAPL symbol with a TimeInForce property set to Day.</item>
@@ -958,6 +958,82 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             if (!cancelledResetEvent.WaitOne(TimeSpan.FromSeconds(5)))
             {
                 Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage doesn't return {OrderStatus.Canceled}");
+            }
+        }
+
+        [Test]
+        public void PlacePostOnlyOrder([Values(OrderDirection.Buy, OrderDirection.Sell)] OrderDirection orderDirection)
+        {
+            var symbol = Symbols.AAPL;
+            var lastPrice = _brokerage.GetPrice(symbol).Last;
+            var diff = lastPrice * 0.1m;
+            var limitPrice = AddAndRound(lastPrice, orderDirection == OrderDirection.Buy ? -diff : diff);
+            var orderProperties = new TradeStationOrderProperties()
+            {
+                PostOnly = true,
+                Exchange = Exchange.NASDAQ
+            };
+            var limitOrder = new LimitOrder(symbol, orderDirection == OrderDirection.Buy ? 1 : -1,
+                limitPrice, DateTime.UtcNow, properties: orderProperties);
+
+            var submittedEvent = new AutoResetEvent(false);
+            var cancelledEvent = new ManualResetEvent(false);
+
+            Brokerage.OrdersStatusChanged += (_, orderEvents) =>
+            {
+                var orderEvent = orderEvents[0];
+
+                Log.Trace("");
+                Log.Trace($"{nameof(PlacePostOnlyOrder)}.OrderEvent.Status: {orderEvent.Status}");
+                Log.Trace("");
+
+                if (orderEvent.Status == OrderStatus.Submitted)
+                {
+                    submittedEvent.Set();
+                }
+
+                if (orderEvent.Status == OrderStatus.Canceled)
+                {
+                    cancelledEvent.Set();
+                }
+            };
+
+            OrderProvider.Add(limitOrder);
+
+            if (!Brokerage.PlaceOrder(limitOrder))
+            {
+                Assert.Fail("Brokerage failed to place the order: " + limitOrder);
+            }
+
+            if (!submittedEvent.WaitOne(TimeSpan.FromSeconds(5)))
+            {
+                Assert.Fail($"{nameof(PlacePostOnlyOrder)}: the brokerage didn't acknowledge order submission");
+            }
+
+            // Fetch open orders, make sure the order is correctly parsed
+            var openOrders = Brokerage.GetOpenOrders();
+            Assert.AreEqual(1, openOrders.Count);
+            var openOrder = (LimitOrder)openOrders[0];
+            var localOrder = (LimitOrder)OrderProvider.GetOrderById(1);
+            Assert.AreEqual(localOrder.Type, openOrder.Type);
+            Assert.AreEqual(localOrder.Symbol, openOrder.Symbol);
+            Assert.AreEqual(localOrder.Quantity, openOrder.Quantity);
+            Assert.AreEqual(localOrder.Direction, openOrder.Direction);
+            Assert.AreEqual(localOrder.LimitPrice, openOrder.LimitPrice);
+            var openOrderProperties = openOrder.Properties as TradeStationOrderProperties;
+            var localOrderProperties = localOrder.Properties as TradeStationOrderProperties;
+            Assert.IsTrue(openOrderProperties.PostOnly);
+            Assert.AreEqual(localOrderProperties.PostOnly, openOrderProperties.PostOnly);
+
+            // Cancel the order
+            if (!Brokerage.CancelOrder(openOrder))
+            {
+                Assert.Fail("Brokerage failed to cancel the order: " + openOrder);
+            }
+
+            if (!cancelledEvent.WaitOne(TimeSpan.FromSeconds(5)))
+            {
+                Assert.Fail($"{nameof(PlacePostOnlyOrder)}: the brokerage didn't acknowledge order cancellation");
             }
         }
 

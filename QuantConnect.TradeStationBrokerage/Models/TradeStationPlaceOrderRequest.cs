@@ -216,27 +216,41 @@ public readonly struct TradeStationPlaceOrderLeg
 /// <summary>
 /// Represents advanced options for orders placed through TradeStation.
 /// </summary>
-public readonly struct TradeStationAdvancedOptions
+public class TradeStationAdvancedOptions
 {
     /// <summary>
     /// Gets a value indicating whether the "All or None" feature is enabled.
     /// </summary>
     /// <value>
-    /// A boolean value that, when set to true, ensures the order will only be filled completely or not at all. 
+    /// A boolean value that, when set to true, ensures the order will only be filled completely or not at all.
     /// If set to false, the order can be partially filled. This option is applicable to both equities and options.
     /// </value>
     /// <remarks>
-    /// The "All or None" feature is particularly useful when the trader wants to avoid partial executions, 
+    /// The "All or None" feature is particularly useful when the trader wants to avoid partial executions,
     /// which can result in multiple transactions and potentially higher fees.
     /// </remarks>
-    public bool AllOrNone { get; }
+    public bool AllOrNone { get; set; }
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="TradeStationAdvancedOptions"/> struct.
+    /// Option that allows to place orders that will only add liquidity on the route you selected.
+    /// Valid for Equities only.
     /// </summary>
-    /// <param name="allOrNone">Specifies whether to enable the "All or None" feature for the order.</param>
-    public TradeStationAdvancedOptions(bool allOrNone)
+    public bool AddLiquidity { get; set; }
+
+    /// <summary>
+    /// Option that restricts the destination you choose in the direct routing from re-routing your
+    /// order to another destination. This type of order is useful in controlling your execution costs
+    /// by avoiding fees the Exchanges can charge for rerouting your order to another market center.
+    /// Valid for Equities only.
+    /// </summary>
+    public bool BookOnly { get; set; }
+
+    /// <summary>
+    /// Makes the order post-only by setting the AddLiquidity and BookOnly properties to true.
+    /// </summary>
+    public void MakePostOnly()
     {
-        AllOrNone = allOrNone;
+        AddLiquidity = true;
+        BookOnly = true;
     }
 }
