@@ -50,7 +50,12 @@ public class TradeStationReplaceOrderRequest
     /// <summary>
     /// The orderId for this order.
     /// </summary>
-    public string orderID { get; set; }
+    public string OrderID { get; set; }
+
+    /// <summary>
+    /// The TradeStation Advanced Options of Orders
+    /// </summary>
+    public TradeStationAdvancedOptions? AdvancedOptions { get; set; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TradeStationReplaceOrderRequest"/> class with the specified quantity.
@@ -62,6 +67,6 @@ public class TradeStationReplaceOrderRequest
     {
         AccountID = accountID;
         Quantity = quantity;
-        orderID = brokerageOrderId;
+        OrderID = brokerageOrderId;
     }
 }

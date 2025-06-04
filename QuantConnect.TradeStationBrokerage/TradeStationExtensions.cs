@@ -88,6 +88,7 @@ public static class TradeStationExtensions
             case OrderType.ComboLimit:
                 return TradeStationOrderType.Limit;
             case OrderType.StopMarket:
+            case OrderType.TrailingStop:
                 return TradeStationOrderType.StopMarket;
             case OrderType.StopLimit:
                 return TradeStationOrderType.StopLimit;
@@ -172,7 +173,7 @@ public static class TradeStationExtensions
     /// The expiration date and time for a Good 'Til Date (GTD) order. This parameter is used only when <paramref name="brokerageOrderDuration"/> is 'GTD'.
     /// </param>
     /// <returns>
-    /// Returns <c>true</c> if the conversion was successful and a valid <see cref="Orders.TimeInForce"/> value was assigned to 
+    /// Returns <c>true</c> if the conversion was successful and a valid <see cref="Orders.TimeInForce"/> value was assigned to
     /// the <see cref="TradeStationOrderProperties.TimeInForce"/> property. Returns <c>false</c> if an unsupported brokerage order duration was provided.
     /// </returns>
     public static bool GetLeanTimeInForce(this TradeStationOrderProperties orderProperties, TradeStationDuration brokerageOrderDuration, DateTime goodTilDateTime)
@@ -263,6 +264,18 @@ public static class TradeStationExtensions
         StopLimitOrder slo => slo.LimitPrice,
         ComboLimitOrder clo => clo.GroupOrderManager.LimitPrice,
         _ => null
+    };
+
+    /// <summary>
+    /// Gets the trailing stop information from the specified order.
+    /// </summary>
+    /// <param name="order">The order to retrieve the trailing stop information from.</param>
+    /// <returns>The trailing stop information (trailing amount and whether its a percentage)
+    /// if the order is a TrailingStopOrder; otherwise, null.</returns>
+    public static (decimal?, bool?) GetTrailingStopInfo(this Order order) => order switch
+    {
+        TrailingStopOrder tso => (tso.TrailingAmount, tso.TrailingAsPercentage),
+        _ => (null, null)
     };
 
     /// <summary>

@@ -191,6 +191,9 @@ public class TradeStationApiClient : IDisposable
     /// <param name="legs">The collection of order legs for combo orders.</param>
     /// <param name="limitPrice">The limit price for the order (optional).</param>
     /// <param name="stopPrice">The stop price for the order (optional).</param>
+    /// <param name="trailingAmount">The trailing amount to be used to update the stop price.
+    /// If a trailing amount is passed, and stop price is passed as well, the stop price is ignored b the brokerage</param>
+    /// <param name="trailingAsPercentage">Whether the <paramref name="trailingAmount"/> is a percentage or an absolute currency value</param>
     /// <param name="routeId">The identifier for the trading route associated with the specified exchange that supports TradeStation.</param>
     /// <param name="tradeStationOrderProperties">Additional TradeStation order properties (optional).</param>
     /// <returns>A <see cref="TradeStationPlaceOrderResponse"/> containing the result of the order placement.</returns>
@@ -203,6 +206,8 @@ public class TradeStationApiClient : IDisposable
         IReadOnlyCollection<TradeStationPlaceOrderLeg> legs = null,
         decimal? limitPrice = null,
         decimal? stopPrice = null,
+        decimal? trailingAmount = null,
+        bool? trailingAsPercentage = null,
         string routeId = null,
         TradeStationOrderProperties tradeStationOrderProperties = null)
     {
@@ -247,6 +252,11 @@ public class TradeStationApiClient : IDisposable
                 tradeStationOrder.LimitPrice = limitPrice?.ToStringInvariant();
                 tradeStationOrder.StopPrice = stopPrice?.ToStringInvariant();
                 break;
+            case OrderType.TrailingStop:
+                var advancedOptions = tradeStationOrder.AdvancedOptions ??= new TradeStationAdvancedOptions();
+                advancedOptions.TrailingStop = new TrailingStop(trailingAmount.Value, trailingAsPercentage ?? false);
+                tradeStationOrder.AdvancedOptions = advancedOptions;
+                break;
         }
 
         return await RequestAsync<TradeStationPlaceOrderResponse>(_baseUrl, "/v3/orderexecution/orders", HttpMethod.Post,
@@ -262,13 +272,16 @@ public class TradeStationApiClient : IDisposable
     /// <param name="quantity">The new quantity for the order. If null, the quantity remains unchanged.</param>
     /// <param name="limitPrice">The limit price for the order. If null, the limit price remains unchanged.</param>
     /// <param name="stopPrice">The stop price for the order. If null, the stop price remains unchanged.</param>
+    /// <param name="trailingAmount">The trailing amount to be used to update the stop price.
+    /// If a trailing amount is passed, and stop price is passed as well, the stop price is ignored b the brokerage</param>
+    /// <param name="trailingAsPercentage">Whether the <paramref name="trailingAmount"/> is a percentage or an absolute currency value</param>
     /// <returns>A task representing the asynchronous operation. The task result contains an <see cref="OrderResponse"/> object representing the response to the order replacement.</returns>
     /// <remarks>
     /// This method replaces an existing order with new parameters such as quantity, limit price, and stop price.
     /// If any parameter is not provided (null), the corresponding value of the existing order will remain unchanged.
     /// </remarks>
     public async Task<Models.OrderResponse> ReplaceOrder(string brokerId, OrderType leanOrderType, decimal quantity,
-        decimal? limitPrice = null, decimal? stopPrice = null)
+        decimal? limitPrice = null, decimal? stopPrice = null, decimal? trailingAmount = null, bool? trailingAsPercentage = null)
     {
         var tradeStationOrder = new TradeStationReplaceOrderRequest(quantity.ToStringInvariant(), _accountID.Value, brokerId);
 
@@ -280,6 +293,14 @@ public class TradeStationApiClient : IDisposable
         if (stopPrice.HasValue)
         {
             tradeStationOrder.StopPrice = stopPrice.Value.ToStringInvariant();
+        }
+
+        if (trailingAmount.HasValue)
+        {
+            tradeStationOrder.AdvancedOptions = new TradeStationAdvancedOptions()
+            {
+                TrailingStop = new TrailingStop(trailingAmount.Value, trailingAsPercentage ?? false)
+            };
         }
 
         tradeStationOrder.OrderType = leanOrderType.ConvertLeanOrderTypeToTradeStation();

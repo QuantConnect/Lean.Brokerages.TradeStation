@@ -460,16 +460,19 @@ public partial class TradeStationBrokerage : Brokerage
         {
             case OrderType.ComboMarket:
             case OrderType.ComboLimit:
-                return PlaceOrderCommon(orders, order.Type, order.TimeInForce, 0m, "", "", order.GetLimitPrice(), 0m, isSubmittedEvent);
+                return PlaceOrderCommon(orders, order.Type, order.TimeInForce, 0m, "", "", order.GetLimitPrice(), 0m, null, null, isSubmittedEvent);
             case OrderType.MarketOnOpen:
             case OrderType.MarketOnClose:
             case OrderType.Market:
             case OrderType.Limit:
             case OrderType.StopMarket:
             case OrderType.StopLimit:
+            case OrderType.TrailingStop:
                 var symbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
                 var tradeAction = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity);
-                return PlaceOrderCommon(orders, order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, symbol, order.GetLimitPrice(), order.GetStopPrice(), isSubmittedEvent);
+                var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo();
+                return PlaceOrderCommon(orders, order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, symbol,
+                    order.GetLimitPrice(), order.GetStopPrice(), trailingAmount, trailingAsPercentage, isSubmittedEvent);
             default:
                 throw new NotSupportedException($"{nameof(TradeStationBrokerage)}.{nameof(PlaceTradeStationOrder)}:" +
                     $" The order type '{order.Type}' is not supported for conversion to TradeStation order type.");
@@ -490,8 +493,11 @@ public partial class TradeStationBrokerage : Brokerage
         var crossZeroOrderResponse = default(CrossZeroOrderResponse);
         _messageHandler.WithLockedStream(() =>
         {
+            // PlaceOrderCommon will not check the order type. Should this call PlaceTradeStationOrder?
+            var (trailingAmount, trailingAsPercentage) = crossZeroOrderRequest.LeanOrder.GetTrailingStopInfo();
             var response = PlaceOrderCommon(new List<Order> { crossZeroOrderRequest.LeanOrder }, crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
-                crossZeroOrderRequest.AbsoluteOrderQuantity, tradeAction, symbol, crossZeroOrderRequest.LeanOrder.GetLimitPrice(), crossZeroOrderRequest.LeanOrder.GetStopPrice(), isPlaceOrderWithLeanEvent);
+                crossZeroOrderRequest.AbsoluteOrderQuantity, tradeAction, symbol, crossZeroOrderRequest.LeanOrder.GetLimitPrice(), crossZeroOrderRequest.LeanOrder.GetStopPrice(),
+                trailingAmount, trailingAsPercentage, isPlaceOrderWithLeanEvent);
 
             if (response == null || !response.Value.Orders.Any())
             {
@@ -516,10 +522,13 @@ public partial class TradeStationBrokerage : Brokerage
     /// <param name="symbol">The symbol for the order.</param>
     /// <param name="limitPrice">The limit price for the order, if applicable.</param>
     /// <param name="stopPrice">The stop price for the order, if applicable.</param>
+    /// <param name="trailingAmount">The trailing amount to be used to update the stop price.
+    /// If a trailing amount is passed, and stop price is passed as well, the stop price is ignored b the brokerage</param>
+    /// <param name="trailingAsPercentage">Whether the <paramref name="trailingAmount"/> is a percentage or an absolute currency value</param>
     /// <param name="isSubmittedEvent">Indicates if the order submission event should be triggered.</param>
     /// <returns>A response from TradeStation after placing the order.</returns>
     private TradeStationPlaceOrderResponse? PlaceOrderCommon(IReadOnlyCollection<Order> orders, OrderType orderType, TimeInForce timeInForce, decimal quantity, string tradeAction,
-        string symbol, decimal? limitPrice, decimal? stopPrice, bool isSubmittedEvent)
+        string symbol, decimal? limitPrice, decimal? stopPrice, decimal? trailingAmount, bool? trailingAsPercentage, bool isSubmittedEvent)
     {
         var response = default(TradeStationPlaceOrderResponse);
 
@@ -540,12 +549,16 @@ public partial class TradeStationBrokerage : Brokerage
 
         if (orders.Count == 1)
         {
-            response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, quantity, tradeAction, symbol, limitPrice: limitPrice, stopPrice: stopPrice, routeId: routeId, tradeStationOrderProperties: tradeStationOrderProperties as TradeStationOrderProperties).SynchronouslyAwaitTaskResult();
+            response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, quantity, tradeAction, symbol,
+                limitPrice: limitPrice, stopPrice: stopPrice, trailingAmount: trailingAmount,
+                trailingAsPercentage: trailingAsPercentage, routeId: routeId,
+                tradeStationOrderProperties: tradeStationOrderProperties as TradeStationOrderProperties).SynchronouslyAwaitTaskResult();
         }
         else
         {
             var orderLegs = CreateOrderLegs(orders);
-            response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, legs: orderLegs, limitPrice: limitPrice, routeId: routeId, tradeStationOrderProperties: tradeStationOrderProperties as TradeStationOrderProperties).SynchronouslyAwaitTaskResult();
+            response = _tradeStationApiClient.PlaceOrder(orderType, timeInForce, legs: orderLegs, limitPrice: limitPrice,
+                routeId: routeId, tradeStationOrderProperties: tradeStationOrderProperties as TradeStationOrderProperties).SynchronouslyAwaitTaskResult();
         }
 
         foreach (var brokerageOrder in response.Orders)
@@ -618,7 +631,9 @@ public partial class TradeStationBrokerage : Brokerage
         {
             try
             {
-                var result = _tradeStationApiClient.ReplaceOrder(brokerageOrderId, order.Type, Math.Abs(orderQuantity), order.GetLimitPrice(), order.GetStopPrice()).SynchronouslyAwaitTaskResult();
+                var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo();
+                var result = _tradeStationApiClient.ReplaceOrder(brokerageOrderId, order.Type, Math.Abs(orderQuantity),
+                    order.GetLimitPrice(), order.GetStopPrice(), trailingAmount, trailingAsPercentage).SynchronouslyAwaitTaskResult();
 
                 foreach (var order in orders)
                 {
@@ -1139,6 +1154,9 @@ public partial class TradeStationBrokerage : Brokerage
                         orderProperties.PostOnly = advancedOptions.Contains("BKO") && advancedOptions.Contains("PSO");
                         postOnlyChecked = true;
                         break;
+                    // Ignore trailing stop option, the order's AdvancedOptions property has it
+                    case "TRL":
+                        break;
                     default:
                         OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $" Detected unsupported Lean.TradeStationOrderProperties: {option}, ignoring"));
                         break;
@@ -1190,7 +1208,14 @@ public partial class TradeStationBrokerage : Brokerage
                 }
                 break;
             case TradeStationOrderType.StopMarket:
-                leanOrder = new StopMarketOrder(leanSymbol, orderQuantity, order.StopPrice, order.OpenedDateTime, properties: orderProperties);
+                if (order.TrailingStop.TryGetValue(out var trailingAmount, out var trailingAsPercentage))
+                {
+                    leanOrder = new TrailingStopOrder(leanSymbol, orderQuantity, trailingAmount, trailingAsPercentage, order.OpenedDateTime, properties: orderProperties);
+                }
+                else
+                {
+                    leanOrder = new StopMarketOrder(leanSymbol, orderQuantity, order.StopPrice, order.OpenedDateTime, properties: orderProperties);
+                }
                 break;
             case TradeStationOrderType.StopLimit:
                 leanOrder = new StopLimitOrder(leanSymbol, orderQuantity, order.StopPrice, order.LimitPrice, order.OpenedDateTime, properties: orderProperties);

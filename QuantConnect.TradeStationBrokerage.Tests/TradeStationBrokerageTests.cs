@@ -1037,6 +1037,114 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             }
         }
 
+        [Test]
+        public void PlaceTrailingStopOrder([Values(OrderDirection.Buy, OrderDirection.Sell)] OrderDirection orderDirection,
+            [Values] bool trailingAsPercentage)
+        {
+            var symbol = Symbols.AAPL;
+            var lastPrice = _brokerage.GetPrice(symbol).Last;
+
+            var trailingPercentage = 0.1m;
+            var trailingAmount = 0m;
+            var initialStopPrice = TrailingStopOrder.CalculateStopPrice(lastPrice, trailingPercentage,
+                trailingAsPercentage: true, orderDirection);
+            if (!trailingAsPercentage)
+            {
+                trailingAmount = Math.Abs(lastPrice - initialStopPrice);
+            }
+
+            var trailingStopOrder = new TrailingStopOrder(symbol, orderDirection == OrderDirection.Buy ? 1 : -1,
+                initialStopPrice, trailingAsPercentage ? trailingPercentage : trailingAmount, trailingAsPercentage, DateTime.UtcNow);
+
+            var submittedEvent = new AutoResetEvent(false);
+            var cancelledEvent = new ManualResetEvent(false);
+            var updateSubmittedEvent = new AutoResetEvent(false);
+            var filledEvent = new ManualResetEvent(false);
+
+            Brokerage.OrdersStatusChanged += (_, orderEvents) =>
+            {
+                var orderEvent = orderEvents[0];
+
+                Log.Trace("");
+                Log.Trace($"{nameof(PlaceTrailingStopOrder)}.OrderEvent.Status: {orderEvent.Status}");
+                Log.Trace("");
+
+                if (orderEvent.Status == OrderStatus.Submitted)
+                {
+                    submittedEvent.Set();
+                }
+
+                if (orderEvent.Status == OrderStatus.Canceled)
+                {
+                    cancelledEvent.Set();
+                }
+
+                if (orderEvent.Status == OrderStatus.UpdateSubmitted)
+                {
+                    updateSubmittedEvent.Set();
+                }
+
+                if (orderEvent.Status == OrderStatus.Filled)
+                {
+                    filledEvent.Set();
+                }
+            };
+
+            OrderProvider.Add(trailingStopOrder);
+
+            if (!Brokerage.PlaceOrder(trailingStopOrder))
+            {
+                Assert.Fail("Brokerage failed to place the order: " + trailingStopOrder);
+            }
+
+            if (!submittedEvent.WaitOne(TimeSpan.FromSeconds(5)))
+            {
+                Assert.Fail($"{nameof(PlaceTrailingStopOrder)}: the brokerage didn't acknowledge order submission");
+            }
+
+            // Fetch open orders, make sure the order trailing stop is correctly parsed
+            var openOrders = Brokerage.GetOpenOrders();
+            Assert.AreEqual(1, openOrders.Count);
+            var openOrder = (TrailingStopOrder)openOrders[0];
+            var localOrder = (TrailingStopOrder)OrderProvider.GetOrderById(1);
+            Assert.AreEqual(localOrder.Type, openOrder.Type);
+            Assert.AreEqual(localOrder.Symbol, openOrder.Symbol);
+            Assert.AreEqual(localOrder.Quantity, openOrder.Quantity);
+            Assert.AreEqual(localOrder.Direction, openOrder.Direction);
+            Assert.AreEqual(localOrder.TrailingAmount, openOrder.TrailingAmount);
+            Assert.AreEqual(localOrder.TrailingAsPercentage, openOrder.TrailingAsPercentage);
+
+            // Test update:
+            var order = OrderProvider.GetOrderById(1);
+
+            trailingAmount = trailingAsPercentage ? trailingPercentage : trailingAmount;
+            while (trailingAmount > 0)
+            {
+                trailingAmount -= trailingAsPercentage ? 0.01m : lastPrice * 0.01m;
+                order.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, order.Id, new() { TrailingAmount = trailingAmount, }));
+
+                if (!Brokerage.UpdateOrder(order))
+                {
+                    if (filledEvent.WaitOne(TimeSpan.FromSeconds(10)))
+                    {
+                        break;
+                    }
+
+                    Assert.Fail("Brokerage failed to update the order: " + order);
+                }
+
+                if (!updateSubmittedEvent.WaitOne(TimeSpan.FromSeconds(5)))
+                {
+                    Assert.Fail($"{nameof(PlaceTrailingStopOrder)}: the brokerage didn't return {OrderStatus.UpdateSubmitted}");
+                }
+            }
+
+            if (!filledEvent.WaitOne(TimeSpan.FromSeconds(10)))
+            {
+                Assert.Fail($"{nameof(PlaceTrailingStopOrder)}: the brokerage didn't return {OrderStatus.Filled}");
+            }
+        }
+
         /// <summary>
         /// Adds a value to a base number and rounds the result to the nearest specified increment.
         /// </summary>
