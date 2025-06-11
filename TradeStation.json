@@ -1,4 +1,7 @@
 {
+    "name" : "TradeStation",
+    "logo-url" : "https://cdn.quantconnect.com/i/tu/brokerage-tradestation.svg",
+    "min-deposit" : "None",
     "description": "TradeStation provides a complete range of advanced trading tools and online brokerage services. Trade stocks, ETFs, and options easily and efficiently.",
     "platforms-features": [
 		{
