@@ -73,7 +73,7 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// <example>{ESZ24}</example>
     private string GenerateBrokerageFuture(Symbol symbol)
     {
-        return $"{symbol.ID.Symbol}{SymbolRepresentation.FuturesMonthLookup[symbol.ID.Date.Month]}{symbol.ID.Date:yy}";
+        return SymbolRepresentation.GenerateFutureTicker(symbol.ID.Symbol, symbol.ID.Date, includeExpirationDate: false);
     }
 
     /// <summary>
