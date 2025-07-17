@@ -908,23 +908,33 @@ public partial class TradeStationBrokerage : Brokerage
                         legOrderStatus = OrderStatus.Filled;
                     }
 
-                    if (!_symbolMapper.TryGetLeanSymbol(leg.Symbol, leg.AssetType, leg.ExpirationDate, out var leanSymbol))
+                    Order leanOrder;
+                    if (leanOrders.Count == 1)
                     {
-                        OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}: " +
-                            $"Failed to map a Lean Symbol using the following details:: {leg} "));
-                        return;
+                        // If there is only one order, use it directly
+                        leanOrder = leanOrders[0];
                     }
-
-                    // Ensure there is an order with the specific symbol in leanOrders.
-                    var leanOrder = leanOrders.FirstOrDefault(order => order.Symbol == leanSymbol);
-
-                    if (leanOrder == null)
+                    else
                     {
-                        OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"Error in {nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}: " +
-                            $"Could not find order with symbol '{leanSymbol}' in leanOrders. " +
-                            $"Brokerage Order ID: {brokerageOrder.OrderID}. Leg details - {leg}" +
-                            $"Please verify that the order was correctly added to leanOrders."));
-                        return;
+                        // If there are multiple orders, find the one that matches the leg's symbol
+                        if (!_symbolMapper.TryGetLeanSymbol(leg.Symbol, leg.AssetType, leg.ExpirationDate, out var leanSymbol))
+                        {
+                            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}: " +
+                                $"Failed to map a Lean Symbol using the following details:: {leg} "));
+                            return;
+                        }
+
+                        // Ensure there is an order with the specific symbol in leanOrders.
+                        leanOrder = leanOrders.FirstOrDefault(order => order.Symbol == leanSymbol);
+
+                        if (leanOrder == null)
+                        {
+                            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"Error in {nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}: " +
+                                $"Could not find order with symbol '{leanSymbol}' in leanOrders. " +
+                                $"Brokerage Order ID: {brokerageOrder.OrderID}. Leg details - {leg}" +
+                                $"Please verify that the order was correctly added to leanOrders."));
+                            return;
+                        }
                     }
 
                     // TradeStation may occasionally send duplicate event messages where the only difference is the order of the legs.

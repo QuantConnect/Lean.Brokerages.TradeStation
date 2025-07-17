@@ -58,6 +58,10 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 var SP500EMini = Symbol.CreateFuture(Futures.Indices.SP500EMini, Market.CME, new DateTime(2024, 12, 10));
                 yield return new(ESLeg, SP500EMini);
 
+                var NGLeg = new Leg("", 0m, 0m, 0m, TradeStationTradeActionType.Buy, "NGU25", "NG", TradeStationAssetType.Future, 0m, new DateTime(2025, 08, 29), default, default);
+                var NaturalGas = Symbol.CreateFuture(Futures.Energy.NaturalGas, Market.NYMEX, new DateTime(2025, 08, 29));
+                yield return new(NGLeg, NaturalGas);
+
                 var CTLeg = new Leg("", 0m, 0m, 0m, TradeStationTradeActionType.Buy, "CTV24", "CT", TradeStationAssetType.Future, 0m, new DateTime(2024, 10, 1), default, default);
                 var COTTON = Symbol.CreateFuture(Futures.Softs.Cotton2, Market.ICE, new DateTime(2024, 10, 1));
                 yield return new(CTLeg, COTTON);
@@ -68,12 +72,12 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 var TSLAOption = Symbol.CreateOption(TSLA, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 167.5m, TSLAExpiryDate);
                 yield return new(TSLALeg, TSLAOption);
 
-                var RUTWIndexLeg = new Leg("", 0m, 0m, 0m, TradeStationTradeActionType.Buy, "$RUTW.X", "$RUTW.X", TradeStationAssetType.Index, 0m, default, default, default);
-                var RUTW = Symbol.Create("RUTW", SecurityType.Index, Market.USA);
-                yield return new(RUTWIndexLeg, RUTW);
+                var RUTIndexLeg = new Leg("", 0m, 0m, 0m, TradeStationTradeActionType.Buy, "$RUT.X", "$RUT.X", TradeStationAssetType.Index, 0m, default, default, default);
+                var RUT = Symbol.Create("RUT", SecurityType.Index, Market.USA);
+                yield return new(RUTIndexLeg, RUT);
 
-                var RUTWIndexOptionLeg = new Leg("", 0m, 0m, 0m, TradeStationTradeActionType.Buy, "RUTW 241206C2415", "$RUTW.X", TradeStationAssetType.IndexOption, 0m, new DateTime(2024, 12, 6), TradeStationOptionType.Call, 2415m);
-                var RUTWOption = Symbol.CreateOption(RUTW, Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 2415m, new DateTime(2024, 12, 6));
+                var RUTWIndexOptionLeg = new Leg("", 0m, 0m, 0m, TradeStationTradeActionType.Buy, "RUTW 241206C2415", "$RUT.X", TradeStationAssetType.IndexOption, 0m, new DateTime(2024, 12, 6), TradeStationOptionType.Call, 2415m);
+                var RUTWOption = Symbol.CreateOption(RUT, "RUTW", Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 2415m, new DateTime(2024, 12, 6));
                 yield return new(RUTWIndexOptionLeg, RUTWOption);
 
                 var VIXIndexLeg = new Leg("", 0m, 0m, 0m, TradeStationTradeActionType.Buy, "$VIX.X", "$VIX.X", TradeStationAssetType.Index, 0m, default, default, default);
@@ -94,16 +98,31 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var ticker = brokerageLeg.Symbol;
             var optionRight = default(OptionRight);
             var strikePrice = default(decimal);
+            var isIndexOrFuture = false;
             switch (brokerageLeg.AssetType)
             {
                 case TradeStationAssetType.IndexOption:
                 case TradeStationAssetType.StockOption:
                     (ticker, optionRight, strikePrice) = _symbolMapper.PublicParsePositionOptionSymbol(brokerageLeg.Symbol);
                     break;
+
+                case TradeStationAssetType.Index:
+                case TradeStationAssetType.Future:
+                    isIndexOrFuture = true;
+                    break;
             }
 
-            var actualLeanSymbol = _symbolMapper.GetLeanSymbol(ticker, brokerageLeg.AssetType.ConvertAssetTypeToSecurityType(), expirationDate: brokerageLeg.ExpirationDate,
-                strike: strikePrice, optionRight: optionRight);
+            var actualLeanSymbol = default(Symbol);
+            if (!isIndexOrFuture)
+            {
+                actualLeanSymbol = _symbolMapper.GetLeanSymbol(ticker, brokerageLeg.AssetType.ConvertAssetTypeToSecurityType(),
+                    expirationDate: brokerageLeg.ExpirationDate, strike: strikePrice, optionRight: optionRight);
+            }
+            else
+            {
+                Assert.IsTrue(_symbolMapper.TryGetLeanSymbol(ticker, brokerageLeg.AssetType, brokerageLeg.ExpirationDate,
+                    out actualLeanSymbol));
+            }
 
             Assert.That(actualLeanSymbol, Is.EqualTo(expectedLeanSymbol));
         }
@@ -193,6 +212,37 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.That(optionParam.symbol, Is.EqualTo(expectedSymbol));
             Assert.That(optionParam.optionRight, Is.EqualTo(expectedRight));
             Assert.That(optionParam.strikePrice, Is.EqualTo(expectedStrikePrice));
+        }
+
+        public static IEnumerable<TestCaseData> GetFutureSymbolsTestCases()
+        {
+            yield return new TestCaseData("ESZ24", Symbol.CreateFuture(Futures.Indices.SP500EMini, Market.CME, new DateTime(2024, 12, 10)));
+
+            // Natural gas futures expire the month previous to the contract month:
+            // Expiry: August -> Contract month: September (U)
+            yield return new TestCaseData("NGU25", Symbol.CreateFuture(Futures.Energy.NaturalGas, Market.NYMEX, new DateTime(2025, 08, 29)));
+            // Expiry: December 2025 -> Contract month: January (U) 2026 (26)
+            yield return new TestCaseData("NGF26", Symbol.CreateFuture(Futures.Energy.NaturalGas, Market.NYMEX, new DateTime(2025, 12, 29)));
+
+            // BrentLastDayFinancial futures expire two months previous to the contract month:
+            // Expiry: August -> Contract month: October (V)
+            yield return new TestCaseData("BZV25", Symbol.CreateFuture(Futures.Energy.BrentLastDayFinancial, Market.NYMEX, new DateTime(2025, 08, 29)));
+            // Expiry: November 2025 -> Contract month: January (F) 2026 (26)
+            yield return new TestCaseData("BZF26", Symbol.CreateFuture(Futures.Energy.BrentLastDayFinancial, Market.NYMEX, new DateTime(2025, 11, 29)));
+            // Expiry: December 2025 -> Contract month: February (G) 2026 (26)
+            yield return new TestCaseData("BZG26", Symbol.CreateFuture(Futures.Energy.BrentLastDayFinancial, Market.NYMEX, new DateTime(2025, 12, 29)));
+        }
+
+        [TestCaseSource(nameof(GetFutureSymbolsTestCases))]
+        public void ConvertsFutureSymbolRoundTrip(string brokerageSymbol, Symbol leanSymbol)
+        {
+            var expiry = leanSymbol.ID.Date;
+            Assert.IsTrue(_symbolMapper.TryGetLeanSymbol(brokerageSymbol, TradeStationAssetType.Future, expiry,
+                out var convertedLeanSymbol));
+            Assert.AreEqual(leanSymbol, convertedLeanSymbol);
+
+            var convertedBrokerageSymbol = _symbolMapper.GetBrokerageSymbol(convertedLeanSymbol);
+            Assert.AreEqual(brokerageSymbol, convertedBrokerageSymbol);
         }
     }
 }
