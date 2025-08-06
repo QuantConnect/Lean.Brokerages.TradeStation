@@ -847,7 +847,7 @@ public partial class TradeStationBrokerage : Brokerage
                 var brokerageOrder = jObj.ToObject<TradeStationOrder>();
 
                 var globalLeanOrderStatus = default(OrderStatus);
-                var eventMessage = default(string);
+                var eventMessage = string.Empty;
                 switch (brokerageOrder.Status)
                 {
                     case TradeStationOrderStatusType.Ack:
@@ -870,7 +870,7 @@ public partial class TradeStationBrokerage : Brokerage
                         globalLeanOrderStatus = OrderStatus.Invalid;
                         break;
                     case TradeStationOrderStatusType.Exp:
-                        eventMessage = "Expired at TradeStation.";
+                        eventMessage = "Expired";
                         globalLeanOrderStatus = OrderStatus.Canceled;
                         break;
                     // Sometimes, a Out event is received without the ClosedDateTime property set.
@@ -970,7 +970,7 @@ public partial class TradeStationBrokerage : Brokerage
                         Status = legOrderStatus,
                         FillPrice = leg.ExecutionPrice,
                         FillQuantity = accumulativeFilledQuantity - previousExecutionAmount,
-                        Message = string.IsNullOrEmpty(eventMessage) ? default : eventMessage
+                        Message = eventMessage
                     };
 
                     // When updating a combo order with multiple legs, each leg's update is received separately via WebSocket.
