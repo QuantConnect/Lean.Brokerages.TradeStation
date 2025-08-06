@@ -38,11 +38,14 @@ using System.Security.Cryptography;
 using System.Collections.Concurrent;
 using System.Net.NetworkInformation;
 using System.Collections.ObjectModel;
+using System.Runtime.CompilerServices;
 using QuantConnect.Brokerages.CrossZero;
 using QuantConnect.Brokerages.TradeStation.Api;
 using QuantConnect.Brokerages.TradeStation.Models;
 using TimeInForce = QuantConnect.Orders.TimeInForce;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
+
+[assembly: InternalsVisibleTo("QuantConnect.Brokerages.TradeStation.Tests")]
 
 namespace QuantConnect.Brokerages.TradeStation;
 
@@ -823,7 +826,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// Handles incoming TradeStation messages in JSON format.
     /// </summary>
     /// <param name="json">The JSON string containing the TradeStation message.</param>
-    private void HandleTradeStationMessage(string json)
+    internal void HandleTradeStationMessage(string json)
     {
         if (OrderProvider == null)
         {
@@ -844,6 +847,7 @@ public partial class TradeStationBrokerage : Brokerage
                 var brokerageOrder = jObj.ToObject<TradeStationOrder>();
 
                 var globalLeanOrderStatus = default(OrderStatus);
+                var eventMessage = string.Empty;
                 switch (brokerageOrder.Status)
                 {
                     case TradeStationOrderStatusType.Ack:
@@ -864,6 +868,10 @@ public partial class TradeStationBrokerage : Brokerage
                     case TradeStationOrderStatusType.Rjr:
                     case TradeStationOrderStatusType.Bro:
                         globalLeanOrderStatus = OrderStatus.Invalid;
+                        break;
+                    case TradeStationOrderStatusType.Exp:
+                        eventMessage = "Expired";
+                        globalLeanOrderStatus = OrderStatus.Canceled;
                         break;
                     // Sometimes, a Out event is received without the ClosedDateTime property set.
                     // Subsequently, another event is received with the ClosedDateTime property correctly populated.
@@ -961,7 +969,8 @@ public partial class TradeStationBrokerage : Brokerage
                     {
                         Status = legOrderStatus,
                         FillPrice = leg.ExecutionPrice,
-                        FillQuantity = accumulativeFilledQuantity - previousExecutionAmount
+                        FillQuantity = accumulativeFilledQuantity - previousExecutionAmount,
+                        Message = eventMessage
                     };
 
                     // When updating a combo order with multiple legs, each leg's update is received separately via WebSocket.
