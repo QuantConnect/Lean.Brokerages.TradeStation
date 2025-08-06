@@ -38,11 +38,14 @@ using System.Security.Cryptography;
 using System.Collections.Concurrent;
 using System.Net.NetworkInformation;
 using System.Collections.ObjectModel;
+using System.Runtime.CompilerServices;
 using QuantConnect.Brokerages.CrossZero;
 using QuantConnect.Brokerages.TradeStation.Api;
 using QuantConnect.Brokerages.TradeStation.Models;
 using TimeInForce = QuantConnect.Orders.TimeInForce;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
+
+[assembly: InternalsVisibleTo("QuantConnect.Brokerages.TradeStation.Tests")]
 
 namespace QuantConnect.Brokerages.TradeStation;
 
@@ -823,7 +826,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// Handles incoming TradeStation messages in JSON format.
     /// </summary>
     /// <param name="json">The JSON string containing the TradeStation message.</param>
-    private void HandleTradeStationMessage(string json)
+    internal void HandleTradeStationMessage(string json)
     {
         if (OrderProvider == null)
         {

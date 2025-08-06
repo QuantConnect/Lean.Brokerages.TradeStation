@@ -21,7 +21,6 @@ using System.Collections;
 using QuantConnect.Logging;
 using QuantConnect.Securities;
 using QuantConnect.Configuration;
-using static QuantConnect.Brokerages.TradeStation.Tests.TradeStationBrokerageTests;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests
 {

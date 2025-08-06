@@ -18,11 +18,13 @@ using System.Linq;
 using Newtonsoft.Json;
 using NUnit.Framework;
 using System.Threading;
+using QuantConnect.Tests;
 using QuantConnect.Orders;
 using QuantConnect.Logging;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using QuantConnect.Configuration;
+using QuantConnect.Tests.Brokerages;
 using QuantConnect.Algorithm.CSharp;
 using QuantConnect.Orders.TimeInForces;
 using QuantConnect.Brokerages.TradeStation.Api;
@@ -386,6 +388,64 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                     Assert.AreEqual(goodTillDate, (orderProperties.TimeInForce as GoodTilDateTimeInForce).Expiry);
                     break;
             }
+        }
+
+        [Test]
+        public void CancelsOrderWhenStatusIsExpiredFromTradeStation()
+        {
+            var resetEvent = new AutoResetEvent(false);
+            var orderProvider = new OrderProvider();
+            var ts = TestSetup.CreateBrokerage(orderProvider, default);
+
+            ts.OrdersStatusChanged += (_, orderEvents) =>
+            {
+                if (orderEvents[0].Status == OrderStatus.Canceled)
+                {
+                    resetEvent.Set();
+                }
+            };
+
+            ts.Connect();
+
+            var moo = new MarketOnCloseOrder(Symbols.AAPL, -75, DateTime.UtcNow)
+            {
+                Status = OrderStatus.Submitted
+            };
+            moo.BrokerId.Add("906146665");
+
+            orderProvider.Add(moo);
+
+            var json = @"{
+                ""AccountID"": ""SIM2784990M"",
+                ""ClosedDateTime"": ""2025-08-05T20:00:05Z"",
+                ""CommissionFee"": ""0"",
+                ""Currency"": ""USD"",
+                ""Duration"": ""CLO"",
+                ""FilledPrice"": ""0"",
+                ""Legs"": [
+                    {
+                        ""AssetType"": ""STOCK"",
+                        ""BuyOrSell"": ""SellShort"",
+                        ""ExecQuantity"": ""0"",
+                        ""OpenOrClose"": ""Open"",
+                        ""QuantityOrdered"": ""75"",
+                        ""QuantityRemaining"": ""0"",
+                        ""Symbol"": ""AAPL""
+                    }
+                ],
+                ""OpenedDateTime"": ""2025-08-05T14:34:00Z"",
+                ""OrderID"": ""906146665"",
+                ""OrderType"": ""Market"",
+                ""PriceUsedForBuyingPower"": ""204.51"",
+                ""Routing"": ""Intelligent"",
+                ""Status"": ""EXP"",
+                ""StatusDescription"": ""Expired"",
+                ""UnbundledRouteFee"": ""0""
+            }";
+
+            ts.HandleTradeStationMessage(json);
+
+            Assert.IsTrue(resetEvent.WaitOne(TimeSpan.FromSeconds(1)));
         }
 
         private TradeStationApiClient CreateTradeStationApiClient()
