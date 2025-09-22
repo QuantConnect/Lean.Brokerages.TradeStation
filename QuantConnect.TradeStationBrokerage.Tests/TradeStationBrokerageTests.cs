@@ -491,16 +491,32 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             get
             {
-                var symbol = Symbols.AAPL;
-                yield return new TestCaseData(new MarketOnOpenOrder(symbol, 1m, DateTime.UtcNow), !symbol.IsMarketOpen(DateTime.UtcNow, false));
-                yield return new TestCaseData(new MarketOnCloseOrder(symbol, 1m, DateTime.UtcNow), symbol.IsMarketOpen(DateTime.UtcNow, false));
+                var aapl = Symbols.AAPL;
+                var isMarketOpen = aapl.IsMarketOpen(DateTime.UtcNow, false);
+                yield return new TestCaseData(new MarketOnOpenOrderTestParameters(aapl), !isMarketOpen, false);
+                yield return new TestCaseData(new MarketOnCloseOrderTestParameters(aapl), isMarketOpen, false);
+
+                var aaplOptionContract = Symbol.CreateOption(aapl, aapl.ID.Market, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 220m, new(2025, 09, 26));
+                yield return new TestCaseData(new MarketOnOpenOrderTestParameters(aaplOptionContract), !isMarketOpen, false);
+
+                var spx = Symbols.SPX;
+                var spxOptionContract = Symbol.CreateOption(spx, "SPXW", spx.ID.Market, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 5980m, new(2025, 09, 26));
+                yield return new TestCaseData(new MarketOnOpenOrderTestParameters(spxOptionContract), !isMarketOpen, false);
+
+                var futureContract = Symbol.CreateFuture(Futures.Indices.SP500EMini, Market.CME, new DateTime(2025, 12, 19));
+                yield return new TestCaseData(new MarketOnOpenOrderTestParameters(futureContract), !isMarketOpen, true);
+
+                // TODO: Implement Future Option
+                //var futureOptionContract = Symbol.CreateOption(futureContract, futureContract.ID.Market, SecurityType.FutureOption.DefaultOptionStyle(), OptionRight.Call, 7000m, new(2025, 12, 19));
+                //yield return new TestCaseData(new MarketOnOpenOrderTestParameters(futureOptionContract), !isMarketOpen, false);
             }
         }
 
         [TestCaseSource(nameof(MarketOpenCloseOrderTypeParameters))]
-        public void PlaceMarketOpenCloseOrder(Order order, bool marketIsOpen)
+        public void LongMarketOnOpenCloseOrder(OrderTestParameters parameters, bool marketIsOpen, bool notSupport)
         {
-            Log.Trace($"PLACE {order.Type} ORDER TEST");
+            var order = parameters.CreateLongOrder(quantity: 1);
+            Log.Trace($"LongMarketOnOpenCloseOrder: {order.Type} ORDER TEST");
 
             var submittedResetEvent = new AutoResetEvent(false);
             var invalidResetEvent = new AutoResetEvent(false);
@@ -512,20 +528,28 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 var orderEvent = orderEvents[0];
 
                 Log.Trace("");
-                Log.Trace($"{nameof(PlaceMarketOpenCloseOrder)}.OrderEvent.Status: {orderEvent.Status}");
+                Log.Trace($"{nameof(LongMarketOnOpenCloseOrder)}.OrderEvent.Status: {orderEvent.Status}");
                 Log.Trace("");
 
                 if (orderEvent.Status == OrderStatus.Submitted)
                 {
                     submittedResetEvent.Set();
                 }
-                else if (orderEvent.Status == OrderStatus.Invalid)
+                else if (orderEvent.Status == OrderStatus.Invalid || orderEvent.Status == OrderStatus.Canceled) // expired returns canceled status
                 {
                     invalidResetEvent.Set();
                 }
             };
 
-            Assert.IsTrue(Brokerage.PlaceOrder(order));
+            var isPlaceSuccessfully = Brokerage.PlaceOrder(order);
+
+            if (notSupport)
+            {
+                Assert.IsFalse(isPlaceSuccessfully);
+                Assert.Pass($"The {order.SecurityType} does not support {order.Type} orders.");
+            }
+
+            Assert.IsTrue(isPlaceSuccessfully);
 
             if (marketIsOpen)
             {
@@ -545,7 +569,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             {
                 if (!invalidResetEvent.WaitOne(TimeSpan.FromSeconds(5)))
                 {
-                    Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage doesn't return {OrderStatus.Invalid}");
+                    Assert.Fail($"{nameof(PlaceLimitOrderAndUpdate)}: the brokerage doesn't return {OrderStatus.Invalid} or {OrderStatus.Canceled}");
                 }
             }
         }
