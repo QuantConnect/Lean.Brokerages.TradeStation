@@ -847,7 +847,6 @@ public partial class TradeStationBrokerage : Brokerage
                 var brokerageOrder = jObj.ToObject<TradeStationOrder>();
 
                 var globalLeanOrderStatus = default(OrderStatus);
-                var orderMessage = brokerageOrder.RejectReason;
                 switch (brokerageOrder.Status)
                 {
                     case TradeStationOrderStatusType.Ack:
@@ -882,10 +881,6 @@ public partial class TradeStationBrokerage : Brokerage
                         {
                             return;
                         }
-                        globalLeanOrderStatus = OrderStatus.Canceled;
-                        break;
-                    case TradeStationOrderStatusType.Exp:
-                        orderMessage = $"The order has expired due to '{brokerageOrder.Duration}' duration.";
                         globalLeanOrderStatus = OrderStatus.Canceled;
                         break;
                     default:
@@ -969,7 +964,7 @@ public partial class TradeStationBrokerage : Brokerage
                         leanOrder,
                         DateTime.UtcNow,
                         OrderFee.Zero,
-                        orderMessage)
+                        brokerageOrder.RejectReason)
                     {
                         Status = legOrderStatus,
                         FillPrice = leg.ExecutionPrice,
