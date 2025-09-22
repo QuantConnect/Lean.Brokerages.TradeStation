@@ -847,6 +847,7 @@ public partial class TradeStationBrokerage : Brokerage
                 var brokerageOrder = jObj.ToObject<TradeStationOrder>();
 
                 var globalLeanOrderStatus = default(OrderStatus);
+                var eventMessage = string.Empty;
                 switch (brokerageOrder.Status)
                 {
                     case TradeStationOrderStatusType.Ack:
