@@ -15,6 +15,7 @@
 	"order-types": [ "Market",  "Limit", "Stop Market", "Stop Limit", "Combo Market", "Combo Limit", "Market On Open", "Market On Close", "Trailing Stop" ],
 	"assets": [ "Equity", "Equity Options", "Futures" ], 
 	"brokerage-url": "https://tradestation.com/",
+	"landing-page-url" => "/brokerages/tradestation",
 	"documentation": "/docs/v2/cloud-platform/live-trading/brokerages/tradestation",
 	"module-specification": {
 		"download": {
