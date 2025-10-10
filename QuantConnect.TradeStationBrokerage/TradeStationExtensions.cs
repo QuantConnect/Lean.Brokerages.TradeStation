@@ -107,8 +107,8 @@ public static class TradeStationExtensions
     /// <returns>
     /// A tuple containing:
     /// <list type="bullet">
-    /// <item><description><see cref="PlaceOrderDuration"/> - the mapped TradeStation order duration.</description></item>
-    /// <item><description><c>expiryDateTime</c> - the expiration timestamp in ISO 8601 format, if applicable; otherwise, null.</description></item>
+    /// <item><description><see cref="PlaceOrderDuration"/> — the mapped TradeStation order duration.</description></item>
+    /// <item><description><c>expiryDateTime</c> — the expiration timestamp in ISO 8601 format, if applicable; otherwise, null.</description></item>
     /// </list>
     /// </returns>
     public static (PlaceOrderDuration Duration, string expiryDateTime) GetBrokerageTimeInForce(
