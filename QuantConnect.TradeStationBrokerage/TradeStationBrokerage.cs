@@ -318,7 +318,10 @@ public partial class TradeStationBrokerage : Brokerage
             }
             else
             {
-                var groupQuantity = order.Legs.Select(leg => leg.QuantityOrdered).Aggregate(TradeStationExtensions.GreatestCommonDivisor);
+                var groupQuantity = GroupOrderExtensions.GetGroupQuantityByEachLegQuantity(
+                    order.Legs.Select(leg => leg.QuantityOrdered),
+                    decimal.IsNegative(order.LimitPrice) ? OrderDirection.Sell : OrderDirection.Buy
+                );
                 var groupOrderManager = new GroupOrderManager(order.Legs.Count, groupQuantity);
 
                 var tempLegOrders = new List<Order>();

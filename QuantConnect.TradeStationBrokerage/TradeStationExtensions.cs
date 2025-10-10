@@ -107,8 +107,8 @@ public static class TradeStationExtensions
     /// <returns>
     /// A tuple containing:
     /// <list type="bullet">
-    /// <item><description><see cref="PlaceOrderDuration"/> — the mapped TradeStation order duration.</description></item>
-    /// <item><description><c>expiryDateTime</c> — the expiration timestamp in ISO 8601 format, if applicable; otherwise, null.</description></item>
+    /// <item><description><see cref="PlaceOrderDuration"/> - the mapped TradeStation order duration.</description></item>
+    /// <item><description><c>expiryDateTime</c> - the expiration timestamp in ISO 8601 format, if applicable; otherwise, null.</description></item>
     /// </list>
     /// </returns>
     public static (PlaceOrderDuration Duration, string expiryDateTime) GetBrokerageTimeInForce(
@@ -262,7 +262,12 @@ public static class TradeStationExtensions
     {
         LimitOrder lo => lo.LimitPrice,
         StopLimitOrder slo => slo.LimitPrice,
-        ComboLimitOrder clo => clo.GroupOrderManager.LimitPrice,
+        ComboLimitOrder clo => clo.GroupOrderManager.Direction switch
+        {
+            OrderDirection.Buy => clo.GroupOrderManager.LimitPrice,
+            OrderDirection.Sell => decimal.Negate(clo.GroupOrderManager.LimitPrice),
+            _ => throw new NotSupportedException("Not supported GroupOrderManager Direction = " + clo.GroupOrderManager.Direction)
+        },
         _ => null
     };
 
