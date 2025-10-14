@@ -262,7 +262,7 @@ public static class TradeStationExtensions
     {
         LimitOrder lo => lo.LimitPrice,
         StopLimitOrder slo => slo.LimitPrice,
-        ComboLimitOrder clo => clo.GroupOrderManager.Quantity * order.GroupOrderManager.LimitPrice switch
+        ComboLimitOrder clo => (clo.GroupOrderManager.Quantity * order.GroupOrderManager.LimitPrice) switch
         {
             // TS uses the sign of the limit price:
             // > 0 => Debit
