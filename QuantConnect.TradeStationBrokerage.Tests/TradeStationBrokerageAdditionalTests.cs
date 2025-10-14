@@ -448,6 +448,21 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.IsTrue(resetEvent.WaitOne(TimeSpan.FromSeconds(1)));
         }
 
+        [TestCase(1d, 200d, 200d)]
+        [TestCase(-1d, 200d, -200d)]
+        [TestCase(-1d, -200d, 200d)]
+        [TestCase(1d, -200d, -200d)]
+        public void GetLimitPriceShouldGetExpected(decimal quantity, decimal limitPrice, decimal expectedLimitPrice)
+        {
+            var groupOrderManager = new GroupOrderManager(2, quantity, limitPrice);
+
+            var comboLimitOrder = new ComboLimitOrder(null, default, groupOrderManager.LimitPrice, default, groupOrderManager);
+
+            var actualLimitPrice = TradeStationExtensions.GetLimitPrice(comboLimitOrder);
+
+            Assert.AreEqual(expectedLimitPrice, actualLimitPrice);
+        }
+
         private TradeStationApiClient CreateTradeStationApiClient()
         {
             var clientId = Config.Get("trade-station-client-id");

@@ -262,10 +262,14 @@ public static class TradeStationExtensions
     {
         LimitOrder lo => lo.LimitPrice,
         StopLimitOrder slo => slo.LimitPrice,
-        ComboLimitOrder clo => clo.GroupOrderManager.Direction switch
+        ComboLimitOrder clo => (clo.GroupOrderManager.Quantity * order.GroupOrderManager.LimitPrice) switch
         {
-            OrderDirection.Buy => clo.GroupOrderManager.LimitPrice,
-            OrderDirection.Sell => decimal.Negate(clo.GroupOrderManager.LimitPrice),
+            // TS uses the sign of the limit price:
+            // > 0 => Debit
+            // < 0 => Credit
+            // Normalize to positive debit / negative credit form
+            > 0 => Math.Abs(clo.GroupOrderManager.LimitPrice),
+            < 0 => decimal.Negate(Math.Abs(clo.GroupOrderManager.LimitPrice)),
             _ => throw new NotSupportedException("Not supported GroupOrderManager Direction = " + clo.GroupOrderManager.Direction)
         },
         _ => null
