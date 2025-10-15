@@ -156,8 +156,8 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 yield return new TestCaseData(Symbol.CreateOption(underlying, Market.USA, OptionStyle.American, OptionRight.Call, 167.5m, new DateTime(2024, 5, 10)), "AAPL 240510C167.5");
                 yield return new TestCaseData(Symbol.CreateOption(underlying, Market.USA, OptionStyle.American, OptionRight.Call, 100m, new DateTime(2025, 11, 12)), "AAPL 251112C100");
                 yield return new TestCaseData(Symbol.CreateOption(underlying, Market.USA, OptionStyle.American, OptionRight.Put, 100m, new DateTime(2025, 11, 12)), "AAPL 251112P100");
-                yield return new TestCaseData(Symbol.CreateFuture("ES", Market.USA, new DateTime(2024, 12, 10)), "ESZ24");
-                yield return new TestCaseData(Symbol.CreateFuture("ES", Market.USA, new DateTime(2024, 5, 10)), "ESK24");
+                yield return new TestCaseData(Symbol.CreateFuture("ES", Market.CME, new DateTime(2024, 12, 10)), "ESZ24");
+                yield return new TestCaseData(Symbol.CreateFuture("ES", Market.CME, new DateTime(2024, 5, 10)), "ESK24");
                 var indexUnderlying = Symbol.Create("RUTW", SecurityType.Index, Market.USA);
                 yield return new TestCaseData(indexUnderlying, "$RUTW.X");
                 yield return new TestCaseData(Symbol.CreateOption(indexUnderlying, Market.USA, OptionStyle.American, OptionRight.Call, 2415m, new DateTime(2024, 12, 6)), "RUTW 241206C2415");

@@ -16,6 +16,7 @@
 using System;
 using QuantConnect.Securities;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using QuantConnect.Securities.IndexOption;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
@@ -33,6 +34,16 @@ public class TradeStationSymbolMapper : ISymbolMapper
     private readonly string _optionPatternRegex = @"^(?<symbol>[A-Z]+)\s(?<expiryDate>\d{6})(?<optionRight>[CP])(?<strikePrice>\d+(\.\d+)?)$";
 
     /// <summary>
+    /// A concurrent dictionary that maps brokerage symbols to Lean symbols.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, Symbol> _leanSymbolByBrokerageSymbol = new();
+
+    /// <summary>
+    /// A concurrent dictionary that maps Lean symbols to brokerage symbols.
+    /// </summary>
+    private readonly ConcurrentDictionary<Symbol, string> _brokerageSymbolByLeanSymbol = new();
+
+    /// <summary>
     /// Represents a set of supported security types.
     /// </summary>
     /// <remarks>
@@ -48,21 +59,34 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// <exception cref="NotImplementedException">The lean security type is not implemented.</exception>
     public string GetBrokerageSymbol(Symbol symbol)
     {
+        if (_brokerageSymbolByLeanSymbol.TryGetValue(symbol, out var brokerageSymbol))
+        {
+            return brokerageSymbol;
+        }
+
         switch (symbol.SecurityType)
         {
             case SecurityType.Equity:
-                return symbol.Value;
+                brokerageSymbol = symbol.Value;
+                break;
             case SecurityType.Index:
-                return "$" + symbol.Value + ".X";
+                brokerageSymbol = "$" + symbol.Value + ".X";
+                break;
             case SecurityType.Option:
             case SecurityType.IndexOption:
-                return GenerateBrokerageOption(symbol);
+                brokerageSymbol = GenerateBrokerageOption(symbol);
+                break;
             case SecurityType.Future:
-                return GenerateBrokerageFuture(symbol);
+                brokerageSymbol = GenerateBrokerageFuture(symbol);
+                break;
             default:
                 throw new NotImplementedException($"{nameof(TradeStationSymbolMapper)}.{nameof(GetBrokerageSymbol)}: " +
                     $"The security type '{symbol.SecurityType}' is not supported.");
         }
+
+        _brokerageSymbolByLeanSymbol[symbol] = brokerageSymbol;
+        _leanSymbolByBrokerageSymbol[brokerageSymbol] = symbol;
+        return brokerageSymbol;
     }
 
     /// <summary>
@@ -99,6 +123,11 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// </returns>
     public bool TryGetLeanSymbol(string brokerageSymbol, TradeStationAssetType tradeStationAssetType, DateTime expirationDateTime, out Symbol leanSymbol)
     {
+        if (_leanSymbolByBrokerageSymbol.TryGetValue(brokerageSymbol, out leanSymbol))
+        {
+            return true;
+        }
+
         try
         {
             var ticker = brokerageSymbol;
@@ -122,6 +151,10 @@ public class TradeStationSymbolMapper : ISymbolMapper
             }
 
             leanSymbol = GetLeanSymbol(ticker, tradeStationAssetType.ConvertAssetTypeToSecurityType(), expirationDate: expirationDateTime, strike: strikePrice, optionRight: optionRight);
+
+            _leanSymbolByBrokerageSymbol[brokerageSymbol] = leanSymbol;
+            _brokerageSymbolByLeanSymbol[leanSymbol] = brokerageSymbol;
+
             return true;
         }
         catch

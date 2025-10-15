@@ -59,18 +59,22 @@ public partial class TradeStationBrokerageTests
             yield return new TestCaseData(new[]
             {
                 Symbols.AAPL,
-                Symbol.CreateFuture(Futures.Softs.Cotton2, Market.ICE, new DateTime(2024, 12, 1)),
-                Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 245m, new DateTime(2024, 12, 13))
+                Symbol.CreateFuture(Futures.Softs.Cotton2, Market.ICE, new DateTime(2025, 12, 1)),
+                Symbol.CreateOption(Symbols.AAPL, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 245m, new DateTime(2025, 10, 17)),
+                Symbol.CreateOption(Symbols.AAPL, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Put, 245m, new DateTime(2025, 10, 17)),
+                Symbol.CreateOption(Symbols.AAPL, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 247.5m, new DateTime(2025, 10, 17)),
+                Symbol.CreateOption(Symbols.AAPL, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Put, 247.5m, new DateTime(2025, 10, 17))
             }, Resolution.Tick);
 
             var index = Symbol.Create("VIX", SecurityType.Index, Market.USA);
             yield return new TestCaseData(new[]
             {
                 index,
-                Symbol.CreateOption(index, Market.USA, OptionStyle.American, OptionRight.Call, 14.5m, new DateTime(2024, 12, 18)),
-                Symbol.CreateOption(index, Market.USA, OptionStyle.American, OptionRight.Call, 70m, new DateTime(2025, 06, 18)),
-                Symbol.CreateOption(index, Market.USA, OptionStyle.American, OptionRight.Call, 15m, new DateTime(2024, 12, 18)),
-                Symbol.CreateOption(index, "VIXW", Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 14.5m, new DateTime(2024, 12, 11))
+                Symbol.CreateOption(index, Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 22m, new DateTime(2025, 10, 22)),
+                Symbol.CreateOption(index, Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Put, 22m, new DateTime(2025, 10, 22)),
+                Symbol.CreateOption(index, Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 21.5m, new DateTime(2025, 10, 22)),
+                Symbol.CreateOption(index, Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Put, 21.5m, new DateTime(2025, 10, 22)),
+                Symbol.CreateOption(index, "VIXW", Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 22m, new DateTime(2025, 10, 29))
             }, Resolution.Tick);
         }
     }
@@ -80,6 +84,8 @@ public partial class TradeStationBrokerageTests
     {
         var cancelationToken = new CancellationTokenSource();
         var configs = GetSubscriptionDataConfigsBySymbolResolution(symbol, resolution);
+
+        var quotes = new List<BaseData>();
 
         var trade = new ManualResetEvent(false);
         var quote = new ManualResetEvent(false);
@@ -91,21 +97,30 @@ public partial class TradeStationBrokerageTests
                 {
                     if (baseData != null)
                     {
-                        if ((baseData as Tick)?.TickType == TickType.Quote || baseData is QuoteBar)
-                        {
-                            quote.Set();
-                        }
-                        else if ((baseData as Tick)?.TickType == TickType.Trade || baseData is TradeBar)
-                        {
-                            trade.Set();
-                        }
                         Log.Trace($"Data received: {baseData}");
+
+                        switch (baseData)
+                        {
+                            case Tick t when t.TickType == TickType.Quote:
+                            case QuoteBar qb:
+                                quotes.Add(baseData);
+
+                                if (quotes.Count >= 10)
+                                {
+                                    quote.Set();
+                                }
+                                break;
+                            case Tick t when t.TickType == TickType.Trade:
+                            case TradeBar qb:
+                                trade.Set();
+                                break;
+                        }
                     }
                 });
         }
 
         Assert.IsTrue(trade.WaitOne(resolution.ToTimeSpan() + TimeSpan.FromSeconds(30)));
-        Assert.IsTrue(quote.WaitOne(resolution.ToTimeSpan() + TimeSpan.FromSeconds(30)));
+        Assert.IsTrue(quote.WaitOne(resolution.ToTimeSpan() + TimeSpan.FromSeconds(240)));
 
         foreach (var config in configs)
         {
@@ -115,6 +130,10 @@ public partial class TradeStationBrokerageTests
         Thread.Sleep(2000);
 
         cancelationToken.Cancel();
+
+        Assert.GreaterOrEqual(quotes.Count, 2);
+
+        AssertBaseData(quotes);
     }
 
     [TestCase(105, 2)]
@@ -211,6 +230,7 @@ public partial class TradeStationBrokerageTests
         var amountDataBySymbol = new ConcurrentDictionary<Symbol, int>();
         var resetEvent = new AutoResetEvent(false);
         var configBySymbol = new Dictionary<Symbol, List<SubscriptionDataConfig>>();
+        var quotes = new List<BaseData>();
 
         foreach (var symbol in subscribeSymbols)
         {
@@ -242,6 +262,14 @@ public partial class TradeStationBrokerageTests
                                     resetEvent.Set();
                                 }
                             }
+
+                            switch (baseData)
+                            {
+                                case Tick t when t.TickType == TickType.Quote:
+                                case QuoteBar qb:
+                                    quotes.Add(baseData);
+                                    break;
+                            }
                         }
                     });
             }
@@ -263,6 +291,7 @@ public partial class TradeStationBrokerageTests
         Assert.True(amountDataBySymbol.Values.All(x => x > 1));
 
         cancelationToken.Cancel();
+        AssertBaseData(quotes);
     }
 
     private Task ProcessFeed(
@@ -344,4 +373,24 @@ public partial class TradeStationBrokerageTests
         "BTE", "DKNG", "HIMS", "GOOG", "BBD", "BMY", "VZ", "PACB", "SIRC",
         "ARTL", "PATH", "HBAN", "CSX", "MLGO"
     };
+
+    private static void AssertBaseData(IEnumerable<BaseData> baseData)
+    {
+        foreach (var data in baseData)
+        {
+            switch (data)
+            {
+                case Tick t:
+                    Assert.Greater(t.AskPrice, t.BidPrice);
+                    break;
+                case QuoteBar qb when qb.Ask != null && qb.Bid != null:
+                    Assert.Greater(qb.Ask.Open, qb.Bid.Open);
+                    Assert.Greater(qb.Ask.High, qb.Bid.High);
+                    Assert.Greater(qb.Ask.Low, qb.Bid.Low);
+                    Assert.Greater(qb.Ask.Close, qb.Bid.Close);
+                    break;
+            }
+
+        }
+    }
 }

@@ -104,7 +104,7 @@ public readonly struct Quote
     /// <summary>
     /// The total number of open or outstanding (not closed or delivered) options and/or futures contracts that exist on a given day, delivered on a particular day.
     /// </summary>
-    public string DailyOpenInterest { get; }
+    public decimal DailyOpenInterest { get; }
 
     /// <summary>
     /// The highest price of the day.
@@ -269,7 +269,7 @@ public readonly struct Quote
     /// <param name="lastVenue">Exchange name of last trade.</param>
     /// <param name="VWAP">VWAP (Volume Weighted Average Price) is a measure of the price at which the majority of a given day's trading in a given security took place.</param>
     [JsonConstructor]
-    public Quote(decimal ask, decimal askSize, decimal bid, decimal bidSize, decimal close, string dailyOpenInterest, decimal high, decimal low,
+    public Quote(decimal ask, decimal askSize, decimal bid, decimal bidSize, decimal close, decimal dailyOpenInterest, decimal high, decimal low,
         decimal high52Week, string high52WeekTimestamp, decimal last, decimal minPrice, decimal maxPrice, string firstNoticeDate, string lastTradingDate,
         decimal low52Week, string low52WeekTimestamp, MarketFlag marketFlags, string netChange, string netChangePct, decimal open, decimal previousClose,
         decimal previousVolume, string[] restrictions, string symbol, string tickSizeTier, DateTime tradeTime, decimal volume, decimal lastSize,
