@@ -213,9 +213,10 @@ public partial class TradeStationBrokerage : IDataQueueHandler
                 $"Detected delay streaming data for {leanSymbol}. Expected delayed streaming data to be '{_enableDelayedStreamingData}', but received '{quote.MarketFlags.IsDelayed}'."));
         }
 
-        _levelOneServiceManager.HandleQuote(leanSymbol, DateTime.UtcNow, quote.Bid, quote.BidSize, quote.Ask, quote.AskSize);
+        var utcNow = DateTime.UtcNow;
+        _levelOneServiceManager.HandleQuote(leanSymbol, utcNow, quote.Bid, quote.BidSize, quote.Ask, quote.AskSize);
         _levelOneServiceManager.HandleLastTrade(leanSymbol, quote.TradeTime, quote.LastSize, quote.Last);
-        _levelOneServiceManager.HandleOpenInterest(leanSymbol, DateTime.UtcNow, quote.DailyOpenInterest);
+        _levelOneServiceManager.HandleOpenInterest(leanSymbol, utcNow, quote.DailyOpenInterest);
     }
 
     /// <summary>
