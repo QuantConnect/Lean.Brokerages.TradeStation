@@ -31,22 +31,6 @@ namespace QuantConnect.Brokerages.TradeStation;
 public static class TradeStationExtensions
 {
     /// <summary>
-    /// Converts a <see cref="TradeStationOptionType"/> to an <see cref="OptionRight"/>.
-    /// </summary>
-    /// <param name="optionType">The <see cref="TradeStationOptionType"/> to convert.</param>
-    /// <returns>The corresponding <see cref="OptionRight"/> value.</returns>
-    /// <exception cref="NotSupportedException">
-    /// Thrown when the <paramref name="optionType"/> is not supported.
-    /// </exception>
-    public static OptionRight ConvertOptionTypeToOptionRight(this TradeStationOptionType optionType) => optionType switch
-    {
-        TradeStationOptionType.Put => OptionRight.Put,
-        TradeStationOptionType.Call => OptionRight.Call,
-        _ => throw new NotSupportedException($"{nameof(TradeStationBrokerage)}.{nameof(ConvertOptionTypeToOptionRight)}: " +
-            $"The optionType '{optionType}' is not supported.")
-    };
-
-    /// <summary>
     /// Converts a <see cref="TradeStationAssetType"/> to a <see cref="SecurityType"/>.
     /// </summary>
     /// <param name="assetType">The <see cref="TradeStationAssetType"/> to convert.</param>
@@ -374,12 +358,4 @@ public static class TradeStationExtensions
 
         return leanOrder;
     }
-
-    /// <summary>
-    /// Calculates the greatest common divisor (GCD) of two decimal numbers using the Euclidean algorithm.
-    /// </summary>
-    /// <param name="a">The first decimal number.</param>
-    /// <param name="b">The second decimal number. If this value is 0, the method returns the first number.</param>
-    /// <returns>The greatest common divisor of <paramref name="a"/> and <paramref name="b"/>.</returns>
-    public static decimal GreatestCommonDivisor(decimal a, decimal b) => b == 0 ? a : GreatestCommonDivisor(b, a % b);
 }
