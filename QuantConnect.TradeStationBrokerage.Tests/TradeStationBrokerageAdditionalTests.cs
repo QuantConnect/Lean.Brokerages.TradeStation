@@ -99,7 +99,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var orderQuantity = 1m;
             var tradeStationApiClient = CreateTradeStationApiClient();
 
-            var quoteLastPrice = (await tradeStationApiClient.GetQuoteSnapshot(ticker)).Quotes.Single().Last;
+            var quoteLastPrice = (await tradeStationApiClient.GetQuoteSnapshot(ticker)).Quotes.Single().Last.Value;
 
             var orderResponse = await tradeStationApiClient.PlaceOrder(
                 Orders.OrderType.Limit,

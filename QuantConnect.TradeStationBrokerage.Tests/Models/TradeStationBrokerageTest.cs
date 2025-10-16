@@ -50,12 +50,20 @@ public class TradeStationBrokerageTest : TradeStationBrokerage
     /// </summary>
     /// <param name="symbol">The symbol for which to retrieve the last price.</param>
     /// <returns>The last price of the specified symbol as a decimal.</returns>
-    public Models.Quote GetPrice(Symbol symbol)
+    public QuoteActualPrices GetPrice(Symbol symbol)
     {
         var quotes = GetQuote(symbol).Quotes.Single();
         Log.Trace($"{nameof(TradeStationBrokerageTest)}.{nameof(GetPrice)}: {symbol}: Ask = {quotes.Ask}, Bid = {quotes.Bid}, Last = {quotes.Last}");
-        return quotes;
+        return new(quotes.Ask.Value, quotes.Bid.Value, quotes.Last.Value);
     }
+
+    /// <summary>
+    /// Holds ask, bid, and last prices.
+    /// </summary>
+    /// <param name="Ask">Ask price.</param>
+    /// <param name="Bid">Bid price.</param>
+    /// <param name="Last">Last traded price.</param>
+    public record QuoteActualPrices(decimal Ask, decimal Bid, decimal Last);
 
     public bool GetTradeStationOrderRouteIdByOrder(TradeStationOrderProperties tradeStationOrderProperties, IReadOnlyCollection<SecurityType> securityTypes, out string routeId)
     {

@@ -41,6 +41,7 @@ using System.Collections.ObjectModel;
 using System.Runtime.CompilerServices;
 using QuantConnect.Brokerages.CrossZero;
 using QuantConnect.Brokerages.TradeStation.Api;
+using QuantConnect.Brokerages.LevelOneOrderBook;
 using QuantConnect.Brokerages.TradeStation.Models;
 using TimeInForce = QuantConnect.Orders.TimeInForce;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
@@ -280,7 +281,10 @@ public partial class TradeStationBrokerage : Brokerage
             _aggregator = Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(aggregatorName);
         }
 
-        SubscriptionManager = new TradeStationBrokerageMultiStreamSubscriptionManager(_tradeStationApiClient, _symbolMapper, _aggregator, OnBrokerageMessageEventHandler);
+        _levelOneServiceManager = new LevelOneServiceManager(
+            _aggregator,
+            (symbols, _) => Subscribe(symbols),
+            (symbols, _) => Unsubscribe(symbols));
 
         _routes = new Lazy<Dictionary<SecurityType, ReadOnlyCollection<Route>>>(() =>
         {
@@ -727,7 +731,6 @@ public partial class TradeStationBrokerage : Brokerage
         {
             Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(Disconnect)}: TimeOut waiting for stream order task to end.");
         }
-        SubscriptionManager.Dispose();
     }
 
     #endregion
@@ -1302,6 +1305,15 @@ public partial class TradeStationBrokerage : Brokerage
         }
 
         return !string.IsNullOrEmpty(routeId);
+    }
+
+    /// <summary>
+    /// Dispose of the brokerage allocations
+    /// </summary>
+    public override void Dispose()
+    {
+        _aggregator.DisposeSafely();
+        _tradeStationApiClient.DisposeSafely();
     }
 
     private class ModulesReadLicenseRead : QuantConnect.Api.RestResponse

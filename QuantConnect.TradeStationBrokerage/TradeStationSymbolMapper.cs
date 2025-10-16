@@ -16,6 +16,7 @@
 using System;
 using QuantConnect.Securities;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using QuantConnect.Securities.IndexOption;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
@@ -31,6 +32,11 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// Regular expression pattern for parsing a position option symbol.
     /// </summary>
     private readonly string _optionPatternRegex = @"^(?<symbol>[A-Z]+)\s(?<expiryDate>\d{6})(?<optionRight>[CP])(?<strikePrice>\d+(\.\d+)?)$";
+
+    /// <summary>
+    /// A concurrent dictionary that maps brokerage symbols to Lean symbols.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, Symbol> _leanSymbolByBrokerageSymbol = new();
 
     /// <summary>
     /// Represents a set of supported security types.
@@ -99,6 +105,11 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// </returns>
     public bool TryGetLeanSymbol(string brokerageSymbol, TradeStationAssetType tradeStationAssetType, DateTime expirationDateTime, out Symbol leanSymbol)
     {
+        if (_leanSymbolByBrokerageSymbol.TryGetValue(brokerageSymbol, out leanSymbol))
+        {
+            return true;
+        }
+
         try
         {
             var ticker = brokerageSymbol;
@@ -122,6 +133,9 @@ public class TradeStationSymbolMapper : ISymbolMapper
             }
 
             leanSymbol = GetLeanSymbol(ticker, tradeStationAssetType.ConvertAssetTypeToSecurityType(), expirationDate: expirationDateTime, strike: strikePrice, optionRight: optionRight);
+
+            _leanSymbolByBrokerageSymbol[brokerageSymbol] = leanSymbol;
+
             return true;
         }
         catch
