@@ -39,11 +39,6 @@ public class TradeStationSymbolMapper : ISymbolMapper
     private readonly ConcurrentDictionary<string, Symbol> _leanSymbolByBrokerageSymbol = new();
 
     /// <summary>
-    /// A concurrent dictionary that maps Lean symbols to brokerage symbols.
-    /// </summary>
-    private readonly ConcurrentDictionary<Symbol, string> _brokerageSymbolByLeanSymbol = new();
-
-    /// <summary>
     /// Represents a set of supported security types.
     /// </summary>
     /// <remarks>
@@ -59,34 +54,21 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// <exception cref="NotImplementedException">The lean security type is not implemented.</exception>
     public string GetBrokerageSymbol(Symbol symbol)
     {
-        if (_brokerageSymbolByLeanSymbol.TryGetValue(symbol, out var brokerageSymbol))
-        {
-            return brokerageSymbol;
-        }
-
         switch (symbol.SecurityType)
         {
             case SecurityType.Equity:
-                brokerageSymbol = symbol.Value;
-                break;
+                return symbol.Value;
             case SecurityType.Index:
-                brokerageSymbol = "$" + symbol.Value + ".X";
-                break;
+                return "$" + symbol.Value + ".X";
             case SecurityType.Option:
             case SecurityType.IndexOption:
-                brokerageSymbol = GenerateBrokerageOption(symbol);
-                break;
+                return GenerateBrokerageOption(symbol);
             case SecurityType.Future:
-                brokerageSymbol = GenerateBrokerageFuture(symbol);
-                break;
+                return GenerateBrokerageFuture(symbol);
             default:
                 throw new NotImplementedException($"{nameof(TradeStationSymbolMapper)}.{nameof(GetBrokerageSymbol)}: " +
                     $"The security type '{symbol.SecurityType}' is not supported.");
         }
-
-        _brokerageSymbolByLeanSymbol[symbol] = brokerageSymbol;
-        _leanSymbolByBrokerageSymbol[brokerageSymbol] = symbol;
-        return brokerageSymbol;
     }
 
     /// <summary>
@@ -153,7 +135,6 @@ public class TradeStationSymbolMapper : ISymbolMapper
             leanSymbol = GetLeanSymbol(ticker, tradeStationAssetType.ConvertAssetTypeToSecurityType(), expirationDate: expirationDateTime, strike: strikePrice, optionRight: optionRight);
 
             _leanSymbolByBrokerageSymbol[brokerageSymbol] = leanSymbol;
-            _brokerageSymbolByLeanSymbol[leanSymbol] = brokerageSymbol;
 
             return true;
         }
