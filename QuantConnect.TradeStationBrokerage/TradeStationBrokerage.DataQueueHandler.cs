@@ -199,7 +199,7 @@ public partial class TradeStationBrokerage : IDataQueueHandler
     /// Handles incoming quote events and updates the order books accordingly.
     /// </summary>
     /// <param name="quote">The incoming quote containing bid, ask, and trade information.</param>
-    private void HandleQuoteEvents(Quote quote)
+    internal void HandleQuoteEvents(Quote quote)
     {
         if (!_symbolMapper.TryGetLeanSymbol(quote.Symbol, default, default, out var leanSymbol))
         {

@@ -26,6 +26,7 @@ using QuantConnect.Securities;
 using QuantConnect.Data.Market;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using QuantConnect.Brokerages.TradeStation.Models;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests;
 
@@ -292,6 +293,32 @@ public partial class TradeStationBrokerageTests
 
         cancelationToken.Cancel();
         AssertBaseData(quotes);
+    }
+
+    public static IEnumerable<TestCaseData> CacheSymbolTestCases()
+    {
+        var underlying = Symbol.Create("AAPL", SecurityType.Equity, Market.USA);
+        yield return new TestCaseData(underlying, "AAPL");
+        var oc = Symbol.CreateOption(underlying, Market.USA, OptionStyle.American, OptionRight.Call, 167.5m, new DateTime(2024, 5, 10));
+        yield return new TestCaseData(oc, "AAPL 240510C167.5");
+
+        var indexUnderlying2 = Symbol.Create("VIX", SecurityType.Index, Market.USA);
+        yield return new TestCaseData(indexUnderlying2, "$VIX.X");
+
+        yield return new TestCaseData(Symbol.CreateFuture("ES", Market.CME, new DateTime(2024, 12, 10)), "ESZ24");
+    }
+
+    [TestCaseSource(nameof(CacheSymbolTestCases))]
+    public void ConvertsBrokerageSymbolToLeanSymbolWhenSymbolIsInCache(Symbol leanSymbol, string actualBrokerageSymbol)
+    {
+        // load the lean symbol into the mapper cache (simulate subscription)
+        _ = _brokerage._symbolMapper.GetBrokerageSymbol(leanSymbol);
+
+        _brokerage.HandleQuoteEvents(new Quote() { Symbol = actualBrokerageSymbol });
+
+        // we can map the brokerage symbol back to the original lean symbol
+        Assert.IsTrue(_brokerage._symbolMapper.TryGetLeanSymbol(actualBrokerageSymbol, default, default, out var convertedLeanSymbol));
+        Assert.AreEqual(leanSymbol, convertedLeanSymbol);
     }
 
     private Task ProcessFeed(
