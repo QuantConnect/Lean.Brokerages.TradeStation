@@ -54,15 +54,22 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// <exception cref="NotImplementedException">The lean security type is not implemented.</exception>
     public string GetBrokerageSymbol(Symbol symbol)
     {
-        var brokerageSymbol = symbol.SecurityType switch
+        var brokerageSymbol = string.Empty;
+        switch (symbol.SecurityType)
         {
-            SecurityType.Equity => symbol.Value,
-            SecurityType.Index => "$" + symbol.Value + ".X",
-            SecurityType.Option or SecurityType.IndexOption => GenerateBrokerageOption(symbol),
-            SecurityType.Future => GenerateBrokerageFuture(symbol),
-            _ => throw new NotImplementedException($"{nameof(TradeStationSymbolMapper)}.{nameof(GetBrokerageSymbol)}: " +
-                                $"The security type '{symbol.SecurityType}' is not supported."),
-        };
+            case SecurityType.Equity:
+                brokerageSymbol = symbol.Value;
+            case SecurityType.Index:
+                brokerageSymbol = "$" + symbol.Value + ".X";
+            case SecurityType.Option:
+            case SecurityType.IndexOption:
+                brokerageSymbol = GenerateBrokerageOption(symbol);
+            case SecurityType.Future:
+                brokerageSymbol = GenerateBrokerageFuture(symbol);
+            default:
+                throw new NotImplementedException($"{nameof(TradeStationSymbolMapper)}.{nameof(GetBrokerageSymbol)}: " +
+                    $"The security type '{symbol.SecurityType}' is not supported.");
+        }
         _leanSymbolByBrokerageSymbol[brokerageSymbol] = symbol;
         return brokerageSymbol;
     }
