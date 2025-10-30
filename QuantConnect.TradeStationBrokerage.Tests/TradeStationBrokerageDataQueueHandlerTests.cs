@@ -59,22 +59,22 @@ public partial class TradeStationBrokerageTests
             yield return new TestCaseData(new[]
             {
                 Symbols.AAPL,
-                Symbol.CreateFuture(Futures.Softs.Cotton2, Market.ICE, new DateTime(2025, 12, 1)),
-                Symbol.CreateOption(Symbols.AAPL, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 245m, new DateTime(2025, 10, 17)),
-                Symbol.CreateOption(Symbols.AAPL, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Put, 245m, new DateTime(2025, 10, 17)),
-                Symbol.CreateOption(Symbols.AAPL, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 247.5m, new DateTime(2025, 10, 17)),
-                Symbol.CreateOption(Symbols.AAPL, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Put, 247.5m, new DateTime(2025, 10, 17))
+                Symbol.CreateFuture(Futures.Indices.SP500EMini, Market.CME, new DateTime(2025, 12, 1)),
+                Symbol.CreateOption(Symbols.AAPL, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 270m, new DateTime(2025, 10, 31)),
+                Symbol.CreateOption(Symbols.AAPL, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Put, 270m, new DateTime(2025, 10, 31)),
+                Symbol.CreateOption(Symbols.AAPL, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 272.5m, new DateTime(2025, 10, 31)),
+                Symbol.CreateOption(Symbols.AAPL, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Put, 272.5m, new DateTime(2025, 10, 31))
             }, Resolution.Tick);
 
             var index = Symbol.Create("VIX", SecurityType.Index, Market.USA);
             yield return new TestCaseData(new[]
             {
                 index,
-                Symbol.CreateOption(index, Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 22m, new DateTime(2025, 10, 22)),
-                Symbol.CreateOption(index, Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Put, 22m, new DateTime(2025, 10, 22)),
-                Symbol.CreateOption(index, Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 21.5m, new DateTime(2025, 10, 22)),
-                Symbol.CreateOption(index, Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Put, 21.5m, new DateTime(2025, 10, 22)),
-                Symbol.CreateOption(index, "VIXW", Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 22m, new DateTime(2025, 10, 29))
+                Symbol.CreateOption(index, Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 22m, new DateTime(2025, 11, 19)),
+                Symbol.CreateOption(index, Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Put, 22m, new DateTime(2025, 11, 19)),
+                Symbol.CreateOption(index, Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 21.5m, new DateTime(2025, 11, 19)),
+                Symbol.CreateOption(index, Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Put, 21.5m, new DateTime(2025, 11, 19)),
+                Symbol.CreateOption(index, "VIXW", Market.USA, SecurityType.IndexOption.DefaultOptionStyle(), OptionRight.Call, 20m, new DateTime(2025, 11, 05))
             }, Resolution.Tick);
         }
     }
@@ -288,6 +288,7 @@ public partial class TradeStationBrokerageTests
         resetEvent.WaitOne(TimeSpan.FromSeconds(5), cancelationToken.Token);
 
         Assert.Greater(amountDataBySymbol.Count, 0);
+
         Assert.True(amountDataBySymbol.Values.All(x => x > 1));
 
         cancelationToken.Cancel();

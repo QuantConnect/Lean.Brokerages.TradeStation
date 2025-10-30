@@ -203,6 +203,7 @@ public partial class TradeStationBrokerage : IDataQueueHandler
     {
         if (!_symbolMapper.TryGetLeanSymbol(quote.Symbol, default, default, out var leanSymbol))
         {
+            Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(HandleQuoteEvents)}: Failed to map symbol '{quote.Symbol}' from received quote: {quote}.");
             return;
         }
 
