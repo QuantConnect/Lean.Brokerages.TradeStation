@@ -59,13 +59,17 @@ public class TradeStationSymbolMapper : ISymbolMapper
         {
             case SecurityType.Equity:
                 brokerageSymbol = symbol.Value;
+                break;
             case SecurityType.Index:
                 brokerageSymbol = "$" + symbol.Value + ".X";
+                break;
             case SecurityType.Option:
             case SecurityType.IndexOption:
                 brokerageSymbol = GenerateBrokerageOption(symbol);
+                break;
             case SecurityType.Future:
                 brokerageSymbol = GenerateBrokerageFuture(symbol);
+                break;
             default:
                 throw new NotImplementedException($"{nameof(TradeStationSymbolMapper)}.{nameof(GetBrokerageSymbol)}: " +
                     $"The security type '{symbol.SecurityType}' is not supported.");
