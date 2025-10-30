@@ -67,7 +67,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// <summary>
     /// Provides the mapping between Lean symbols and brokerage specific symbols.
     /// </summary>
-    internal TradeStationSymbolMapper _symbolMapper;
+    private TradeStationSymbolMapper _symbolMapper;
 
     /// <summary>
     /// Indicates whether the application is subscribed to stream order updates.
