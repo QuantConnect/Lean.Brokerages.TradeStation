@@ -429,31 +429,45 @@ public partial class TradeStationBrokerage : Brokerage
             return false;
         }
 
+        if (!_groupOrderCacheManager.TryGetGroupCachedOrders(order, out var orders))
+        {
+            return true;
+        }
+
         try
         {
             _messageHandler.WithLockedStream(() =>
             {
-                var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol);
-
-                var isPlaceCrossOrder = TryCrossZeroPositionOrder(order, holdingQuantity);
-
-                if (isPlaceCrossOrder == null)
+                if (orders.Count == 1)
                 {
-                    if (!_groupOrderCacheManager.TryGetGroupCachedOrders(order, out var orders))
-                    {
-                        return;
-                    }
+                    var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol);
 
-                    var response = PlaceTradeStationOrder(orders, holdingQuantity);
+                    var isPlaceCrossOrder = TryCrossZeroPositionOrder(order, holdingQuantity);
+
+                    if (isPlaceCrossOrder == null)
+                    {
+                        var response = PlaceTradeStationOrder(orders, holdingQuantity);
+                    }
+                }
+                else
+                {
+                    // Place combo order, no need to pass holdings
+                    var response = PlaceTradeStationOrder(orders, holdingQuantity: 0m);
                 }
             });
-            return true;
         }
         catch (Exception error)
         {
             Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(PlaceOrder)}: " + error);
+
+            var orderEvents = orders.ToList(o => new OrderEvent(o, DateTime.UtcNow, OrderFee.Zero, $"PlaceOrder")
+            {
+                Status = OrderStatus.Invalid,
+                Message = error.Message
+            });
+            OnOrderEvents(orderEvents);
         }
-        return false;
+        return true;
     }
 
     /// <summary>
