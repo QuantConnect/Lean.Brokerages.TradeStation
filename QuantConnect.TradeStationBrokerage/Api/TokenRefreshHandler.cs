@@ -252,11 +252,9 @@ public class TokenRefreshHandler : DelegatingHandler
         {
             requestMessage.Content = content;
 
-            var responseMessage = default(HttpResponseMessage);
-
             try
             {
-                responseMessage = await base.SendAsync(requestMessage, cancellationToken);
+                var responseMessage = await base.SendAsync(requestMessage, cancellationToken);
 
                 responseMessage.EnsureSuccessStatusCode();
 
