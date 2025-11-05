@@ -138,27 +138,41 @@ public class TokenRefreshHandler : DelegatingHandler
                 request.Headers.Authorization = new AuthenticationHeaderValue(_tradeStationAccessToken.TokenType, _tradeStationAccessToken.AccessToken);
             }
 
-            response = await base.SendAsync(request, cancellationToken);
+            try
+            {
+                response = await base.SendAsync(request, cancellationToken);
 
-            if (response.IsSuccessStatusCode)
-            {
-                break;
-            }
-            else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-            {
-                if (_tradeStationAccessToken == null && string.IsNullOrEmpty(_refreshToken))
+                if (response.IsSuccessStatusCode)
                 {
-                    _tradeStationAccessToken = await GetAuthenticateToken(cancellationToken);
-                    _refreshToken = _tradeStationAccessToken.RefreshToken;
+                    break;
+                }
+                else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                {
+                    if (_tradeStationAccessToken == null && string.IsNullOrEmpty(_refreshToken))
+                    {
+                        _tradeStationAccessToken = await GetAuthenticateToken(cancellationToken);
+                        _refreshToken = _tradeStationAccessToken.RefreshToken;
+                    }
+                    else
+                    {
+                        _tradeStationAccessToken = await RefreshAccessToken(_refreshToken, cancellationToken);
+                    }
                 }
                 else
                 {
-                    _tradeStationAccessToken = await RefreshAccessToken(_refreshToken, cancellationToken);
+                    break;
                 }
             }
-            else
+            catch (Exception ex)
             {
-                break;
+                // This means either HttpClient timeout or user cancellation
+                Logging.Log.Error($"{nameof(TokenRefreshHandler)}.{nameof(SendAsync)}.{nameof(TaskCanceledException)}: {ex}. " +
+                    $"Request: {request.Method} {request.RequestUri}, attempt {_retryCount + 1}/{_maxRetryCount}.");
+
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
             }
 
             await Task.Delay(_retryInterval, cancellationToken);
@@ -238,11 +252,20 @@ public class TokenRefreshHandler : DelegatingHandler
         {
             requestMessage.Content = content;
 
-            var responseMessage = await base.SendAsync(requestMessage, cancellationToken);
+            try
+            {
+                var responseMessage = await base.SendAsync(requestMessage, cancellationToken);
 
-            responseMessage.EnsureSuccessStatusCode();
+                responseMessage.EnsureSuccessStatusCode();
 
-            return await responseMessage.Content.ReadAsStringAsync();
+                return await responseMessage.Content.ReadAsStringAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                Logging.Log.Error($"{nameof(TokenRefreshHandler)}.{nameof(SendSignInAsync)} failed. Request: [{requestMessage.Method}] {requestMessage.RequestUri}. " +
+                    $"IsCancellationRequested = {cancellationToken.IsCancellationRequested}, ExceptionType: {ex.GetType().Name}, Message: {ex}");
+                throw;
+            }
         }
     }
 }

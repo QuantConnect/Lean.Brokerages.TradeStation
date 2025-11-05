@@ -688,7 +688,8 @@ public class TradeStationApiClient : IDisposable
             }
             catch (Exception ex)
             {
-                throw new Exception(ex.Message);
+                Log.Error($"{nameof(TradeStationApiClient)}.{nameof(RequestAsync)}.Exception: {ex}. Request: {requestMessage.Method} {requestMessage.RequestUri}");
+                throw;
             }
         }
     }
