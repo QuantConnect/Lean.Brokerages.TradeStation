@@ -438,22 +438,7 @@ public partial class TradeStationBrokerage : Brokerage
         {
             _messageHandler.WithLockedStream(() =>
             {
-                if (orders.Count == 1)
-                {
-                    var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol);
-
-                    var isPlaceCrossOrder = TryCrossZeroPositionOrder(order, holdingQuantity);
-
-                    if (isPlaceCrossOrder == null)
-                    {
-                        var response = PlaceTradeStationOrder(orders, holdingQuantity);
-                    }
-                }
-                else
-                {
-                    // Place combo order, no need to pass holdings
-                    var response = PlaceTradeStationOrder(orders, holdingQuantity: 0m);
-                }
+                PlaceTradeStationOrder(orders);
             });
         }
         catch (Exception error)
@@ -474,10 +459,9 @@ public partial class TradeStationBrokerage : Brokerage
     /// Places an order using TradeStation.
     /// </summary>
     /// <param name="orders">The collection orders to be placed.</param>
-    /// <param name="holdingQuantity">The holding quantity associated with the order.</param>
     /// <param name="isSubmittedEvent">Indicates if the order submission event should be triggered.</param>
     /// <returns>A response from TradeStation after placing the order.</returns>
-    private TradeStationPlaceOrderResponse? PlaceTradeStationOrder(IReadOnlyCollection<Order> orders, decimal holdingQuantity, bool isSubmittedEvent = true)
+    private TradeStationPlaceOrderResponse? PlaceTradeStationOrder(IReadOnlyCollection<Order> orders, bool isSubmittedEvent = true)
     {
         var order = orders.First();
         switch (order.Type)
@@ -492,15 +476,24 @@ public partial class TradeStationBrokerage : Brokerage
             case OrderType.StopMarket:
             case OrderType.StopLimit:
             case OrderType.TrailingStop:
-                var symbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
-                var tradeAction = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity);
-                var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo();
-                return PlaceOrderCommon(orders, order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, symbol,
-                    order.GetLimitPrice(), order.GetStopPrice(), trailingAmount, trailingAsPercentage, isSubmittedEvent);
+                var response = default(TradeStationPlaceOrderResponse?);
+                var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol);
+                var isPlaceCrossOrder = TryCrossZeroPositionOrder(order, holdingQuantity);
+                // If TryCrossZeroPositionOrder returned null we should place the simple order.
+                // A non-null result means the cross-zero (part 1) was already submitted.
+                if (isPlaceCrossOrder == null)
+                {
+                    var symbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
+                    var tradeAction = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity);
+                    var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo();
+                    response = PlaceOrderCommon(orders, order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, symbol,
+                        order.GetLimitPrice(), order.GetStopPrice(), trailingAmount, trailingAsPercentage, isSubmittedEvent);
+                }
+                return response;
             default:
                 throw new NotSupportedException($"{nameof(TradeStationBrokerage)}.{nameof(PlaceTradeStationOrder)}:" +
                     $" The order type '{order.Type}' is not supported for conversion to TradeStation order type.");
-        };
+        }
     }
 
     /// <summary>
