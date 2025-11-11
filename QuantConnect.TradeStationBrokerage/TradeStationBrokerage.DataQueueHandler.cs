@@ -216,7 +216,11 @@ public partial class TradeStationBrokerage : IDataQueueHandler
 
         var utcNow = DateTime.UtcNow;
         _levelOneServiceManager.HandleQuote(leanSymbol, utcNow, quote.Bid, quote.BidSize, quote.Ask, quote.AskSize);
-        _levelOneServiceManager.HandleLastTrade(leanSymbol, quote.TradeTime, quote.LastSize, quote.Last);
+        if (quote.TradeTime.HasValue)
+        {
+            // we use utc now to avoid quotes and trades arriving out of sync
+            _levelOneServiceManager.HandleLastTrade(leanSymbol, utcNow, quote.LastSize, quote.Last);
+        }
         _levelOneServiceManager.HandleOpenInterest(leanSymbol, utcNow, quote.DailyOpenInterest);
     }
 
