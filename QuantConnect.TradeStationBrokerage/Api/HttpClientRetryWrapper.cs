@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -195,9 +195,9 @@ public class HttpClientRetryWrapper : IDisposable
     /// <param name="httpMethod">HTTP method of the request.</param>
     /// <param name="requestUri">Request URI string.</param>
     /// <param name="message">Optional message (defaults to "empty").</param>
-    private static void LogError(string method, Exception exception, string httpMethod, string requestUri, string message = "empty")
+    private static void LogError(string method, Exception exception, string httpMethod, string requestUri, string message = "")
     {
-        Log.Error($"{nameof(HttpClientRetryWrapper)}.{method}.{exception}, message = {message}. Request: [{httpMethod}]({requestUri})");
+        Log.Error($"{nameof(HttpClientRetryWrapper)}.{method}.{exception.GetType().Name}: message = {message}. Request: [{httpMethod}]({requestUri}).\n{exception}");
     }
 
     /// <summary>
