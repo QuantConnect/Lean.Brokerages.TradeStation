@@ -119,7 +119,7 @@ public class HttpClientRetryWrapper : IDisposable
     /// <returns>The HTTP response message.</returns>
     public async Task<HttpResponseMessage> GetStreamAsync(string resource, CancellationToken cancellationToken)
     {
-        return await SendAsync(resource, HttpMethod.Get, jsonBody: null, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        return await SendAsync(resource, HttpMethod.Get, jsonBody: null, retryOnTimeout: true, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
     }
 
     /// <summary>
@@ -129,6 +129,7 @@ public class HttpClientRetryWrapper : IDisposable
     /// <param name="resource">Relative resource path (appended to <see cref="_baseUrl"/>).</param>
     /// <param name="httpMethod">HTTP method to use (GET/POST/PUT/etc.).</param>
     /// <param name="jsonBody">Optional JSON body to send (will be serialized as UTF-8 application/json).</param>
+    /// <param name="retryOnTimeout">If true, the method will retry when an attempt times out (default: true).</param>
     /// <param name="httpCompletionOption">Completion option to pass to <see cref="HttpClient.SendAsync(HttpRequestMessage, HttpCompletionOption, CancellationToken)"/>.</param>
     /// <param name="externalCancellationToken">Cancellation token to cancel the entire operation from the caller side.</param>
     /// <returns>The successful <see cref="HttpResponseMessage"/>.</returns>
@@ -136,7 +137,8 @@ public class HttpClientRetryWrapper : IDisposable
     public async Task<HttpResponseMessage> SendAsync(
         string resource,
         HttpMethod httpMethod,
-        string jsonBody = null,
+        string jsonBody,
+        bool retryOnTimeout,
         HttpCompletionOption httpCompletionOption = HttpCompletionOption.ResponseContentRead, // default in <see cref="HttpClient.DefaultCompletionOption"/>
         CancellationToken externalCancellationToken = default)
     {
@@ -158,7 +160,7 @@ public class HttpClientRetryWrapper : IDisposable
                 catch (OperationCanceledException oce) when (!externalCancellationToken.IsCancellationRequested && timeoutCts.IsCancellationRequested)
                 {
                     LogError(nameof(SendAsync), oce, requestMessage.Method.Method, requestMessage.RequestUri.ToString(), $"attempt={attempt}/{_maxRetries}");
-                    if (attempt >= _maxRetries)
+                    if (!retryOnTimeout || attempt >= _maxRetries)
                     {
                         throw;
                     }
@@ -166,7 +168,7 @@ public class HttpClientRetryWrapper : IDisposable
                 catch (TaskCanceledException tce) when (!externalCancellationToken.IsCancellationRequested && timeoutCts.IsCancellationRequested)
                 {
                     LogError(nameof(SendAsync), tce, requestMessage.Method.Method, requestMessage.RequestUri.ToString(), $"attempt={attempt}/{_maxRetries}");
-                    if (attempt >= _maxRetries)
+                    if (!retryOnTimeout || attempt >= _maxRetries)
                     {
                         throw;
                     }
