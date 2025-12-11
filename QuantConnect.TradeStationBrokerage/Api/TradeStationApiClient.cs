@@ -656,7 +656,16 @@ public class TradeStationApiClient : IDisposable
 
         var response = await responseMessage.Content.ReadAsStringAsync();
 
-        var deserializeResponse = JsonConvert.DeserializeObject<T>(response);
+        var deserializeResponse = default(T);
+        try
+        {
+            deserializeResponse = JsonConvert.DeserializeObject<T>(response);
+        }
+        catch (JsonException ex)
+        {
+            Log.Error($"{nameof(TradeStationApiClient)}.{nameof(RequestAsync)}.{ex.GetType().Name}: {ex.Message}. Request: [{httpMethod}]({resource}). Response: {response}.\n{ex}");
+            throw;
+        }
 
         if (deserializeResponse is ITradeStationError errors && errors.Errors != null)
         {
