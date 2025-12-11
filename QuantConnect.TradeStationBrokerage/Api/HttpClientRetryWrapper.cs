@@ -44,13 +44,13 @@ public class HttpClientRetryWrapper : IDisposable
     /// Maximum number of retry attempts. The logic will attempt attempts 0.._maxRetries (inclusive)
     /// and throw if the number of attempts exceeds this value.
     /// </summary>
-    private readonly int _maxRetries = 5;
+    private readonly int _maxRetries = 3;
 
     /// <summary>
     /// Per-attempt timeout. Each attempt creates its own <see cref="CancellationTokenSource"/>
     /// that is canceled after this timespan.
     /// </summary>
-    private readonly TimeSpan _ctsAttemptTimeout = TimeSpan.FromSeconds(10);
+    private readonly TimeSpan _ctsAttemptTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Delay between retries (back-off multiplier is applied in the loop).
