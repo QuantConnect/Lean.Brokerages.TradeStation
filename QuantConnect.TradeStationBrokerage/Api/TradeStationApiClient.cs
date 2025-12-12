@@ -645,7 +645,7 @@ public class TradeStationApiClient : IDisposable
     /// <exception cref="Exception">Thrown when an unexpected error occurs.</exception>
     private async Task<T> RequestAsync<T>(string resource, HttpMethod httpMethod, string jsonBody = null, bool retryOnTimeout = true)
     {
-        var responseMessage = await _httpClient.SendAsync(resource, httpMethod, jsonBody, retryOnTimeout: retryOnTimeout);
+        using var responseMessage = await _httpClient.SendAsync(resource, httpMethod, jsonBody, retryOnTimeout);
 
         if (!responseMessage.IsSuccessStatusCode)
         {
