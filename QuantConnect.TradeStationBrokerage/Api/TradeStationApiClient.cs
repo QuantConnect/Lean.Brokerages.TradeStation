@@ -677,12 +677,9 @@ public class TradeStationApiClient : IDisposable
             throw;
         }
 
-        if (deserializeResponse is ITradeStationError errors && errors.Errors != null)
+        if (deserializeResponse is ITradeStationError errors && errors.Errors?.Count > 0)
         {
-            foreach (var positionError in errors.Errors)
-            {
-                throw new Exception($"Error in {nameof(TradeStationApiClient)}.{nameof(RequestAsync)}: {positionError.Message} while accessing resource: {resource}");
-            }
+            throw new Exception($"Error in {nameof(TradeStationApiClient)}.{nameof(RequestAsync)}: {string.Join(',', errors.Errors)} while accessing resource: {resource}");
         }
 
         return deserializeResponse;
