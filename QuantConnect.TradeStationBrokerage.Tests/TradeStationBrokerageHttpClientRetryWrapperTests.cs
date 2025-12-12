@@ -13,7 +13,6 @@
  * limitations under the License.
 */
 
-
 using System;
 using System.Net;
 using NUnit.Framework;
@@ -30,7 +29,7 @@ public class TradeStationBrokerageHttpClientRetryWrapperTests
     private readonly string _baseUrl = "https://api.test/";
 
     [Test]
-    public async Task SendAsync_SuccessfulResponse_ReturnsResponse()
+    public async Task SendAsyncSuccessfulResponseReturnsResponse()
     {
         var handler = new TestHttpMessageHandler((req, ct) =>
         {
@@ -47,6 +46,33 @@ public class TradeStationBrokerageHttpClientRetryWrapperTests
 
         Assert.IsNotNull(response);
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Test]
+    public async Task StreamOrdersSuccessfulResponseReturnsHeartbeat()
+    {
+        var apiClient = TradeStationBrokerageAdditionalTests.CreateTradeStationApiClient();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        var heartbeatResponseCounter = default(int);
+        await foreach (var response in apiClient.StreamOrders(cts.Token))
+        {
+            Logging.Log.Trace(response);
+
+            if (response.Contains("Heartbeat", StringComparison.InvariantCultureIgnoreCase))
+            {
+                heartbeatResponseCounter += 1;
+
+                if (heartbeatResponseCounter >= 2)
+                {
+                    cts.Cancel();
+                }
+            }
+        }
+
+        Assert.IsTrue(cts.IsCancellationRequested);
+        Assert.GreaterOrEqual(heartbeatResponseCounter, 2);
     }
 
     [Test]

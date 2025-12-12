@@ -444,7 +444,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.AreEqual(expectedLimitPrice, actualLimitPrice);
         }
 
-        private TradeStationApiClient CreateTradeStationApiClient()
+        public static TradeStationApiClient CreateTradeStationApiClient()
         {
             var clientId = Config.Get("trade-station-client-id");
             var clientSecret = Config.Get("trade-station-client-secret");
