@@ -165,11 +165,6 @@ public class HttpClientRetryWrapper : IDisposable
                         throw;
                     }
                 }
-                catch (OperationCanceledException oce) when (externalCancellationToken.IsCancellationRequested)
-                {
-                    LogError(nameof(SendAsync), oce, requestMessage.Method.Method, requestMessage.RequestUri.ToString());
-                    throw;
-                }
                 catch (Exception ex)
                 {
                     LogError(nameof(SendAsync), ex, requestMessage.Method.Method, requestMessage.RequestUri.ToString());
