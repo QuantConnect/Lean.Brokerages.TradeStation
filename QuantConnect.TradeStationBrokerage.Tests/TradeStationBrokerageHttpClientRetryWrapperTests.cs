@@ -43,7 +43,7 @@ public class TradeStationBrokerageHttpClientRetryWrapperTests
 
         using var wrapper = new HttpClientRetryWrapper(_baseUrl, handler, 5, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(2));
 
-        var response = await wrapper.SendAsync("/resource", HttpMethod.Get, externalCancellationToken: CancellationToken.None);
+        var response = await wrapper.SendAsync("/resource", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, externalCancellationToken: CancellationToken.None);
 
         Assert.IsNotNull(response);
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
@@ -70,7 +70,7 @@ public class TradeStationBrokerageHttpClientRetryWrapperTests
 
         Assert.ThrowsAsync<TaskCanceledException>(async () =>
         {
-            await wrapper.SendAsync("/resource", HttpMethod.Get, externalCancellationToken: cts.Token);
+            await wrapper.SendAsync("/resource", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, externalCancellationToken: cts.Token);
         });
     }
 
@@ -91,8 +91,44 @@ public class TradeStationBrokerageHttpClientRetryWrapperTests
 
         Assert.ThrowsAsync<TaskCanceledException>(async () =>
         {
-            await wrapper.SendAsync("/resource", HttpMethod.Get, externalCancellationToken: CancellationToken.None);
+            await wrapper.SendAsync("/resource", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, externalCancellationToken: CancellationToken.None);
         });
+    }
+
+    [TestCase(true, 5, 6)]
+    [TestCase(false, 5, 1)]
+    public void SendAsyncRetryOnTimeoutFlagControlsRetries(bool retryOnTimeout, int maxRetries, int expectedCallSendAsyncCounter)
+    {
+        // Arrange
+        var callCount = 0;
+
+        var handler = new TestHttpMessageHandler((req, ct) =>
+        {
+            Interlocked.Increment(ref callCount);
+            var tcs = new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+            // Complete the task as canceled when the token is canceled (simulates per-attempt timeout).
+            ct.Register(() => tcs.TrySetCanceled(ct));
+            return tcs.Task;
+        });
+
+        using var wrapper = new HttpClientRetryWrapper(
+            _baseUrl,
+            handler,
+            maxRetries: maxRetries,
+            ctsAttemptTimeout: TimeSpan.Zero,
+            backOffDelay: TimeSpan.Zero);
+
+        Assert.ThrowsAsync<TaskCanceledException>(async () =>
+        {
+            await wrapper.SendAsync(
+                resource: "/resource",
+                httpMethod: HttpMethod.Get,
+                jsonBody: null,
+                retryOnTimeout: retryOnTimeout,
+                externalCancellationToken: CancellationToken.None);
+        });
+
+        Assert.AreEqual(expectedCallSendAsyncCounter, callCount, $"retryOnTimeout={retryOnTimeout}: expected {expectedCallSendAsyncCounter} handler calls but saw {callCount}");
     }
 }
 
