@@ -157,14 +157,6 @@ public class HttpClientRetryWrapper : IDisposable
                 {
                     return await _httpClient.SendAsync(requestMessage, httpCompletionOption, linkedCts.Token);
                 }
-                catch (OperationCanceledException oce) when (!externalCancellationToken.IsCancellationRequested && timeoutCts.IsCancellationRequested)
-                {
-                    LogError(nameof(SendAsync), oce, requestMessage.Method.Method, requestMessage.RequestUri.ToString(), $"attempt={attempt}/{_maxRetries}");
-                    if (!retryOnTimeout || attempt >= _maxRetries)
-                    {
-                        throw;
-                    }
-                }
                 catch (TaskCanceledException tce) when (!externalCancellationToken.IsCancellationRequested && timeoutCts.IsCancellationRequested)
                 {
                     LogError(nameof(SendAsync), tce, requestMessage.Method.Method, requestMessage.RequestUri.ToString(), $"attempt={attempt}/{_maxRetries}");
