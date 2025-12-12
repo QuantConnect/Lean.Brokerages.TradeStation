@@ -55,7 +55,7 @@ public class HttpClientRetryWrapper : IDisposable
     /// <summary>
     /// Delay between retries (back-off multiplier is applied in the loop).
     /// </summary>
-    private readonly TimeSpan _backOffDelay = TimeSpan.FromSeconds(2);
+    private readonly TimeSpan _backOffDelay = TimeSpan.FromMilliseconds(500);
 
     /// <summary>
     /// Initializes a new instance of <see cref="HttpClientRetryWrapper"/>.
@@ -172,7 +172,7 @@ public class HttpClientRetryWrapper : IDisposable
                 }
             }
 
-            await Task.Delay(_backOffDelay * 2, externalCancellationToken);
+            await Task.Delay(_backOffDelay, externalCancellationToken);
         }
     }
 
