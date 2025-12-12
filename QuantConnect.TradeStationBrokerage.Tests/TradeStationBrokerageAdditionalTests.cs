@@ -30,6 +30,7 @@ using QuantConnect.Orders.TimeInForces;
 using QuantConnect.Brokerages.TradeStation.Api;
 using QuantConnect.Brokerages.TradeStation.Models;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
+using QuantConnect.Brokerages.TradeStation.Models.Interfaces;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests
 {
@@ -444,7 +445,18 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.AreEqual(expectedLimitPrice, actualLimitPrice);
         }
 
-        private TradeStationApiClient CreateTradeStationApiClient()
+        [Test]
+        public void DeserializePositionWithError()
+        {
+            var jsonPositionsResponse = "{\"Positions\":[],\"Errors\":[{\"AccountID\":\"123\",\"Error\":\"Forbidden\",\"Message\":\"Invalid Account ID.\"}]}";
+
+            var positions = JsonConvert.DeserializeObject<TradeStationPosition>(jsonPositionsResponse);
+
+            Assert.IsInstanceOf<ITradeStationError>(positions);
+            Assert.IsNotEmpty(positions.Errors);
+        }
+
+        public static TradeStationApiClient CreateTradeStationApiClient()
         {
             var clientId = Config.Get("trade-station-client-id");
             var clientSecret = Config.Get("trade-station-client-secret");

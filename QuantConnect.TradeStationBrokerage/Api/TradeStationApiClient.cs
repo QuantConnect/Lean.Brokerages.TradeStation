@@ -69,12 +69,7 @@ public class TradeStationApiClient : IDisposable
     /// <summary>
     /// HttpClient is used for making HTTP requests and handling HTTP responses from web resources identified by a Uri.
     /// </summary>
-    private readonly HttpClient _httpClient;
-
-    /// <summary>
-    /// The base URL used for constructing API endpoints.
-    /// </summary>
-    private readonly string _baseUrl;
+    private readonly HttpClientRetryWrapper _httpClient;
 
     /// <summary>
     /// Initializes a new instance of the TradeStationApiClient class
@@ -89,11 +84,7 @@ public class TradeStationApiClient : IDisposable
     {
         _cliendId = clientId;
         _redirectUri = redirectUri;
-        _baseUrl = restApiUrl;
-        var httpClientHandler = new HttpClientHandler();
-        var signInUri = "https://signin.tradestation.com";
-        var tokenRefreshHandler = new TokenRefreshHandler(httpClientHandler, clientId, clientSecret, authorizationCode, signInUri, redirectUri, refreshToken);
-        _httpClient = new(tokenRefreshHandler);
+        _httpClient = new(restApiUrl, clientId, clientSecret, authorizationCode, redirectUri, refreshToken);
     }
 
     /// <summary>
@@ -176,7 +167,7 @@ public class TradeStationApiClient : IDisposable
     /// </param>
     public async Task<bool> CancelOrder(string orderID)
     {
-        await RequestAsync<TradeStationAccount>(_baseUrl, $"/v3/orderexecution/orders/{orderID}", HttpMethod.Delete);
+        await RequestAsync<TradeStationAccount>($"/v3/orderexecution/orders/{orderID}", HttpMethod.Delete);
         return true;
     }
 
@@ -259,8 +250,8 @@ public class TradeStationApiClient : IDisposable
                 break;
         }
 
-        return await RequestAsync<TradeStationPlaceOrderResponse>(_baseUrl, "/v3/orderexecution/orders", HttpMethod.Post,
-            JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings)
+        return await RequestAsync<TradeStationPlaceOrderResponse>("/v3/orderexecution/orders", HttpMethod.Post,
+            JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings), retryOnTimeout: false
         );
     }
 
@@ -306,7 +297,7 @@ public class TradeStationApiClient : IDisposable
         tradeStationOrder.OrderType = leanOrderType.ConvertLeanOrderTypeToTradeStation();
 
 
-        var result = await RequestAsync<Models.OrderResponse>(_baseUrl, $"/v3/orderexecution/orders/{brokerId}", HttpMethod.Put,
+        var result = await RequestAsync<Models.OrderResponse>($"/v3/orderexecution/orders/{brokerId}", HttpMethod.Put,
             JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
 
         if (result.Error != null)
@@ -329,7 +320,7 @@ public class TradeStationApiClient : IDisposable
     /// <param name="cancellationToken">A token to cancel the asynchronous operation.</param>
     public async IAsyncEnumerable<string> StreamOrders([EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        await foreach (var response in StreamRequestAsyncEnumerable($"{_baseUrl}/v3/brokerage/stream/accounts/{_accountID.Value}/orders", cancellationToken))
+        await foreach (var response in StreamRequestAsyncEnumerable($"/v3/brokerage/stream/accounts/{_accountID.Value}/orders", cancellationToken))
         {
             yield return response;
         }
@@ -349,7 +340,7 @@ public class TradeStationApiClient : IDisposable
     /// </remarks>
     public async IAsyncEnumerable<Quote> StreamQuotes(IReadOnlyCollection<string> symbols, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        await foreach (var response in StreamRequestAsyncEnumerable($"{_baseUrl}/v3/marketdata/stream/quotes/{string.Join(",", symbols)}", cancellationToken))
+        await foreach (var response in StreamRequestAsyncEnumerable($"/v3/marketdata/stream/quotes/{string.Join(",", symbols)}", cancellationToken))
         {
             // Skip processing the heartbeat response as it only indicates the stream is alive
             if (response.Contains("Heartbeat", StringComparison.InvariantCultureIgnoreCase))
@@ -372,7 +363,7 @@ public class TradeStationApiClient : IDisposable
 
     public async Task<TradeStationQuoteSnapshot> GetQuoteSnapshot(string ticker)
     {
-        return await RequestAsync<TradeStationQuoteSnapshot>(_baseUrl, $"/v3/marketdata/quotes/{ticker}", HttpMethod.Get);
+        return await RequestAsync<TradeStationQuoteSnapshot>($"/v3/marketdata/quotes/{ticker}", HttpMethod.Get);
     }
 
     /// <summary>
@@ -479,7 +470,7 @@ public class TradeStationApiClient : IDisposable
     /// </returns>
     public async Task<TradeStationRoute> GetRoutes()
     {
-        return await RequestAsync<TradeStationRoute>(_baseUrl, "/v3/orderexecution/routes", HttpMethod.Get);
+        return await RequestAsync<TradeStationRoute>("/v3/orderexecution/routes", HttpMethod.Get);
     }
 
     /// <summary>
@@ -512,7 +503,7 @@ public class TradeStationApiClient : IDisposable
         var bars = default(IEnumerable<TradeStationBar>);
         try
         {
-            bars = (await RequestAsync<TradeStationBars>(_baseUrl, url.ToString(), HttpMethod.Get)).Bars;
+            bars = (await RequestAsync<TradeStationBars>(url.ToString(), HttpMethod.Get)).Bars;
         }
         catch (Exception ex)
         {
@@ -535,7 +526,7 @@ public class TradeStationApiClient : IDisposable
     /// </returns>
     private async Task<TradeStationOptionExpiration> GetOptionExpirations(string ticker)
     {
-        return await RequestAsync<TradeStationOptionExpiration>(_baseUrl, $"/v3/marketdata/options/expirations/{ticker}", HttpMethod.Get);
+        return await RequestAsync<TradeStationOptionExpiration>($"/v3/marketdata/options/expirations/{ticker}", HttpMethod.Get);
     }
 
     /// <summary>
@@ -548,7 +539,7 @@ public class TradeStationApiClient : IDisposable
     /// </returns>
     private async Task<TradeStationOptionStrike> GetOptionStrikes(string underlying, DateTime expirationDate)
     {
-        return await RequestAsync<TradeStationOptionStrike>(_baseUrl, $"/v3/marketdata/options/strikes/{underlying}?expiration={expirationDate.ToStringInvariant("MM-dd-yyyy")}", HttpMethod.Get);
+        return await RequestAsync<TradeStationOptionStrike>($"/v3/marketdata/options/strikes/{underlying}?expiration={expirationDate.ToStringInvariant("MM-dd-yyyy")}", HttpMethod.Get);
     }
 
     /// <summary>
@@ -560,7 +551,7 @@ public class TradeStationApiClient : IDisposable
     /// </returns>
     private async Task<TradeStationOrderResponse> GetOrdersByAccountID(string accountID)
     {
-        return await RequestAsync<TradeStationOrderResponse>(_baseUrl, $"/v3/brokerage/accounts/{accountID}/orders", HttpMethod.Get);
+        return await RequestAsync<TradeStationOrderResponse>($"/v3/brokerage/accounts/{accountID}/orders", HttpMethod.Get);
     }
 
     /// <summary>
@@ -570,7 +561,7 @@ public class TradeStationApiClient : IDisposable
     /// <returns></returns>
     private async Task<TradeStationPosition> GetPositions(string accountID)
     {
-        return await RequestAsync<TradeStationPosition>(_baseUrl, $"/v3/brokerage/accounts/{accountID}/positions", HttpMethod.Get);
+        return await RequestAsync<TradeStationPosition>($"/v3/brokerage/accounts/{accountID}/positions", HttpMethod.Get);
     }
 
     /// <summary>
@@ -604,7 +595,7 @@ public class TradeStationApiClient : IDisposable
     /// </returns>
     private async Task<IEnumerable<Account>> GetAccounts()
     {
-        return (await RequestAsync<TradeStationAccount>(_baseUrl, "/v3/brokerage/accounts", HttpMethod.Get)).Accounts;
+        return (await RequestAsync<TradeStationAccount>("/v3/brokerage/accounts", HttpMethod.Get)).Accounts;
     }
 
     /// <summary>
@@ -616,7 +607,7 @@ public class TradeStationApiClient : IDisposable
     /// </returns>
     private async Task<TradeStationBalance> GetBalanceByID(string accountID)
     {
-        return await RequestAsync<TradeStationBalance>(_baseUrl, $"/v3/brokerage/accounts/{accountID}/balances", HttpMethod.Get);
+        return await RequestAsync<TradeStationBalance>($"/v3/brokerage/accounts/{accountID}/balances", HttpMethod.Get);
     }
 
     /// <summary>
@@ -643,55 +634,55 @@ public class TradeStationApiClient : IDisposable
     /// Sends an HTTP request asynchronously and deserializes the response content to the specified type.
     /// </summary>
     /// <typeparam name="T">The type to deserialize the response content to.</typeparam>
-    /// <param name="baseUrl">The base URL of the request.</param>
     /// <param name="resource">The resource path of the request relative to the base URL.</param>
     /// <param name="httpMethod">The HTTP method of the request.</param>
     /// <param name="jsonBody">Optional. The JSON body of the request.</param>
+    /// <param name="retryOnTimeout">If true, the method will retry when an attempt times out (default: true).</param>
     /// <returns>
     /// A task representing the asynchronous operation. The task result contains the deserialized response content.
     /// </returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="baseUrl"/>, <paramref name="resource"/>, or <paramref name="httpMethod"/> is null.</exception>
-    /// <exception cref="HttpRequestException">Thrown when the HTTP request fails.</exception>
     /// <exception cref="JsonException">Thrown when the JSON deserialization fails.</exception>
     /// <exception cref="Exception">Thrown when an unexpected error occurs.</exception>
-    private async Task<T> RequestAsync<T>(string baseUrl, string resource, HttpMethod httpMethod, string jsonBody = null)
+    private async Task<T> RequestAsync<T>(string resource, HttpMethod httpMethod, string jsonBody = null, bool retryOnTimeout = true)
     {
-        using (var requestMessage = new HttpRequestMessage(httpMethod, $"{baseUrl}{resource}"))
-        {
-            if (jsonBody != null)
-            {
-                requestMessage.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
-            }
+        using var responseMessage = await _httpClient.SendAsync(resource, httpMethod, jsonBody, retryOnTimeout);
 
+        if (!responseMessage.IsSuccessStatusCode)
+        {
+            var error = await responseMessage.Content.ReadAsStringAsync();
+            var message = default(string);
             try
             {
-                var responseMessage = await _httpClient.SendAsync(requestMessage);
-
-                if (!responseMessage.IsSuccessStatusCode)
-                {
-                    throw new Exception(JsonConvert.DeserializeObject<TradeStationError>(await responseMessage.Content.ReadAsStringAsync()).Message);
-                }
-
-                var response = await responseMessage.Content.ReadAsStringAsync();
-
-                var deserializeResponse = JsonConvert.DeserializeObject<T>(response);
-
-                if (deserializeResponse is ITradeStationError errors && errors.Errors != null)
-                {
-                    foreach (var positionError in errors.Errors)
-                    {
-                        throw new Exception($"Error in {nameof(TradeStationApiClient)}.{nameof(RequestAsync)}: {positionError.Message} while accessing resource: {resource}");
-                    }
-                }
-
-                return deserializeResponse;
+                message = JsonConvert.DeserializeObject<TradeStationError>(error).Message;
             }
-            catch (Exception ex)
+            catch
             {
-                Log.Error($"{nameof(TradeStationApiClient)}.{nameof(RequestAsync)}.Exception: {ex}. Request: {requestMessage.Method} {requestMessage.RequestUri}");
-                throw;
+                message = $"Request: [{responseMessage.RequestMessage.Method}]({responseMessage.RequestMessage.RequestUri}), " +
+                    $"Response: [{responseMessage.ReasonPhrase}]({(int)responseMessage.StatusCode}). Reason: {error}";
             }
+
+            throw new Exception(message);
         }
+
+        var response = await responseMessage.Content.ReadAsStringAsync();
+
+        var deserializeResponse = default(T);
+        try
+        {
+            deserializeResponse = JsonConvert.DeserializeObject<T>(response);
+        }
+        catch (JsonException ex)
+        {
+            Log.Error($"{nameof(TradeStationApiClient)}.{nameof(RequestAsync)}.{ex.GetType().Name}: {ex.Message}. Request: [{httpMethod}]({resource}). Response: {response}.\n{ex}");
+            throw;
+        }
+
+        if (deserializeResponse is ITradeStationError errors && errors.Errors?.Count > 0)
+        {
+            throw new Exception($"Error in {nameof(TradeStationApiClient)}.{nameof(RequestAsync)}: {string.Join(',', errors.Errors)} while accessing resource: {resource}");
+        }
+
+        return deserializeResponse;
     }
 
     /// <summary>
@@ -711,24 +702,21 @@ public class TradeStationApiClient : IDisposable
     /// The <paramref name="cancellationToken"/> can be used to cancel the operation at any time.
     /// If the cancellation is requested, the method will stop reading and yielding lines.
     /// </remarks>
-    private async IAsyncEnumerable<string> StreamRequestAsyncEnumerable(string requestUri, [EnumeratorCancellation] CancellationToken cancellationToken)
+    private async IAsyncEnumerable<string> StreamRequestAsyncEnumerable(string resource, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        using (var request = new HttpRequestMessage(HttpMethod.Get, requestUri))
+        using (var response = await _httpClient.GetStreamAsync(resource, cancellationToken).ConfigureAwait(false))
         {
-            using (var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
-            {
-                response.EnsureSuccessStatusCode();
+            response.EnsureSuccessStatusCode();
 
-                using (var stream = await response.Content.ReadAsStreamAsync(cancellationToken))
+            using (var stream = await response.Content.ReadAsStreamAsync(cancellationToken))
+            {
+                using (StreamReader reader = new StreamReader(stream))
                 {
-                    using (StreamReader reader = new StreamReader(stream))
+                    while (!reader.EndOfStream)
                     {
-                        while (!reader.EndOfStream)
-                        {
-                            var jsonLine = await reader.ReadLineAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
-                            if (jsonLine == null || cancellationToken.IsCancellationRequested) break;
-                            yield return jsonLine;
-                        }
+                        var jsonLine = await reader.ReadLineAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
+                        if (jsonLine == null || cancellationToken.IsCancellationRequested) break;
+                        yield return jsonLine;
                     }
                 }
             }

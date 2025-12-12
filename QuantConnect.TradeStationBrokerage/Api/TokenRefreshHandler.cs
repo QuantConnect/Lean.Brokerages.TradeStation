@@ -138,41 +138,27 @@ public class TokenRefreshHandler : DelegatingHandler
                 request.Headers.Authorization = new AuthenticationHeaderValue(_tradeStationAccessToken.TokenType, _tradeStationAccessToken.AccessToken);
             }
 
-            try
-            {
-                response = await base.SendAsync(request, cancellationToken);
+            response = await base.SendAsync(request, cancellationToken);
 
-                if (response.IsSuccessStatusCode)
+            if (response.IsSuccessStatusCode)
+            {
+                break;
+            }
+            else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                if (_tradeStationAccessToken == null && string.IsNullOrEmpty(_refreshToken))
                 {
-                    break;
-                }
-                else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-                {
-                    if (_tradeStationAccessToken == null && string.IsNullOrEmpty(_refreshToken))
-                    {
-                        _tradeStationAccessToken = await GetAuthenticateToken(cancellationToken);
-                        _refreshToken = _tradeStationAccessToken.RefreshToken;
-                    }
-                    else
-                    {
-                        _tradeStationAccessToken = await RefreshAccessToken(_refreshToken, cancellationToken);
-                    }
+                    _tradeStationAccessToken = await GetAuthenticateToken(cancellationToken);
+                    _refreshToken = _tradeStationAccessToken.RefreshToken;
                 }
                 else
                 {
-                    break;
+                    _tradeStationAccessToken = await RefreshAccessToken(_refreshToken, cancellationToken);
                 }
             }
-            catch (Exception ex)
+            else
             {
-                // This means either HttpClient timeout or user cancellation
-                Logging.Log.Error($"{nameof(TokenRefreshHandler)}.{nameof(SendAsync)}.{nameof(TaskCanceledException)}: {ex}. " +
-                    $"Request: {request.Method} {request.RequestUri}, attempt {_retryCount + 1}/{_maxRetryCount}.");
-
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
+                break;
             }
 
             await Task.Delay(_retryInterval, cancellationToken);
