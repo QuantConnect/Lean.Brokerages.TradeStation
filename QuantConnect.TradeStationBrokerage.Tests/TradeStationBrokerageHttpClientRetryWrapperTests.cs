@@ -53,7 +53,7 @@ public class TradeStationBrokerageHttpClientRetryWrapperTests
     {
         var apiClient = TradeStationBrokerageAdditionalTests.CreateTradeStationApiClient();
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
 
         var heartbeatResponseCounter = default(int);
         await foreach (var response in apiClient.StreamOrders(cts.Token))
@@ -64,7 +64,7 @@ public class TradeStationBrokerageHttpClientRetryWrapperTests
             {
                 heartbeatResponseCounter += 1;
 
-                if (heartbeatResponseCounter >= 2)
+                if (heartbeatResponseCounter >= 10)
                 {
                     cts.Cancel();
                 }
