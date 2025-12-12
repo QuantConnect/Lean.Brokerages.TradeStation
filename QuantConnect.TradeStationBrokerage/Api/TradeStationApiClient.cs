@@ -649,7 +649,19 @@ public class TradeStationApiClient : IDisposable
 
         if (!responseMessage.IsSuccessStatusCode)
         {
-            throw new Exception(JsonConvert.DeserializeObject<TradeStationError>(await responseMessage.Content.ReadAsStringAsync()).Message);
+            var error = await responseMessage.Content.ReadAsStringAsync();
+            var message = default(string);
+            try
+            {
+                message = JsonConvert.DeserializeObject<TradeStationError>(error).Message;
+            }
+            catch
+            {
+                message = $"Request: [{responseMessage.RequestMessage.Method}]({responseMessage.RequestMessage.RequestUri}), " +
+                    $"Response: [{responseMessage.ReasonPhrase}]({(int)responseMessage.StatusCode}). Reason: {error}";
+            }
+
+            throw new Exception(message);
         }
 
         var response = await responseMessage.Content.ReadAsStringAsync();
