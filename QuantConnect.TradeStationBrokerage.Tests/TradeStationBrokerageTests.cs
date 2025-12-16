@@ -1169,6 +1169,92 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             }
         }
 
+        [Test, Explicit("Runs only in live trading. Simulated environment does not support partial fills.")]
+        public void PlacePartialLimitOrderThenCancel()
+        {
+            // "ALUR.W" - illiquid asset
+            var symbol = Symbol.Create("ALUR.W", SecurityType.Equity, Market.USA);
+
+            var orderFee = 5m;
+            var lastPrice = _brokerage.GetPrice(symbol); // price >= 0.02
+            var cashBalance = Brokerage.GetCashBalance().Single(x => x.Currency == Currencies.USD).Amount;
+
+            var orderQuantity = Math.Round((cashBalance - orderFee) / lastPrice.Ask, MidpointRounding.ToZero);
+            var limitOrder = new LimitOrder(symbol, orderQuantity, lastPrice.Ask - 0.001m, DateTime.UtcNow);
+
+            OrderProvider.Add(limitOrder);
+
+            using var cts = new CancellationTokenSource();
+            void BrokerageOrdersStatusChanged(object sender, List<OrderEvent> orderEvents)
+            {
+                limitOrder.Status = orderEvents[0].Status;
+
+                Log.Trace("");
+                Log.Trace($"PlacePartialLimitOrderThenCancel.OrderEvent.Status: {limitOrder.Status}");
+                Log.Trace("");
+            }
+
+            Brokerage.OrdersStatusChanged += BrokerageOrdersStatusChanged;
+
+            if (!Brokerage.PlaceOrder(limitOrder))
+            {
+                Assert.Fail("Brokerage failed to place the order: " + limitOrder);
+            }
+
+            if (!TryWaitOrderStatusChange(limitOrder, OrderStatus.Submitted, TimeSpan.FromSeconds(5), cts.Token))
+            {
+                Assert.Fail($"PlacePartialLimitOrderThenCancel: the brokerage didn't acknowledge order submission");
+            }
+
+            if (!TryWaitOrderStatusChange(limitOrder, OrderStatus.PartiallyFilled, TimeSpan.FromSeconds(20), cts.Token))
+            {
+                if (limitOrder.Status.IsClosed())
+                {
+                    Assert.Fail($"PlacePartialLimitOrderThenCancel: the order was updated status to '{limitOrder.Status}' prematurely.");
+                }
+
+                if (!TryWaitOrderStatusChange(limitOrder, OrderStatus.PartiallyFilled, TimeSpan.FromSeconds(20), cts.Token))
+                {
+                    Assert.Fail($"PlacePartialLimitOrderThenCancel: the brokerage didn't acknowledge order partial filled");
+                }
+
+            }
+
+            if (!Brokerage.CancelOrder(limitOrder))
+            {
+                Assert.Fail($"PlacePartialLimitOrderThenCancel: Brokerage failed to cancel the order: " + limitOrder);
+            }
+
+            Brokerage.OrdersStatusChanged -= BrokerageOrdersStatusChanged;
+
+            Assert.AreEqual(OrderStatus.Canceled, limitOrder.Status, $"The actual status order is '{limitOrder.Status}'");
+        }
+
+        /// <summary>
+        /// Waits until the order reaches the expected status, is closed, or the timeout expires.
+        /// Intended for use in tests to synchronously observe order state transitions.
+        /// </summary>
+        private static bool TryWaitOrderStatusChange(Order order, OrderStatus expectedStatus, TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            while (DateTime.UtcNow < deadline && !cancellationToken.IsCancellationRequested)
+            {
+                if (order.Status == expectedStatus)
+                {
+                    return true;
+                }
+
+                if (order.Status.IsClosed())
+                {
+                    return false;
+                }
+
+                cancellationToken.WaitHandle.WaitOne(TimeSpan.FromMilliseconds(300));
+            }
+
+            return false;
+        }
+
         /// <summary>
         /// Adds a value to a base number and rounds the result to the nearest specified increment.
         /// </summary>

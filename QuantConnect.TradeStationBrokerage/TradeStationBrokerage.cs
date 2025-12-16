@@ -886,6 +886,10 @@ public partial class TradeStationBrokerage : Brokerage
                         eventMessage = "Expired";
                         globalLeanOrderStatus = OrderStatus.Canceled;
                         break;
+                    case TradeStationOrderStatusType.FLP:
+                        eventMessage = "PartiallyFilled (Cancelled)";
+                        globalLeanOrderStatus = OrderStatus.Canceled;
+                        break;
                     // Sometimes, a Out event is received without the ClosedDateTime property set.
                     // Subsequently, another event is received with the ClosedDateTime property correctly populated.
                     case TradeStationOrderStatusType.Out when brokerageOrder.ClosedDateTime != default:
@@ -898,9 +902,9 @@ public partial class TradeStationBrokerage : Brokerage
                         globalLeanOrderStatus = OrderStatus.Canceled;
                         break;
                     default:
-                        Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}.TradeStationStreamStatus: {json}");
+                        Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}.TradeStationStreamStatus: {json}");
                         return;
-                };
+                }
 
                 var leanOrders = new List<Order>();
                 if (!TryGetOrRemoveCrossZeroOrder(brokerageOrder.OrderID, globalLeanOrderStatus, out var crossZeroLeanOrder))
