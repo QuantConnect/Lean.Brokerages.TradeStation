@@ -887,7 +887,7 @@ public partial class TradeStationBrokerage : Brokerage
                         globalLeanOrderStatus = OrderStatus.Canceled;
                         break;
                     case TradeStationOrderStatusType.FLP:
-                        eventMessage = "PartiallyFilled (Cancelled)";
+                        eventMessage = "PartiallyFilled (Canceled)";
                         globalLeanOrderStatus = OrderStatus.Canceled;
                         break;
                     // Sometimes, a Out event is received without the ClosedDateTime property set.
