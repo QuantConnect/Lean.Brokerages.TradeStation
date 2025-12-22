@@ -14,7 +14,6 @@
 */
 
 using System;
-using RestSharp;
 using System.IO;
 using System.Net;
 using System.Text;
@@ -45,6 +44,7 @@ using QuantConnect.Brokerages.LevelOneOrderBook;
 using QuantConnect.Brokerages.TradeStation.Models;
 using TimeInForce = QuantConnect.Orders.TimeInForce;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
+using System.Net.Http;
 
 [assembly: InternalsVisibleTo("QuantConnect.Brokerages.TradeStation.Tests")]
 
@@ -1106,7 +1106,7 @@ public partial class TradeStationBrokerage : Brokerage
                     // This should never happen
                     default:
                         throw new NotSupportedException("The specified order position is not supported.");
-                };
+                }
                 break;
             default:
                 // futures are just buy or sell
@@ -1395,8 +1395,8 @@ public partial class TradeStationBrokerage : Brokerage
             {
                 information.Add("organizationId", organizationId);
             }
-            var request = new RestRequest("modules/license/read", Method.POST) { RequestFormat = DataFormat.Json };
-            request.AddParameter("application/json", JsonConvert.SerializeObject(information), ParameterType.RequestBody);
+            // Create HTTP request
+            using var request = ApiUtils.CreateJsonPostRequest("modules/license/read", information);
             api.TryRequest(request, out ModulesReadLicenseRead result);
             if (!result.Success)
             {
