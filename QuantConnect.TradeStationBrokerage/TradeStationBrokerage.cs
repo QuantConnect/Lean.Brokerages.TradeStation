@@ -171,6 +171,11 @@ public partial class TradeStationBrokerage : Brokerage
     public override bool IsConnected { get => _isSubscribeOnStreamOrderUpdate; }
 
     /// <summary>
+    /// Enables or disables concurrent processing of messages to and from the brokerage.
+    /// </summary>
+    public override bool ConcurrencyEnabled => true;
+
+    /// <summary>
     /// Parameterless constructor for brokerage
     /// </summary>
     public TradeStationBrokerage() : base("TradeStation")
@@ -270,7 +275,7 @@ public partial class TradeStationBrokerage : Brokerage
             Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(Initialize)}: AccountID: {accountId} - AccountType: {_tradeStationAccountType}");
         }
 
-        _messageHandler = new(HandleTradeStationMessage);
+        _messageHandler = new(HandleTradeStationMessage, ConcurrencyEnabled);
 
         _aggregator = Composer.Instance.GetPart<IDataAggregator>();
         if (_aggregator == null)
