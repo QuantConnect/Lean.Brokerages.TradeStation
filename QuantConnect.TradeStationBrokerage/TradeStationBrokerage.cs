@@ -955,7 +955,11 @@ public partial class TradeStationBrokerage : Brokerage
 
                                 if (order.Id == 0)
                                 {
-                                    //TODO: Add warning SetBrokerageMessageHandler
+                                    OnBrokerageMessageEventHandler(this,
+                                        new BrokerageMessageEvent(
+                                            BrokerageMessageType.Warning,
+                                            "TradeStationClientOrder",
+                                            "Unrecognized brokerage order. To allow Lean to observe and manage orders placed manually via the TradeStation client, call 'SetBrokerageMessageHandler(...)' in your algorithm."));
                                     leanOrders = null;
                                     break;
                                 }
