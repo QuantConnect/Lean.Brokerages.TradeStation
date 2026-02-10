@@ -108,6 +108,13 @@ public partial class TradeStationBrokerage : Brokerage
     private ConcurrentDictionary<string, bool> _skipWebSocketUpdatesForLeanOrders = [];
 
     /// <summary>
+    /// Indicates whether the warning about unrecognized client-placed TradeStation orders
+    /// has already been emitted. This prevents spamming the same message when multiple
+    /// unmanaged orders are received from the TradeStation client.
+    /// </summary>
+    private bool _unrecognizedClientOrderWarningEmitted;
+
+    /// <summary>
     /// A concurrent dictionary to store the order ID and the corresponding filled quantity.
     /// </summary>
     private ConcurrentDictionary<int, decimal> _orderIdToFillQuantity = new();
@@ -955,11 +962,16 @@ public partial class TradeStationBrokerage : Brokerage
 
                                 if (order.Id == 0)
                                 {
-                                    OnBrokerageMessageEventHandler(this,
-                                        new BrokerageMessageEvent(
-                                            BrokerageMessageType.Warning,
-                                            "TradeStationClientOrder",
-                                            "Unrecognized brokerage order. To allow Lean to observe and manage orders placed manually via the TradeStation client, call 'SetBrokerageMessageHandler(...)' in your algorithm."));
+                                    if (!_unrecognizedClientOrderWarningEmitted)
+                                    {
+                                        _unrecognizedClientOrderWarningEmitted = true;
+                                        OnBrokerageMessageEventHandler(this,
+                                            new BrokerageMessageEvent(
+                                                BrokerageMessageType.Warning,
+                                                "TradeStationClientOrder",
+                                                "Unrecognized brokerage order. To allow Lean to observe and manage orders placed manually via the TradeStation client, call 'SetBrokerageMessageHandler(...)' in your algorithm."));
+
+                                    }
                                     leanOrders = null;
                                     break;
                                 }
