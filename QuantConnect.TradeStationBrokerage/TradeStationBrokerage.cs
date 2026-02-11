@@ -100,6 +100,14 @@ public partial class TradeStationBrokerage : Brokerage
     private ConcurrentDictionary<string, bool> _updateSubmittedResponseResultByBrokerageID = new();
 
     /// <summary>
+    /// Contains brokerage order IDs for orders placed by Lean whose WebSocket updates
+    /// should be ignored in <see cref="HandleTradeStationMessage"/>.
+    /// This prevents WebSocket events from interfering with Lean-driven order lifecycle
+    /// management. Manually placed TWS orders are always processed.
+    /// </summary>
+    private ConcurrentDictionary<string, bool> _skipWebSocketUpdatesForLeanOrders = [];
+
+    /// <summary>
     /// A concurrent dictionary to store the order ID and the corresponding filled quantity.
     /// </summary>
     private ConcurrentDictionary<int, decimal> _orderIdToFillQuantity = new();
@@ -316,45 +324,57 @@ public partial class TradeStationBrokerage : Brokerage
 
         foreach (var order in orders.Orders.Where(o => o.Status is TradeStationOrderStatusType.Ack or TradeStationOrderStatusType.Don))
         {
-            if (order.Legs.Count == 1)
+            if (TryConvertToLeanOrder(order, out var convertedOrders))
             {
-                var leg = order.Legs.First();
-
-                if (TryCreateLeanOrder(order, leg, out var leanOrder))
-                {
-                    leanOrders.Add(leanOrder);
-                }
-            }
-            else
-            {
-                var groupQuantity = GroupOrderExtensions.GetGroupQuantityByEachLegQuantity(
-                    order.Legs.Select(leg => leg.QuantityOrdered),
-                    decimal.IsNegative(order.LimitPrice) ? OrderDirection.Sell : OrderDirection.Buy
-                );
-                var groupOrderManager = new GroupOrderManager(order.Legs.Count, groupQuantity);
-
-                var tempLegOrders = new List<Order>();
-                foreach (var leg in order.Legs)
-                {
-                    if (TryCreateLeanOrder(order, leg, out var leanOrder, groupOrderManager))
-                    {
-                        tempLegOrders.Add(leanOrder);
-                    }
-                    else
-                    {
-                        // If any leg fails to create a Lean order, clear tempLegOrders to prevent partial group orders.
-                        tempLegOrders.Clear();
-                        break;
-                    }
-                }
-
-                if (tempLegOrders.Count > 0)
-                {
-                    leanOrders.AddRange(tempLegOrders);
-                }
+                leanOrders.AddRange(convertedOrders);
             }
         }
         return leanOrders;
+    }
+
+    private bool TryConvertToLeanOrder(TradeStationOrder order, out List<Order> leanOrders)
+    {
+        if (order.Legs.Count == 1)
+        {
+            var leg = order.Legs.First();
+
+            if (TryCreateLeanOrder(order, leg, out var leanOrder))
+            {
+                leanOrders = [leanOrder];
+                return true;
+            }
+        }
+        else
+        {
+            var groupQuantity = GroupOrderExtensions.GetGroupQuantityByEachLegQuantity(
+                order.Legs.Select(leg => leg.QuantityOrdered),
+                decimal.IsNegative(order.LimitPrice) ? OrderDirection.Sell : OrderDirection.Buy
+            );
+            var groupOrderManager = new GroupOrderManager(order.Legs.Count, groupQuantity);
+
+            var tempLegOrders = new List<Order>();
+            foreach (var leg in order.Legs)
+            {
+                if (TryCreateLeanOrder(order, leg, out var leanOrder, groupOrderManager))
+                {
+                    tempLegOrders.Add(leanOrder);
+                }
+                else
+                {
+                    // If any leg fails to create a Lean order, clear tempLegOrders to prevent partial group orders.
+                    tempLegOrders.Clear();
+                    break;
+                }
+            }
+
+            if (tempLegOrders.Count > 0)
+            {
+                leanOrders = tempLegOrders;
+                return true;
+            }
+        }
+        leanOrders = null;
+        return false;
     }
 
     /// <summary>
@@ -608,6 +628,7 @@ public partial class TradeStationBrokerage : Brokerage
                     order.BrokerId.Add(brokerageOrder.OrderID);
                 }
 
+                _skipWebSocketUpdatesForLeanOrders[brokerageOrder.OrderID] = true;
                 if (isSubmittedEvent)
                 {
                     OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event")
@@ -869,9 +890,16 @@ public partial class TradeStationBrokerage : Brokerage
                 switch (brokerageOrder.Status)
                 {
                     case TradeStationOrderStatusType.Ack:
+                    case TradeStationOrderStatusType.Don: // The event occurs during extended market hours
                         // Remove the order entry when the order is acknowledged (indicating successful submission)
-                        _updateSubmittedResponseResultByBrokerageID.TryRemove(new(brokerageOrder.OrderID, true));
-                        return;
+                        if (_updateSubmittedResponseResultByBrokerageID.TryRemove(new(brokerageOrder.OrderID, true))
+                            || _skipWebSocketUpdatesForLeanOrders.TryRemove(brokerageOrder.OrderID, out _))
+                        {
+                            return;
+                        }
+                        // Handle manually submitted order by TradeStation clients
+                        globalLeanOrderStatus = OrderStatus.Submitted;
+                        break;
                     // Sometimes, a filled event is received without the ClosedDateTime property set.
                     // Subsequently, another event is received with the ClosedDateTime property correctly populated.
                     case TradeStationOrderStatusType.Fll:
@@ -885,6 +913,7 @@ public partial class TradeStationBrokerage : Brokerage
                     case TradeStationOrderStatusType.Tsc:
                     case TradeStationOrderStatusType.Rjr:
                     case TradeStationOrderStatusType.Bro:
+                        eventMessage = brokerageOrder.RejectReason;
                         globalLeanOrderStatus = OrderStatus.Invalid;
                         break;
                     case TradeStationOrderStatusType.Exp:
@@ -915,6 +944,46 @@ public partial class TradeStationBrokerage : Brokerage
                 if (!TryGetOrRemoveCrossZeroOrder(brokerageOrder.OrderID, globalLeanOrderStatus, out var crossZeroLeanOrder))
                 {
                     leanOrders = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID);
+
+                    if (leanOrders == null || leanOrders.Count == 0)
+                    {
+                        if (TryConvertToLeanOrder(brokerageOrder, out leanOrders))
+                        {
+                            var shouldSubmittedOrderEvents = new List<OrderEvent>();
+                            foreach (var order in leanOrders)
+                            {
+                                OnNewBrokerageOrderNotification(new NewBrokerageOrderNotificationEventArgs(order));
+
+                                if (order.Id == 0)
+                                {
+                                    shouldSubmittedOrderEvents.Clear();
+                                    leanOrders = null;
+                                    break;
+                                }
+
+                                shouldSubmittedOrderEvents.Add(
+                                    new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"Order was submitted outside Lean")
+                                    { Status = OrderStatus.Submitted });
+                            }
+
+                            if (globalLeanOrderStatus != OrderStatus.Submitted
+                                && shouldSubmittedOrderEvents.Count > 0)
+                            {
+                                OnOrderEvents(shouldSubmittedOrderEvents);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Applies only to user-placed TWS orders.
+                        // Lean-managed orders are handled in PlaceOrder() / UpdateOrder().
+                        // If TradeStation sends Ack/Done for an existing Lean order, handle it as an update
+                        // to keep the Lean order lifecycle consistent.
+                        if (brokerageOrder.Status is TradeStationOrderStatusType.Ack or TradeStationOrderStatusType.Don)
+                        {
+                            globalLeanOrderStatus = OrderStatus.UpdateSubmitted;
+                        }
+                    }
                 }
                 else
                 {
