@@ -949,15 +949,27 @@ public partial class TradeStationBrokerage : Brokerage
                     {
                         if (TryConvertToLeanOrder(brokerageOrder, out leanOrders))
                         {
+                            var shouldSubmittedOrderEvents = new List<OrderEvent>();
                             foreach (var order in leanOrders)
                             {
                                 OnNewBrokerageOrderNotification(new NewBrokerageOrderNotificationEventArgs(order));
 
                                 if (order.Id == 0)
                                 {
+                                    shouldSubmittedOrderEvents.Clear();
                                     leanOrders = null;
                                     break;
                                 }
+
+                                shouldSubmittedOrderEvents.Add(
+                                    new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"Order was submitted outside Lean")
+                                    { Status = OrderStatus.Submitted });
+                            }
+
+                            if (globalLeanOrderStatus != OrderStatus.Submitted
+                                && shouldSubmittedOrderEvents.Count > 0)
+                            {
+                                OnOrderEvents(shouldSubmittedOrderEvents);
                             }
                         }
                     }
@@ -967,8 +979,7 @@ public partial class TradeStationBrokerage : Brokerage
                         // Lean-managed orders are handled in PlaceOrder() / UpdateOrder().
                         // If TradeStation sends Ack/Done for an existing Lean order, handle it as an update
                         // to keep the Lean order lifecycle consistent.
-                        if (brokerageOrder.Status is TradeStationOrderStatusType.Ack or TradeStationOrderStatusType.Don
-                            && leanOrders[0].Status is OrderStatus.Submitted or OrderStatus.UpdateSubmitted)
+                        if (brokerageOrder.Status is TradeStationOrderStatusType.Ack or TradeStationOrderStatusType.Don)
                         {
                             globalLeanOrderStatus = OrderStatus.UpdateSubmitted;
                         }
