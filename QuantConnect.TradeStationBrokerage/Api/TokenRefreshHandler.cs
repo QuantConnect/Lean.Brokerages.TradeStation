@@ -179,15 +179,18 @@ public class TokenRefreshHandler : DelegatingHandler
             return _tradeStationAccessToken;
         }
 
+        var newToken = default(TradeStationAccessToken);
         if (string.IsNullOrEmpty(_refreshToken))
         {
-            _tradeStationAccessToken = await GetAuthenticateToken(cancellationToken);
-            _refreshToken = _tradeStationAccessToken.RefreshToken;
+            newToken = await GetAuthenticateToken(cancellationToken);
+            _refreshToken = newToken.RefreshToken;
         }
         else
         {
-            _tradeStationAccessToken = await RefreshAccessToken(_refreshToken, cancellationToken);
+            newToken = await RefreshAccessToken(_refreshToken, cancellationToken);
         }
+
+        _tradeStationAccessToken = newToken;
 
         return _tradeStationAccessToken;
     }
