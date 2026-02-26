@@ -136,7 +136,7 @@ public class TokenRefreshHandler : DelegatingHandler
         {
             lock (_tokenLock)
             {
-                var accessToken = GetOrRefreshAccessToken(cancellationToken);
+                var accessToken = GetOrRefreshAccessToken(cancellationToken).SynchronouslyAwaitTaskResult();
                 request.Headers.Authorization = new AuthenticationHeaderValue(accessToken.TokenType, accessToken.AccessToken);
             }
 
@@ -171,7 +171,7 @@ public class TokenRefreshHandler : DelegatingHandler
     /// </summary>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>A valid <see cref="TradeStationAccessToken"/>.</returns>
-    private TradeStationAccessToken GetOrRefreshAccessToken(CancellationToken cancellationToken)
+    private async Task<TradeStationAccessToken> GetOrRefreshAccessToken(CancellationToken cancellationToken)
     {
         // Double-check inside lock — another thread may have already refreshed
         if (_tradeStationAccessToken != null && !_tradeStationAccessToken.IsExpired)
@@ -181,12 +181,12 @@ public class TokenRefreshHandler : DelegatingHandler
 
         if (string.IsNullOrEmpty(_refreshToken))
         {
-            _tradeStationAccessToken = GetAuthenticateToken(cancellationToken).SynchronouslyAwaitTaskResult();
+            _tradeStationAccessToken = await GetAuthenticateToken(cancellationToken);
             _refreshToken = _tradeStationAccessToken.RefreshToken;
         }
         else
         {
-            _tradeStationAccessToken = RefreshAccessToken(_refreshToken, cancellationToken).SynchronouslyAwaitTaskResult();
+            _tradeStationAccessToken = await RefreshAccessToken(_refreshToken, cancellationToken);
         }
 
         return _tradeStationAccessToken;
