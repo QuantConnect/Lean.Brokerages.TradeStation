@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -190,9 +190,7 @@ public class TokenRefreshHandler : DelegatingHandler
             newToken = await RefreshAccessToken(_refreshToken, cancellationToken);
         }
 
-        _tradeStationAccessToken = newToken;
-
-        return _tradeStationAccessToken;
+        return _tradeStationAccessToken = newToken;
     }
 
     /// <summary>
