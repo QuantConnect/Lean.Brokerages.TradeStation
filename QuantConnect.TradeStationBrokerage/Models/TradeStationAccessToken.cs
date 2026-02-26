@@ -51,10 +51,15 @@ public class TradeStationAccessToken
     public string Scope { get; }
 
     /// <summary>
-    /// Gets the expiration time of the token in seconds.
+    /// The UTC datetime when this token expires.
+    /// Computed as DateTime.UtcNow + expires_in seconds at construction time.
     /// </summary>
-    [JsonProperty("expires_in")]
-    public int ExpiresIn { get; }
+    public DateTime ExpiresIn { get; }
+
+    /// <summary>
+    /// Returns true if the token is expired or within a 30-second safety buffer.
+    /// </summary>
+    public bool IsExpired => DateTime.UtcNow >= ExpiresIn.AddSeconds(-30);
 
     /// <summary>
     /// Gets the token type.
@@ -71,13 +76,13 @@ public class TradeStationAccessToken
     /// <param name="scope">The scope.</param>
     /// <param name="expiresIn">The expiration time of the token in seconds.</param>
     /// <param name="tokenType">The token type.</param>
-    public TradeStationAccessToken(string accessToken, string refreshToken, string idToken, string scope, int expiresIn, string tokenType)
+    public TradeStationAccessToken(string accessToken, string refreshToken, string idToken, string scope, [JsonProperty("expires_in")] int expiresIn, string tokenType)
     {
         AccessToken = accessToken;
         RefreshToken = refreshToken;
         IdToken = idToken;
         Scope = scope;
-        ExpiresIn = expiresIn;
+        ExpiresIn = DateTime.UtcNow.AddSeconds(expiresIn);
         TokenType = tokenType;
     }
 }

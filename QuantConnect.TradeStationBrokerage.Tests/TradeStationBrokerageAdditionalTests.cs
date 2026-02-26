@@ -456,6 +456,35 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.IsNotEmpty(positions.Errors);
         }
 
+        [Test]
+        public void DeserializeTradeStationAccessToken()
+        {
+            var beforeDeserialization = DateTime.UtcNow;
+
+            var json = @"{
+        ""access_token"": ""test_access_token"",
+        ""id_token"": ""test_id_token"",
+        ""scope"": ""openid profile MarketData ReadAccount Trade Matrix OptionSpreads offline_access"",
+        ""expires_in"": 1200,
+        ""token_type"": ""Bearer""
+    }";
+
+            var res = JsonConvert.DeserializeObject<TradeStationAccessToken>(json);
+
+            Assert.IsNotNull(res);
+
+            Assert.AreEqual("test_access_token", res.AccessToken);
+            Assert.AreEqual("test_id_token", res.IdToken);
+            Assert.AreEqual("openid profile MarketData ReadAccount Trade Matrix OptionSpreads offline_access", res.Scope);
+            Assert.AreEqual("Bearer", res.TokenType);
+
+            var expectedExpiryMin = beforeDeserialization.AddSeconds(1200);
+            var expectedExpiryMax = DateTime.UtcNow.AddSeconds(1200);
+            Assert.That(res.ExpiresIn, Is.InRange(expectedExpiryMin, expectedExpiryMax));
+
+            Assert.IsFalse(res.IsExpired);
+        }
+
         public static TradeStationApiClient CreateTradeStationApiClient()
         {
             var clientId = Config.Get("trade-station-client-id");

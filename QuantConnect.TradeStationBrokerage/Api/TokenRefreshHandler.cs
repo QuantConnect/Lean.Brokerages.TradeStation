@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -17,6 +17,7 @@ using System;
 using Newtonsoft.Json;
 using System.Net.Http;
 using System.Threading;
+using QuantConnect.Logging;
 using System.Threading.Tasks;
 using System.Net.Http.Headers;
 using System.Collections.Generic;
@@ -34,14 +35,14 @@ namespace QuantConnect.Brokerages.TradeStation.Api;
 public class TokenRefreshHandler : DelegatingHandler
 {
     /// <summary>
-    /// Represents the number of retry attempts made for an authenticated request.
+    /// Synchronization object to ensure only one thread performs token acquisition or refresh at a time.
     /// </summary>
-    private int _retryCount = 0;
+    private readonly Lock _tokenLock = new();
 
     /// <summary>
     /// Represents the maximum number of retry attempts for an authenticated request.
     /// </summary>
-    private int _maxRetryCount = 3;
+    private readonly int _maxRetryCount = 3;
 
     /// <summary>
     /// Represents the time interval between retry attempts for an authenticated request.
@@ -131,11 +132,12 @@ public class TokenRefreshHandler : DelegatingHandler
     {
         HttpResponseMessage response = null;
 
-        for (_retryCount = 0; _retryCount < _maxRetryCount; _retryCount++)
+        for (var retryCount = 0; retryCount < _maxRetryCount; retryCount++)
         {
-            if (_tradeStationAccessToken != null)
+            lock (_tokenLock)
             {
-                request.Headers.Authorization = new AuthenticationHeaderValue(_tradeStationAccessToken.TokenType, _tradeStationAccessToken.AccessToken);
+                var accessToken = GetOrRefreshAccessToken(cancellationToken).SynchronouslyAwaitTaskResult();
+                request.Headers.Authorization = new AuthenticationHeaderValue(accessToken.TokenType, accessToken.AccessToken);
             }
 
             response = await base.SendAsync(request, cancellationToken);
@@ -146,14 +148,10 @@ public class TokenRefreshHandler : DelegatingHandler
             }
             else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
-                if (_tradeStationAccessToken == null && string.IsNullOrEmpty(_refreshToken))
+                lock (_tokenLock)
                 {
-                    _tradeStationAccessToken = await GetAuthenticateToken(cancellationToken);
-                    _refreshToken = _tradeStationAccessToken.RefreshToken;
-                }
-                else
-                {
-                    _tradeStationAccessToken = await RefreshAccessToken(_refreshToken, cancellationToken);
+                    Log.Trace($"{nameof(TokenRefreshHandler)}.{nameof(SendAsync)}.Unauthorized: {response.Content.ReadAsStringAsync(cancellationToken).SynchronouslyAwaitTaskResult()}");
+                    _tradeStationAccessToken = null;
                 }
             }
             else
@@ -167,6 +165,33 @@ public class TokenRefreshHandler : DelegatingHandler
         return response;
     }
 
+    /// <summary>
+    /// Returns the current valid access token, or acquires/refreshes one if it is missing or expired.
+    /// Uses double-checked locking to prevent multiple threads from requesting a new token simultaneously.
+    /// </summary>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>A valid <see cref="TradeStationAccessToken"/>.</returns>
+    private async Task<TradeStationAccessToken> GetOrRefreshAccessToken(CancellationToken cancellationToken)
+    {
+        // Double-check inside lock — another thread may have already refreshed
+        if (_tradeStationAccessToken != null && !_tradeStationAccessToken.IsExpired)
+        {
+            return _tradeStationAccessToken;
+        }
+
+        var newToken = default(TradeStationAccessToken);
+        if (string.IsNullOrEmpty(_refreshToken))
+        {
+            newToken = await GetAuthenticateToken(cancellationToken);
+            _refreshToken = newToken.RefreshToken;
+        }
+        else
+        {
+            newToken = await RefreshAccessToken(_refreshToken, cancellationToken);
+        }
+
+        return _tradeStationAccessToken = newToken;
+    }
 
     /// <summary>
     /// Retrieves the authentication token from TradeStation API.
