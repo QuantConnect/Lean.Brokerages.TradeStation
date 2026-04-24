@@ -172,6 +172,7 @@ public enum TradeStationOrderStatusType
     /// <summary>
     /// Stop Hit
     /// </summary>
+    /// <remarks>The Stop Market order has hit the stop price but the order is not yet filled.</remarks>
     [EnumMember(Value = "STP")]
     Stp,
 
