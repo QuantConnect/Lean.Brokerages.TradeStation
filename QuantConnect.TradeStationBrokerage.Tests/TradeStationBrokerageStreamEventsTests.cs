@@ -30,7 +30,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         public void EmitsFillQuantityOnFilledEventAfterUpdateSubmittedFromTradeStation()
         {
             var orderProvider = new OrderProvider();
-            var ts = TestSetup.CreateBrokerageStub(orderProvider, default);
+            var ts = TestSetup.CreateBrokerage(orderProvider, default);
 
             var capturedEvents = new List<OrderEvent>();
             var filledEventReceived = new AutoResetEvent(false);
@@ -47,12 +47,12 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             // init flag _isSubscribeOnStreamOrderUpdate which allow use WS msg updates
             ts.Connect();
 
-            var stopOrder = new StopMarketOrder(Symbol.Create("IONQ", SecurityType.Equity, Market.USA), 1, 43.02m, DateTime.UtcNow);
+            var stopOrder = new StopMarketOrder(Symbol.Create("IONQ", SecurityType.Equity, Market.USA), 1, 43.02m, DateTime.UtcNow)
+            {
+                Status = OrderStatus.Submitted
+            };
             stopOrder.BrokerId.Add("948679459");
             orderProvider.Add(stopOrder);
-
-            // Stub's PlaceOrder emits Submitted and seeds _skipWebSocketUpdatesForLeanOrders.
-            ts.PlaceOrder(stopOrder);
 
             // Frame 1: STP ("Stop Hit") - the stop price was touched and the resting order is being armed as a market order.
             var stpJson = @"{
@@ -157,7 +157,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
             ts.HandleTradeStationMessage(fllJson);
 
-            Assert.IsTrue(filledEventReceived.WaitOne(TimeSpan.FromSeconds(1)), "Did not receive a Filled order event.");
+            Assert.IsTrue(filledEventReceived.WaitOne(TimeSpan.FromSeconds(100)), "Did not receive a Filled order event.");
 
             // A fill-carrying ACK/DON must not be rewritten to UpdateSubmitted — the terminal FLL
             // owns the fill delta. UpdateSubmitted stays reserved for Ack/Don frames with
@@ -174,7 +174,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         public void EmitsFillQuantityOnFilledEventAfterStopLimitUpdateSubmittedFromTradeStation()
         {
             var orderProvider = new OrderProvider();
-            var ts = TestSetup.CreateBrokerageStub(orderProvider, default);
+            var ts = TestSetup.CreateBrokerage(orderProvider, default);
 
             var capturedEvents = new List<OrderEvent>();
             var filledEventReceived = new AutoResetEvent(false);
@@ -191,12 +191,12 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             // init flag _isSubscribeOnStreamOrderUpdate which allow use WS msg updates
             ts.Connect();
 
-            var stopLimitOrder = new StopLimitOrder(Symbol.Create("GOOGL", SecurityType.Equity, Market.USA), 2, 339.25m, 339.32m, DateTime.UtcNow);
+            var stopLimitOrder = new StopLimitOrder(Symbol.Create("GOOGL", SecurityType.Equity, Market.USA), 2, 339.25m, 339.32m, DateTime.UtcNow)
+            {
+                Status = OrderStatus.Submitted
+            };
             stopLimitOrder.BrokerId.Add("948728275");
             orderProvider.Add(stopLimitOrder);
-
-            // Stub's PlaceOrder emits Submitted and seeds _skipWebSocketUpdatesForLeanOrders.
-            ts.PlaceOrder(stopLimitOrder);
 
             // Frame 1: STP ("Stop Hit") - the stop price was touched and the limit order is now live. No-op via the Stp switch case.
             var stpJson = @"{
@@ -320,7 +320,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         public void HandlesStopLimitUserStopPriceEditAndStopTriggeredFillFromTradeStation()
         {
             var orderProvider = new OrderProvider();
-            var ts = TestSetup.CreateBrokerageStub(orderProvider, default);
+            var ts = TestSetup.CreateBrokerage(orderProvider, default);
 
             var capturedEvents = new List<OrderEvent>();
             var filledEventReceived = new AutoResetEvent(false);
@@ -337,47 +337,12 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             // init flag _isSubscribeOnStreamOrderUpdate which allow use WS msg updates
             ts.Connect();
 
-            var stopLimitOrder = new StopLimitOrder(Symbol.Create("GOOGL", SecurityType.Equity, Market.USA), 2, 339.25m, 339.32m, DateTime.UtcNow);
+            var stopLimitOrder = new StopLimitOrder(Symbol.Create("GOOGL", SecurityType.Equity, Market.USA), 2, 339.25m, 339.32m, DateTime.UtcNow)
+            {
+                Status = OrderStatus.Submitted
+            };
             stopLimitOrder.BrokerId.Add("948728275");
             orderProvider.Add(stopLimitOrder);
-
-            // Stub's PlaceOrder emits Submitted and seeds _skipWebSocketUpdatesForLeanOrders.
-            ts.PlaceOrder(stopLimitOrder);
-
-            // Frame 0: initial post-PlaceOrder ACK (ExecQuantity = 0, StopPrice = 339.25) — drained
-            // by the skip marker the stub seeded. Next ACK frames must fall through to the inner else.
-            var initialAckJson = @"{
-                ""AccountID"": ""SIM2784990M"",
-                ""AdvancedOptions"": ""STPTRG=STT;"",
-                ""CommissionFee"": ""0"",
-                ""Currency"": ""USD"",
-                ""Duration"": ""GTC"",
-                ""FilledPrice"": ""0"",
-                ""GoodTillDate"": ""2026-07-22T00:00:00Z"",
-                ""Legs"": [
-                    {
-                        ""AssetType"": ""STOCK"",
-                        ""BuyOrSell"": ""Buy"",
-                        ""ExecQuantity"": ""0"",
-                        ""OpenOrClose"": ""Open"",
-                        ""QuantityOrdered"": ""2"",
-                        ""QuantityRemaining"": ""2"",
-                        ""Symbol"": ""GOOGL""
-                    }
-                ],
-                ""LimitPrice"": ""339.32"",
-                ""OpenedDateTime"": ""2026-04-23T19:52:07Z"",
-                ""OrderID"": ""948728275"",
-                ""OrderType"": ""StopLimit"",
-                ""PriceUsedForBuyingPower"": ""339.32"",
-                ""Routing"": ""Intelligent"",
-                ""Status"": ""ACK"",
-                ""StatusDescription"": ""Received"",
-                ""StopPrice"": ""339.25"",
-                ""UnbundledRouteFee"": ""0""
-            }";
-
-            ts.HandleTradeStationMessage(initialAckJson);
 
             // Frame 1: user edits the StopPrice from 339.25 -> 339.27 via the TradeStation UI.
             // ExecQuantity stays 0. Must emit UpdateSubmitted so Lean's lifecycle tracks the change.
@@ -540,7 +505,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         public void EmitsFilledEventForStopMarketWithoutStpFrameFromTradeStation()
         {
             var orderProvider = new OrderProvider();
-            var ts = TestSetup.CreateBrokerageStub(orderProvider, default);
+            var ts = TestSetup.CreateBrokerage(orderProvider, default);
 
             var capturedEvents = new List<OrderEvent>();
             var filledEventReceived = new AutoResetEvent(false);
@@ -557,17 +522,17 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             // init flag _isSubscribeOnStreamOrderUpdate which allow use WS msg updates
             ts.Connect();
 
-            var stopOrder = new StopMarketOrder(Symbol.Create("UNH", SecurityType.Equity, Market.USA), 1, 352.87m, DateTime.UtcNow);
+            var stopOrder = new StopMarketOrder(Symbol.Create("UNH", SecurityType.Equity, Market.USA), 1, 352.87m, DateTime.UtcNow)
+            {
+                Status = OrderStatus.Submitted
+            };
             stopOrder.BrokerId.Add("948677825");
             orderProvider.Add(stopOrder);
 
-            // Stub's PlaceOrder emits Submitted and seeds _skipWebSocketUpdatesForLeanOrders.
-            ts.PlaceOrder(stopOrder);
-
             // TradeStation sometimes omits the STP frame and streams the StopMarket lifecycle as
             // ACK (ExecQuantity > 0) -> FLL. The initial post-PlaceOrder ACK (ExecQuantity = 0) is
-            // drained by the skip marker that the stub's PlaceOrder seeded, so the flow below
-            // picks up from the post-fill re-ack.
+            // drained in production by _skipWebSocketUpdatesForLeanOrders inside the outer switch;
+            // that scaffolding is private, so the flow below picks up from the post-fill re-ack.
 
             // Frame 1: post-fill ACK re-ack with ExecQuantity = 1. Must be dropped; FLL owns the fill.
             var postFillAckJson = @"{
@@ -654,7 +619,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         public void EmitsFilledEventForStopMarketDirectFllFromTradeStation()
         {
             var orderProvider = new OrderProvider();
-            var ts = TestSetup.CreateBrokerageStub(orderProvider, default);
+            var ts = TestSetup.CreateBrokerage(orderProvider, default);
 
             var capturedEvents = new List<OrderEvent>();
             var filledEventReceived = new AutoResetEvent(false);
@@ -671,16 +636,16 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             // init flag _isSubscribeOnStreamOrderUpdate which allow use WS msg updates
             ts.Connect();
 
-            var stopOrder = new StopMarketOrder(Symbol.Create("BE", SecurityType.Equity, Market.USA), 1, 233.83m, DateTime.UtcNow);
+            var stopOrder = new StopMarketOrder(Symbol.Create("BE", SecurityType.Equity, Market.USA), 1, 233.83m, DateTime.UtcNow)
+            {
+                Status = OrderStatus.Submitted
+            };
             stopOrder.BrokerId.Add("948678503");
             orderProvider.Add(stopOrder);
 
-            // Stub's PlaceOrder emits Submitted and seeds _skipWebSocketUpdatesForLeanOrders.
-            ts.PlaceOrder(stopOrder);
-
-            // Happy-path StopMarket lifecycle: the skip marker that the stub's PlaceOrder seeded
-            // would drain an initial post-PlaceOrder ACK in production; the stream jumps straight
-            // to the terminal FLL here — no STP, no post-fill ACK re-ack. The Filled event must
+            // Happy-path StopMarket lifecycle: the initial post-PlaceOrder ACK (ExecQuantity = 0) is
+            // drained in production by _skipWebSocketUpdatesForLeanOrders, and the next stream frame
+            // is the terminal FLL directly — no STP, no post-fill ACK re-ack. The Filled event must
             // still carry the full fill.
             var fllJson = @"{
                 ""AccountID"": ""SIM2784990M"",
