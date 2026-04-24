@@ -97,7 +97,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// and a boolean value as the value to indicate whether the response result has been
     /// submitted (<see langword="true"/>) or not (<see langword="false"/>).
     /// </remarks>
-    private ConcurrentDictionary<string, bool> _updateSubmittedResponseResultByBrokerageID = new();
+    private protected ConcurrentDictionary<string, bool> _updateSubmittedResponseResultByBrokerageID = new();
 
     /// <summary>
     /// Contains brokerage order IDs for orders placed by Lean whose WebSocket updates
@@ -105,7 +105,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// This prevents WebSocket events from interfering with Lean-driven order lifecycle
     /// management. Manually placed TWS orders are always processed.
     /// </summary>
-    private ConcurrentDictionary<string, bool> _skipWebSocketUpdatesForLeanOrders = [];
+    private protected ConcurrentDictionary<string, bool> _skipWebSocketUpdatesForLeanOrders = [];
 
     /// <summary>
     /// A concurrent dictionary to store the order ID and the corresponding filled quantity.
@@ -935,6 +935,8 @@ public partial class TradeStationBrokerage : Brokerage
                         }
                         globalLeanOrderStatus = OrderStatus.Canceled;
                         break;
+                    case TradeStationOrderStatusType.Stp:
+                        return;
                     default:
                         Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}.TradeStationStreamStatus: {json}");
                         return;
@@ -981,6 +983,14 @@ public partial class TradeStationBrokerage : Brokerage
                         // to keep the Lean order lifecycle consistent.
                         if (brokerageOrder.Status is TradeStationOrderStatusType.Ack or TradeStationOrderStatusType.Don)
                         {
+                            // We skip 'ACK'/'DON' because these order types send fill data in the 'ACK' event
+                            // that will be duplicated in the final 'FLL' event.
+                            // Note: TrailingStop orders are executed as StopMarket orders in TradeStation.
+                            if (brokerageOrder.OrderType is TradeStationOrderType.StopMarket or TradeStationOrderType.StopLimit
+                                && brokerageOrder.Legs.Any(l => l.ExecQuantity > 0))
+                            {
+                                return;
+                            }
                             globalLeanOrderStatus = OrderStatus.UpdateSubmitted;
                         }
                     }
@@ -1266,6 +1276,10 @@ public partial class TradeStationBrokerage : Brokerage
                         break;
                     // Ignore trailing stop option, the order's AdvancedOptions property has it
                     case "TRL":
+                        break;
+                    // STPTRG = Stop Trigger type (how a stop is armed). e.g: STT (Single Trade Tick, default)
+                    // Docs: https://help.tradestation.com/09_05/eng/tradestationhelp/ob/oe_pref_all_triggers.htm
+                    case "STPTRG":
                         break;
                     default:
                         OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $" Detected unsupported Lean.TradeStationOrderProperties: {option}, ignoring"));

@@ -34,6 +34,18 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
         public static TradeStationBrokerageTest CreateBrokerage(IOrderProvider orderProvider, ISecurityProvider securityProvider)
         {
+            var (apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType) = LoadBrokerageConfig();
+            return new TradeStationBrokerageTest(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider);
+        }
+
+        public static TradeStationBrokerageStub CreateBrokerageStub(IOrderProvider orderProvider, ISecurityProvider securityProvider)
+        {
+            var (apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType) = LoadBrokerageConfig();
+            return new TradeStationBrokerageStub(apiKey, apiKeySecret, restApiUrl, redirectUrl, authorizationCode, refreshToken, accountType, orderProvider, securityProvider);
+        }
+
+        private static (string apiKey, string apiKeySecret, string restApiUrl, string redirectUrl, string authorizationCode, string refreshToken, string accountType) LoadBrokerageConfig()
+        {
             var clientId = Config.Get("trade-station-client-id");
             var clientSecret = Config.Get("trade-station-client-secret");
             var restApiUrl = Config.Get("trade-station-api-url");
@@ -50,11 +62,10 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                     throw new ArgumentException("RedirectUrl or AuthorizationCode cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
                 }
 
-                return new TradeStationBrokerageTest(clientId, clientSecret, restApiUrl, redirectUrl, authorizationCode, string.Empty,
-                    accountType, orderProvider, securityProvider);
+                return (clientId, clientSecret, restApiUrl, redirectUrl, authorizationCode, string.Empty, accountType);
             }
 
-            return new TradeStationBrokerageTest(clientId, clientSecret, restApiUrl, string.Empty, string.Empty, refreshToken, accountType, orderProvider, securityProvider);
+            return (clientId, clientSecret, restApiUrl, string.Empty, string.Empty, refreshToken, accountType);
         }
 
         public static void ReloadConfiguration()
