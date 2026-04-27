@@ -66,6 +66,10 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 var COTTON = Symbol.CreateFuture(Futures.Softs.Cotton2, Market.ICE, new DateTime(2024, 10, 1));
                 yield return new(CTLeg, COTTON);
 
+                var NZDLeg = new Leg("", 0m, 0m, 0m, TradeStationTradeActionType.Buy, "NE1H27", "AD", TradeStationAssetType.Future, 0m, new DateTime(2027, 03, 15), default, default);
+                var NZD = Symbol.CreateFuture(Futures.Currencies.NZD, Market.CME, new DateTime(2027, 3, 15));
+                yield return new(NZDLeg, NZD);
+
                 var TSLAExpiryDate = new DateTime(2024, 5, 10);
                 var TSLALeg = new Leg("", 0m, 0m, 0m, TradeStationTradeActionType.Buy, "TSLA 240510C167.5", "TSLA", TradeStationAssetType.StockOption, 0m, TSLAExpiryDate, TradeStationOptionType.Call, 167.5m);
                 var TSLA = Symbol.Create("TSLA", SecurityType.Equity, Market.USA);
@@ -158,6 +162,18 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 yield return new TestCaseData(Symbol.CreateOption(underlying, Market.USA, OptionStyle.American, OptionRight.Put, 100m, new DateTime(2025, 11, 12)), "AAPL 251112P100");
                 yield return new TestCaseData(Symbol.CreateFuture("ES", Market.CME, new DateTime(2024, 12, 10)), "ESZ24");
                 yield return new TestCaseData(Symbol.CreateFuture("ES", Market.CME, new DateTime(2024, 5, 10)), "ESK24");
+                // Issue #80: TradeStation requires legacy pit-era roots — Lean root is rewritten on the wire.
+                yield return new TestCaseData(Symbol.CreateFuture(Futures.Currencies.AUD, Market.CME, new DateTime(2024, 12, 16)), "ADZ24");
+                yield return new TestCaseData(Symbol.CreateFuture(Futures.Currencies.MXN, Market.CME, new DateTime(2024, 12, 16)), "MP1Z24");
+                yield return new TestCaseData(Symbol.CreateFuture(Futures.Grains.Corn, Market.CBOT, new DateTime(2024, 12, 13)), "CZ24");
+                yield return new TestCaseData(Symbol.CreateFuture(Futures.Meats.LeanHogs, Market.CME, new DateTime(2024, 12, 13)), "LHZ24");
+                yield return new TestCaseData(Symbol.CreateFuture(Futures.Grains.HRWWheat, Market.CBOT, new DateTime(2024, 12, 13)), "KWZ24");
+                yield return new TestCaseData(Symbol.CreateFuture(Futures.Indices.Nikkei225Dollar, Market.CME, new DateTime(2024, 12, 12)), "NKZ24");
+                yield return new TestCaseData(Symbol.CreateFuture(Futures.Financials.Y30TreasuryBond, Market.CBOT, new DateTime(2024, 12, 19)), "USZ24");
+                yield return new TestCaseData(Symbol.CreateFuture(Futures.Financials.EuroDollar, Market.CME, new DateTime(2024, 12, 16)), "EDZ24");
+                // Pass-through: roots not in the dictionary travel unchanged.
+                yield return new TestCaseData(Symbol.CreateFuture(Futures.Indices.MicroSP500EMini, Market.CME, new DateTime(2024, 12, 20)), "MESZ24");
+                yield return new TestCaseData(Symbol.CreateFuture(Futures.Currencies.BTC, Market.CME, new DateTime(2024, 12, 27)), "BTCZ24");
                 var indexUnderlying = Symbol.Create("RUTW", SecurityType.Index, Market.USA);
                 yield return new TestCaseData(indexUnderlying, "$RUTW.X");
                 yield return new TestCaseData(Symbol.CreateOption(indexUnderlying, Market.USA, OptionStyle.American, OptionRight.Call, 2415m, new DateTime(2024, 12, 6)), "RUTW 241206C2415");
@@ -231,6 +247,19 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             yield return new TestCaseData("BZF26", Symbol.CreateFuture(Futures.Energy.BrentLastDayFinancial, Market.NYMEX, new DateTime(2025, 11, 29)));
             // Expiry: December 2025 -> Contract month: February (G) 2026 (26)
             yield return new TestCaseData("BZG26", Symbol.CreateFuture(Futures.Energy.BrentLastDayFinancial, Market.NYMEX, new DateTime(2025, 12, 29)));
+
+            // Issue #80: Lean ↔ TradeStation root remapping (one per dictionary group).
+            yield return new TestCaseData("ADZ24", Symbol.CreateFuture(Futures.Currencies.AUD, Market.CME, new DateTime(2024, 12, 16)));
+            yield return new TestCaseData("MP1Z24", Symbol.CreateFuture(Futures.Currencies.MXN, Market.CME, new DateTime(2024, 12, 16)));
+            yield return new TestCaseData("CZ24", Symbol.CreateFuture(Futures.Grains.Corn, Market.CBOT, new DateTime(2024, 12, 13)));
+            yield return new TestCaseData("LHZ24", Symbol.CreateFuture(Futures.Meats.LeanHogs, Market.CME, new DateTime(2024, 12, 13)));
+            yield return new TestCaseData("KWZ24", Symbol.CreateFuture(Futures.Grains.HRWWheat, Market.CBOT, new DateTime(2024, 12, 13)));
+            yield return new TestCaseData("NKZ24", Symbol.CreateFuture(Futures.Indices.Nikkei225Dollar, Market.CME, new DateTime(2024, 12, 12)));
+            yield return new TestCaseData("USZ24", Symbol.CreateFuture(Futures.Financials.Y30TreasuryBond, Market.CBOT, new DateTime(2024, 12, 19)));
+            yield return new TestCaseData("EDZ24", Symbol.CreateFuture(Futures.Financials.EuroDollar, Market.CME, new DateTime(2024, 12, 16)));
+            // Pass-through: unmapped roots travel unchanged.
+            yield return new TestCaseData("MESZ24", Symbol.CreateFuture(Futures.Indices.MicroSP500EMini, Market.CME, new DateTime(2024, 12, 20)));
+            yield return new TestCaseData("BTCZ24", Symbol.CreateFuture(Futures.Currencies.BTC, Market.CME, new DateTime(2024, 12, 27)));
         }
 
         [TestCaseSource(nameof(GetFutureSymbolsTestCases))]
