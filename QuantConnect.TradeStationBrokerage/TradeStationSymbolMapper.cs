@@ -14,6 +14,7 @@
 */
 
 using System;
+using System.Linq;
 using QuantConnect.Securities;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
@@ -45,6 +46,37 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// This HashSet contains the supported security types that are allowed within the system.
     /// </remarks>
     public readonly HashSet<SecurityType> SupportedSecurityType = new() { SecurityType.Equity, SecurityType.Option, SecurityType.Future, SecurityType.Index, SecurityType.IndexOption };
+
+    /// <summary>
+    /// Maps Lean futures root tickers to TradeStation legacy pit-era root tickers.
+    /// </summary>
+    /// <remarks>
+    /// Source: <see href="https://www.tradestation.com/learn/market-basics/futures-options/symbology/futures-plus-symbology/"/>
+    /// TODO: The link keeps FOP Root mapping.
+    /// </remarks>
+    private static readonly Dictionary<string, string> LeanRootToBrokerageFutureRoot = new()
+    {
+        // Major Markets
+        { "NKD", "NK" },
+        // Interest Rates
+        { "TN", "TEN" }, { "ZB", "US" }, { "ZF", "FV" }, { "ZN", "TY" }, { "ZT", "TU" }, { "GE", "ED" },
+        // Currencies
+        { "6A", "AD" }, { "6B", "BP" }, { "6C", "CD" }, { "6E", "EC" }, { "6J", "JY" },
+        { "6L", "BR" }, { "6M", "MP1" }, { "6N", "NE1" }, { "6R", "RU" }, { "6S", "SF" }, { "6Z", "RA" },
+        // Grains
+        { "KE", "KW" }, { "ZC", "C" }, { "ZL", "SO" }, { "ZM", "SM" }, { "ZO", "O" },
+        { "ZS", "S" }, { "ZW", "W" },
+        // Meats
+        { "GF", "FC" }, { "HE", "LH" }, { "LE", "LC" },
+        // Forestry
+        { "LBS", "LB" }
+    };
+
+    /// <summary>
+    /// Reverse of <see cref="LeanRootToBrokerageFutureRoot"/>: TradeStation root → Lean root.
+    /// </summary>
+    private static readonly Dictionary<string, string> BrokerageRootToLeanFutureRoot =
+        LeanRootToBrokerageFutureRoot.ToDictionary(kvp => kvp.Value, kvp => kvp.Key);
 
     /// <summary>
     /// Converts a Lean symbol instance to a brokerage symbol
@@ -86,7 +118,13 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// <example>{ESZ24}</example>
     private string GenerateBrokerageFuture(Symbol symbol)
     {
-        return SymbolRepresentation.GenerateFutureTicker(symbol.ID.Symbol, symbol.ID.Date, includeExpirationDate: false);
+        var leanRoot = symbol.ID.Symbol;
+        var ticker = SymbolRepresentation.GenerateFutureTicker(leanRoot, symbol.ID.Date, includeExpirationDate: false);
+        if (LeanRootToBrokerageFutureRoot.TryGetValue(leanRoot, out var brokerageRoot))
+        {
+            return brokerageRoot + ticker.Substring(leanRoot.Length);
+        }
+        return ticker;
     }
 
     /// <summary>
@@ -132,7 +170,12 @@ public class TradeStationSymbolMapper : ISymbolMapper
                     ticker = ConvertIndexBrokerageTickerInLeanTicker(ticker);
                     break;
                 case TradeStationAssetType.Future:
-                    ticker = SymbolRepresentation.ParseFutureTicker(brokerageSymbol).Underlying;
+                    // ParseFutureTicker just splits the raw brokerage ticker (root + month + year) — no Lean mapping applied.
+                    var brokerageRoot = SymbolRepresentation.ParseFutureTicker(brokerageSymbol).Underlying;
+                    if (!BrokerageRootToLeanFutureRoot.TryGetValue(brokerageRoot, out ticker))
+                    {
+                        ticker = brokerageRoot;
+                    }
                     break;
                 case TradeStationAssetType.Index:
                     ticker = ConvertIndexBrokerageTickerInLeanTicker(ticker);
