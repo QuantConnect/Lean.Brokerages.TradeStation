@@ -58,6 +58,73 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.That(res.Errors.First().Message, Is.EqualTo("Request not supported for account type."));
         }
 
+        [Test]
+        public void DeserializeSymbolDetailsSuccessResponse()
+        {
+            var jsonResponse = @"{
+                ""Symbols"": [
+                    {
+                        ""AssetType"": ""FUTURE"",
+                        ""Country"": ""United States"",
+                        ""Currency"": ""USD"",
+                        ""Description"": ""2 Year U.S. Treasury Notes Continuous Contract [Jun26]"",
+                        ""Exchange"": ""CBOT"",
+                        ""FutureType"": ""Electronic"",
+                        ""Symbol"": ""@TU"",
+                        ""Root"": ""TU"",
+                        ""Underlying"": ""TUM26"",
+                        ""PriceFormat"": {
+                            ""Format"": ""SubFraction"",
+                            ""Fraction"": ""32"",
+                            ""SubFraction"": ""8"",
+                            ""IncrementStyle"": ""Simple"",
+                            ""Increment"": ""0.00390625"",
+                            ""PointValue"": ""2000""
+                        },
+                        ""QuantityFormat"": {
+                            ""Format"": ""Decimal"",
+                            ""Decimals"": ""0"",
+                            ""IncrementStyle"": ""Simple"",
+                            ""Increment"": ""1"",
+                            ""MinimumTradeQuantity"": ""1""
+                        }
+                    }
+                ],
+                ""Errors"": []
+            }";
+
+            var res = JsonConvert.DeserializeObject<SymbolDetailsResponse>(jsonResponse);
+
+            Assert.IsNotNull(res);
+            Assert.That(res.Symbols.Count, Is.EqualTo(1));
+            Assert.That(res.Errors.Count, Is.EqualTo(0));
+            Assert.That(res.Symbols[0].PriceFormat.Increment, Is.EqualTo(0.00390625m));
+            Assert.That(res.Symbols[0].PriceFormat.PointValue, Is.EqualTo(2000m));
+        }
+
+        [Test]
+        public void DeserializeSymbolDetailsErrorResponse()
+        {
+            var jsonResponse = @"{
+                ""Symbols"": [],
+                ""Errors"": [
+                    {
+                        ""Error"": ""NotFound"",
+                        ""Message"": ""invalid symbol"",
+                        ""Symbol"": ""@TUT""
+                    }
+                ]
+            }";
+
+            var res = JsonConvert.DeserializeObject<SymbolDetailsResponse>(jsonResponse);
+
+            Assert.IsNotNull(res);
+            Assert.That(res.Symbols.Count, Is.EqualTo(0));
+            Assert.That(res.Errors.Count, Is.EqualTo(1));
+            Assert.That(res.Errors.First().Error, Is.EqualTo("NotFound"));
+            Assert.That(res.Errors.First().Message, Is.EqualTo("invalid symbol"));
+        }
+
         [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""BuyOrSell"": ""BUY"" } ] } ],""Errors"":[] }", TradeStationTradeActionType.Buy)]
         [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""BuyOrSell"": ""Buy"" } ] } ],""Errors"":[] }", TradeStationTradeActionType.Buy)]
         [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""BuyOrSell"": ""SELL"" } ] } ],""Errors"":[] }", TradeStationTradeActionType.Sell)]
