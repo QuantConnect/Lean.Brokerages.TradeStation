@@ -52,6 +52,7 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// </summary>
     /// <remarks>
     /// Source: <see href="https://www.tradestation.com/learn/market-basics/futures-options/symbology/futures-plus-symbology/"/>
+    /// <seealso href="https://www.tradestation.com/pricing/futures-margin-requirements/"/>
     /// TODO: The link keeps FOP Root mapping.
     /// </remarks>
     private static readonly Dictionary<string, string> LeanRootToBrokerageFutureRoot = new()
@@ -64,12 +65,14 @@ public class TradeStationSymbolMapper : ISymbolMapper
         { "6A", "AD" }, { "6B", "BP" }, { "6C", "CD" }, { "6E", "EC" }, { "6J", "JY" },
         { "6L", "BR" }, { "6M", "MP1" }, { "6N", "NE1" }, { "6R", "RU" }, { "6S", "SF" }, { "6Z", "RA" },
         // Grains
-        { "KE", "KW" }, { "ZC", "C" }, { "ZL", "SO" }, { "ZM", "SM" }, { "ZO", "O" },
+        { "KE", "KW" }, { "ZC", "C" }, { "ZL", "BO" }, { "ZM", "SM" }, { "ZO", "O" },
         { "ZS", "S" }, { "ZW", "W" },
         // Meats
         { "GF", "FC" }, { "HE", "LH" }, { "LE", "LC" },
         // Forestry
-        { "LBS", "LB" }
+        { "LBS", "LB" },
+        // Energies
+        { "B", "BRN" }
     };
 
     /// <summary>
