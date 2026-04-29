@@ -114,6 +114,26 @@ namespace QuantConnect.Brokerages.TradeStation
         }
 
         /// <summary>
+        /// Converts a nullable TradeStation brokerage price to the equivalent Lean price for the given symbol.
+        /// </summary>
+        /// <param name="symbol">The Lean symbol whose price magnifier should be removed.</param>
+        /// <param name="brokeragePrice">The nullable brokerage-side price to convert.</param>
+        /// <returns>
+        /// The price divided by the symbol's magnifier for futures; the original
+        /// <paramref name="brokeragePrice"/> unchanged for all other security types; <c>null</c>
+        /// if <paramref name="brokeragePrice"/> is <c>null</c>.
+        /// </returns>
+        public decimal? GetLeanPrice(Symbol symbol, decimal? brokeragePrice)
+        {
+            if (!brokeragePrice.HasValue)
+            {
+                return null;
+            }
+
+            return GetLeanPrice(symbol, brokeragePrice.Value);
+        }
+
+        /// <summary>
         /// Returns the price magnifier for the given futures symbol, fetching and caching it on first
         /// access.
         /// </summary>

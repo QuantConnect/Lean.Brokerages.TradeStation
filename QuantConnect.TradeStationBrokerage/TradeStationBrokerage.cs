@@ -70,6 +70,11 @@ public partial class TradeStationBrokerage : Brokerage
     private TradeStationSymbolMapper _symbolMapper;
 
     /// <summary>
+    /// Translates prices between Lean's internal representation and TradeStation's brokerage format for futures.
+    /// </summary>
+    private PriceMapper _priceMapper;
+
+    /// <summary>
     /// Indicates whether the application is subscribed to stream order updates.
     /// </summary>
     private bool _isSubscribeOnStreamOrderUpdate;
@@ -283,6 +288,7 @@ public partial class TradeStationBrokerage : Brokerage
             Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(Initialize)}: AccountID: {accountId} - AccountType: {_tradeStationAccountType}");
         }
 
+        _priceMapper = new PriceMapper(_tradeStationApiClient, _symbolMapper);
         _messageHandler = new(HandleTradeStationMessage, ConcurrencyEnabled);
 
         _aggregator = Composer.Instance.GetPart<IDataAggregator>();
@@ -402,11 +408,11 @@ public partial class TradeStationBrokerage : Brokerage
 
             holdings.Add(new Holding()
             {
-                AveragePrice = position.AveragePrice,
+                AveragePrice = _priceMapper.GetLeanPrice(leanSymbol, position.AveragePrice),
                 ConversionRate = position.ConversionRate,
                 CurrencySymbol = Currencies.USD,
                 MarketValue = position.MarketValue,
-                MarketPrice = position.Last,
+                MarketPrice = _priceMapper.GetLeanPrice(leanSymbol, position.Last),
                 Quantity = position.Quantity,
                 Symbol = leanSymbol,
                 UnrealizedPnL = position.UnrealizedProfitLoss,
@@ -493,7 +499,7 @@ public partial class TradeStationBrokerage : Brokerage
         {
             case OrderType.ComboMarket:
             case OrderType.ComboLimit:
-                return PlaceOrderCommon(orders, order.Type, order.TimeInForce, 0m, "", "", order.GetLimitPrice(), 0m, null, null, isSubmittedEvent);
+                return PlaceOrderCommon(orders, order.Type, order.TimeInForce, 0m, "", "", order.GetLimitPrice(_priceMapper), 0m, null, null, isSubmittedEvent);
             case OrderType.MarketOnOpen:
             case OrderType.MarketOnClose:
             case OrderType.Market:
@@ -512,7 +518,7 @@ public partial class TradeStationBrokerage : Brokerage
                     var tradeAction = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity);
                     var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo();
                     response = PlaceOrderCommon(orders, order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, symbol,
-                        order.GetLimitPrice(), order.GetStopPrice(), trailingAmount, trailingAsPercentage, isSubmittedEvent);
+                        order.GetLimitPrice(_priceMapper), order.GetStopPrice(_priceMapper), trailingAmount, trailingAsPercentage, isSubmittedEvent);
                 }
                 return response;
             default:
@@ -538,7 +544,7 @@ public partial class TradeStationBrokerage : Brokerage
             // PlaceOrderCommon will not check the order type. Should this call PlaceTradeStationOrder?
             var (trailingAmount, trailingAsPercentage) = crossZeroOrderRequest.LeanOrder.GetTrailingStopInfo();
             var response = PlaceOrderCommon(new List<Order> { crossZeroOrderRequest.LeanOrder }, crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
-                crossZeroOrderRequest.AbsoluteOrderQuantity, tradeAction, symbol, crossZeroOrderRequest.LeanOrder.GetLimitPrice(), crossZeroOrderRequest.LeanOrder.GetStopPrice(),
+                crossZeroOrderRequest.AbsoluteOrderQuantity, tradeAction, symbol, crossZeroOrderRequest.LeanOrder.GetLimitPrice(_priceMapper), crossZeroOrderRequest.LeanOrder.GetStopPrice(_priceMapper),
                 trailingAmount, trailingAsPercentage, isPlaceOrderWithLeanEvent);
 
             if (response == null || !response.Value.Orders.Any())
@@ -676,7 +682,7 @@ public partial class TradeStationBrokerage : Brokerage
             {
                 var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo();
                 var result = _tradeStationApiClient.ReplaceOrder(brokerageOrderId, order.Type, Math.Abs(orderQuantity),
-                    order.GetLimitPrice(), order.GetStopPrice(), trailingAmount, trailingAsPercentage).SynchronouslyAwaitTaskResult();
+                    order.GetLimitPrice(_priceMapper), order.GetStopPrice(_priceMapper), trailingAmount, trailingAsPercentage).SynchronouslyAwaitTaskResult();
 
                 foreach (var order in orders)
                 {
@@ -1069,7 +1075,7 @@ public partial class TradeStationBrokerage : Brokerage
                         brokerageOrder.RejectReason)
                     {
                         Status = legOrderStatus,
-                        FillPrice = leg.ExecutionPrice,
+                        FillPrice = _priceMapper.GetLeanPrice(leanOrder.Symbol, leg.ExecutionPrice),
                         FillQuantity = accumulativeFilledQuantity - previousExecutionAmount,
                         Message = eventMessage
                     };
@@ -1324,25 +1330,26 @@ public partial class TradeStationBrokerage : Brokerage
             case TradeStationOrderType.Limit:
                 if (groupOrderManager == null)
                 {
-                    leanOrder = new LimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime, properties: orderProperties);
+                    leanOrder = new LimitOrder(leanSymbol, orderQuantity, _priceMapper.GetLeanPrice(leanSymbol, order.LimitPrice), order.OpenedDateTime, properties: orderProperties);
                 }
                 else
                 {
-                    leanOrder = new ComboLimitOrder(leanSymbol, orderQuantity, order.LimitPrice, order.OpenedDateTime, groupOrderManager, properties: orderProperties);
+                    leanOrder = new ComboLimitOrder(leanSymbol, orderQuantity, _priceMapper.GetLeanPrice(leanSymbol, order.LimitPrice), order.OpenedDateTime, groupOrderManager, properties: orderProperties);
                 }
                 break;
             case TradeStationOrderType.StopMarket:
                 if (order.TrailingStop.TryGetValue(out var trailingAmount, out var trailingAsPercentage))
                 {
-                    leanOrder = new TrailingStopOrder(leanSymbol, orderQuantity, trailingAmount, trailingAsPercentage, order.OpenedDateTime, properties: orderProperties);
+                    var leanTrailingAmount = trailingAsPercentage ? trailingAmount : _priceMapper.GetLeanPrice(leanSymbol, trailingAmount);
+                    leanOrder = new TrailingStopOrder(leanSymbol, orderQuantity, leanTrailingAmount, trailingAsPercentage, order.OpenedDateTime, properties: orderProperties);
                 }
                 else
                 {
-                    leanOrder = new StopMarketOrder(leanSymbol, orderQuantity, order.StopPrice, order.OpenedDateTime, properties: orderProperties);
+                    leanOrder = new StopMarketOrder(leanSymbol, orderQuantity, _priceMapper.GetLeanPrice(leanSymbol, order.StopPrice), order.OpenedDateTime, properties: orderProperties);
                 }
                 break;
             case TradeStationOrderType.StopLimit:
-                leanOrder = new StopLimitOrder(leanSymbol, orderQuantity, order.StopPrice, order.LimitPrice, order.OpenedDateTime, properties: orderProperties);
+                leanOrder = new StopLimitOrder(leanSymbol, orderQuantity, _priceMapper.GetLeanPrice(leanSymbol, order.StopPrice), _priceMapper.GetLeanPrice(leanSymbol, order.LimitPrice), order.OpenedDateTime, properties: orderProperties);
                 break;
             default:
                 throw new NotSupportedException($"Unsupported order type: {order.OrderType}");
