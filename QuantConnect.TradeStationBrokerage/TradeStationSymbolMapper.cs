@@ -58,7 +58,7 @@ public class TradeStationSymbolMapper : ISymbolMapper
     private static readonly Dictionary<string, string> LeanRootToBrokerageFutureRoot = new()
     {
         // Major Markets
-        { "NKD", "NK" },
+        { "NKD", "NK" }, { "RX", "REI" },
         // Interest Rates
         { "TN", "TEN" }, { "ZB", "US" }, { "ZF", "FV" }, { "ZN", "TY" }, { "ZT", "TU" }, { "GE", "ED" },
         // Currencies
