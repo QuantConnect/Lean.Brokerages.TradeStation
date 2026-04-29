@@ -142,6 +142,84 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.That(actualActionType, Is.EqualTo(expectedActionType));
         }
 
+        private static IEnumerable<TestCaseData> GetBrokeragePriceTestCases()
+        {
+            // Equity: pass-through (magnifier = 1, no API call)
+            yield return new TestCaseData(Symbols.AAPL, 195.50m, 195.50m);
+
+            // Futures with CSV PriceMagnifier = 100 (no API call needed)
+            var zcExpiry = new DateTime(2026, 07, 14);
+            var zc = Symbol.CreateFuture(Futures.Grains.Corn, Market.CBOT, zcExpiry);
+            yield return new TestCaseData(zc, 4.6300m, 463.00m);
+
+            var zwExpiry = new DateTime(2026, 07, 14);
+            var zw = Symbol.CreateFuture(Futures.Grains.Wheat, Market.CBOT, zwExpiry);
+            yield return new TestCaseData(zw, 5.5500m, 555.00m);
+
+            var mirExpiry = new DateTime(2026, 03, 16);
+            var mir = Symbol.CreateFuture(Futures.Currencies.MicroINRUSD, Market.CME, mirExpiry);
+            yield return new TestCaseData(mir, 0.011800m, 1.1800m);
+
+            // Futures where magnifier is discovered via live TS API
+            var jpyExpiry = new DateTime(2026, 06, 15);
+            var jpy = Symbol.CreateFuture(Futures.Currencies.JPY, Market.CME, jpyExpiry);
+            yield return new TestCaseData(jpy, 0.006300m, 0.6300m);
+
+            var e7Expiry = new DateTime(2026, 06, 15);
+            var e7 = Symbol.CreateFuture(Futures.Currencies.EuroFXEmini, Market.CME, e7Expiry);
+            yield return new TestCaseData(e7, 1.0800m, 1.0800m);
+        }
+
+        [TestCaseSource(nameof(GetBrokeragePriceTestCases))]
+        public void GetBrokeragePrice(Symbol symbol, decimal leanPrice, decimal expectedBrokeragePrice)
+        {
+            var apiClient = CreateTradeStationApiClient();
+            var priceMapper = new PriceMapper(apiClient, new TradeStationSymbolMapper());
+
+            var actual = priceMapper.GetBrokeragePrice(symbol, leanPrice);
+
+            Assert.AreEqual(expectedBrokeragePrice, actual);
+        }
+
+        private static IEnumerable<TestCaseData> GetLeanPriceTestCases()
+        {
+            // Equity: pass-through (magnifier = 1, no API call)
+            yield return new TestCaseData(Symbols.AAPL, 195.50m, 195.50m);
+
+            // Futures with CSV PriceMagnifier = 100 (no API call needed)
+            var zcExpiry = new DateTime(2026, 07, 14);
+            var zc = Symbol.CreateFuture(Futures.Grains.Corn, Market.CBOT, zcExpiry);
+            yield return new TestCaseData(zc, 463.00m, 4.6300m);
+
+            var zwExpiry = new DateTime(2026, 07, 14);
+            var zw = Symbol.CreateFuture(Futures.Grains.Wheat, Market.CBOT, zwExpiry);
+            yield return new TestCaseData(zw, 555.00m, 5.5500m);
+
+            var mirExpiry = new DateTime(2026, 03, 16);
+            var mir = Symbol.CreateFuture(Futures.Currencies.MicroINRUSD, Market.CME, mirExpiry);
+            yield return new TestCaseData(mir, 1.1800m, 0.011800m);
+
+            // Futures where magnifier is discovered via live TS API
+            var jpyExpiry = new DateTime(2026, 06, 15);
+            var jpy = Symbol.CreateFuture(Futures.Currencies.JPY, Market.CME, jpyExpiry);
+            yield return new TestCaseData(jpy, 0.6300m, 0.006300m);
+
+            var e7Expiry = new DateTime(2026, 06, 15);
+            var e7 = Symbol.CreateFuture(Futures.Currencies.EuroFXEmini, Market.CME, e7Expiry);
+            yield return new TestCaseData(e7, 1.0800m, 1.0800m);
+        }
+
+        [TestCaseSource(nameof(GetLeanPriceTestCases))]
+        public void GetLeanPrice(Symbol symbol, decimal brokeragePrice, decimal expectedLeanPrice)
+        {
+            var apiClient = CreateTradeStationApiClient();
+            var priceMapper = new PriceMapper(apiClient, new TradeStationSymbolMapper());
+
+            var actual = priceMapper.GetLeanPrice(symbol, brokeragePrice);
+
+            Assert.AreEqual(expectedLeanPrice, actual);
+        }
+
         [Test]
         public void GetTradeStationAccountsBalance()
         {
