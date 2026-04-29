@@ -145,8 +145,7 @@ namespace QuantConnect.Brokerages.TradeStation
         ///   <item><description>Return the cached value if already computed for the canonical symbol.</description></item>
         ///   <item><description>Use <see cref="SymbolPropertiesDatabase"/> when its magnifier is greater than 1.</description></item>
         ///   <item><description>Otherwise fetch live symbol details from the TradeStation API and derive the
-        ///   magnifier from both the price increment and the point value. A warning is logged when the two
-        ///   derivations disagree by more than 0.000001; the increment-derived value is used.</description></item>
+        ///   magnifier as <c>PriceFormat.Increment / MinimumPriceVariation</c>.</description></item>
         /// </list>
         /// Thread-safe via <see cref="_magnifierLock"/>.
         /// </remarks>
@@ -167,17 +166,13 @@ namespace QuantConnect.Brokerages.TradeStation
                     var brokerageSymbol = _symbolMapper.GetBrokerageSymbol(symbol);
                     var symbolDetail = _apiClient.GetSymbolDetailsAsync(brokerageSymbol).SynchronouslyAwaitTaskResult();
 
-                    var fromIncrement = symbolDetail.PriceFormat.Increment / properties.MinimumPriceVariation;
-                    var fromPointValue = properties.ContractMultiplier / symbolDetail.PriceFormat.PointValue;
+                    // Increment is the price-scaling factor we need. ContractMultiplier/PointValue gives the same value.
+                    priceMagnifier = symbolDetail.PriceFormat.Increment / properties.MinimumPriceVariation;
 
-                    if (Math.Abs(fromIncrement - fromPointValue) > 0.000001m)
+                    if (priceMagnifier != properties.PriceMagnifier)
                     {
-                        Log.Error($"{nameof(PriceMapper)}.{nameof(GetMagnifier)}: magnifier disagreement for {symbol} — " +
-                            $"increment-derived={fromIncrement}, point-value-derived={fromPointValue}. " +
-                            $"Using increment-derived; investigate symbol-properties-database.csv row.");
+                        Log.Trace($"{nameof(PriceMapper)}.{nameof(GetMagnifier)}: {symbol} computed magnifier={priceMagnifier} differs from database PriceMagnifier={properties.PriceMagnifier}.");
                     }
-
-                    priceMagnifier = fromIncrement;
                 }
 
                 _priceMagnifierByCanonicalSymbol[symbol.Canonical] = priceMagnifier;
