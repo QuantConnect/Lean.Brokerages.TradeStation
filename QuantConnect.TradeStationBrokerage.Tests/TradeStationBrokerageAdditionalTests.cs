@@ -730,9 +730,11 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         {
             var groupOrderManager = new GroupOrderManager(2, quantity, limitPrice);
 
-            var comboLimitOrder = new ComboLimitOrder(null, default, groupOrderManager.LimitPrice, default, groupOrderManager);
+            var comboLimitOrder = new ComboLimitOrder(Symbols.AAPL, default, groupOrderManager.LimitPrice, default, groupOrderManager);
 
-            var actualLimitPrice = TradeStationExtensions.GetLimitPrice(comboLimitOrder);
+            var priceMapper = new PriceMapper(null, null);
+
+            var actualLimitPrice = TradeStationExtensions.GetLimitPrice(comboLimitOrder, priceMapper);
 
             Assert.AreEqual(expectedLimitPrice, actualLimitPrice);
         }
