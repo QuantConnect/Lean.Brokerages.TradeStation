@@ -168,6 +168,10 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var e7Expiry = new DateTime(2026, 06, 15);
             var e7 = Symbol.CreateFuture(Futures.Currencies.EuroFXEmini, Market.CME, e7Expiry);
             yield return new TestCaseData(e7, 1.0800m, 1.0800m);
+
+            var niyExpiry = new DateTime(2026, 06, 15);
+            var niy = Symbol.CreateFuture(Futures.Indices.Nikkei225YenCME, Market.CME, niyExpiry);
+            yield return new TestCaseData(niy, 38500.00m, 38500.00m);
         }
 
         [TestCaseSource(nameof(GetBrokeragePriceTestCases))]
@@ -207,6 +211,10 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var e7Expiry = new DateTime(2026, 06, 15);
             var e7 = Symbol.CreateFuture(Futures.Currencies.EuroFXEmini, Market.CME, e7Expiry);
             yield return new TestCaseData(e7, 1.0800m, 1.0800m);
+
+            var niyExpiry = new DateTime(2026, 06, 15);
+            var niy = Symbol.CreateFuture(Futures.Indices.Nikkei225YenCME, Market.CME, niyExpiry);
+            yield return new TestCaseData(niy, 38500.00m, 38500.00m);
         }
 
         [TestCaseSource(nameof(GetLeanPriceTestCases))]
