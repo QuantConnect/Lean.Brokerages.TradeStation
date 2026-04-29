@@ -14,6 +14,7 @@
 */
 
 using System;
+using System.IO;
 using System.Linq;
 using Newtonsoft.Json;
 using NUnit.Framework;
@@ -21,10 +22,13 @@ using System.Threading;
 using QuantConnect.Tests;
 using QuantConnect.Orders;
 using QuantConnect.Logging;
+using System.Globalization;
+using QuantConnect.Securities;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using QuantConnect.Configuration;
 using QuantConnect.Tests.Brokerages;
+using QuantConnect.Securities.Future;
 using QuantConnect.Algorithm.CSharp;
 using QuantConnect.Orders.TimeInForces;
 using QuantConnect.Brokerages.TradeStation.Api;
@@ -235,6 +239,149 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.Greater(quoteSnapshot.Quotes.First().AskSize, 0);
             Assert.Greater(quoteSnapshot.Quotes.First().Bid, 0);
             Assert.Greater(quoteSnapshot.Quotes.First().BidSize, 0);
+        }
+
+        /// <summary>
+        /// Walks every Lean futures root in <see cref="SymbolPropertiesDatabase"/> for the configured markets,
+        /// builds the front-month brokerage symbol via <see cref="TradeStationSymbolMapper"/>, fetches the TS
+        /// last price, and prints a markdown audit row. Lean Universe Price is read from the latest universe file
+        /// when one exists; otherwise it's left blank. Output goes to the test log — copy into
+        /// lean-vs-tradestation-price-comparison.md.
+        /// </summary>
+        [Test, Explicit("Hits the live TradeStation API; run on demand to refresh the price-scale audit table.")]
+        public async Task GenerateLeanVsTradeStationPriceTable()
+        {
+            var spdb = SymbolPropertiesDatabase.FromDataFolder();
+            var symbolMapper = new TradeStationSymbolMapper();
+            var apiClient = CreateTradeStationApiClient();
+            var dataFolder = Globals.DataFolder;
+
+            // Markets we expect TradeStation to support. Add/remove as needed.
+            var markets = new[] { Market.CFE, Market.CBOT, Market.CME, Market.COMEX, Market.ICE, Market.NYMEX };
+
+            Log.Trace("Match column legend:");
+            Log.Trace("- ✅ Lean × magnifier matches TS last price within 5%");
+            Log.Trace("- ❌ prices disagree by more than 5% — magnifier or root mapping likely wrong");
+            Log.Trace("- ⚠️ TS rejected the brokerage symbol (FAILED, INVALID SYMBOL)");
+            Log.Trace("- 🔒 TS account is not entitled for this product (FAILED, NOT ENTITLED)");
+            Log.Trace("- ⚙️ Lean universe price missing for this root — nothing to compare against");
+            Log.Trace("");
+            Log.Trace("| Market | Lean | Magnifier | Lean Universe Price | TS | TS Last | Match |");
+            Log.Trace("| ------ | ---- | --------- | ------------------- | -- | ------- | ----- |");
+
+            foreach (var market in markets)
+            {
+                foreach (var leanRoot in spdb.GetSymbolPropertiesList(market, SecurityType.Future).Select(x => x.Key.Symbol))
+                {
+                    var (magnifierLabel, leanOpenLabel, brokerageSymbolLabel, tsLastLabel, matchLabel) = ("-", "", leanRoot, "", "");
+                    decimal? leanOpen = null;
+                    int? universeYear = null;
+                    int? universeMonth = null;
+
+                    try
+                    {
+                        // Optional: pull the front-month open from the latest universe file when present.
+                        var rootDir = Path.Combine(dataFolder, "future", market, "universes", leanRoot.ToLowerInvariant());
+                        if (Directory.Exists(rootDir))
+                        {
+                            var latestFile = Directory.EnumerateFiles(rootDir, "*.csv").OrderByDescending(f => f, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+                            var firstDataLine = latestFile != null
+                                ? File.ReadAllLines(latestFile).Skip(1).FirstOrDefault(l => !string.IsNullOrWhiteSpace(l))
+                                : null;
+
+                            if (firstDataLine != null)
+                            {
+                                var parts = firstDataLine.Split(',');
+                                var yyyymm = parts[0];
+                                if (yyyymm.Length == 6 && int.TryParse(yyyymm.Substring(0, 4), out var y) && int.TryParse(yyyymm.Substring(4, 2), out var m))
+                                {
+                                    universeYear = y;
+                                    universeMonth = m;
+                                }
+                                if (decimal.TryParse(parts[1], NumberStyles.Any, CultureInfo.InvariantCulture, out var open))
+                                {
+                                    leanOpen = open;
+                                    leanOpenLabel = open.ToString(CultureInfo.InvariantCulture);
+                                }
+                            }
+                        }
+
+                        // Resolve front-month expiry: prefer the universe YYYYMM; fall back to the next expiry from today.
+                        var canonical = Symbol.Create(leanRoot, SecurityType.Future, market);
+                        var expirySeed = universeYear.HasValue
+                            ? new DateTime(universeYear.Value, universeMonth.Value, 1)
+                            : DateTime.UtcNow.Date;
+                        DateTime expiry;
+                        try
+                        {
+                            expiry = FuturesExpiryFunctions.FuturesExpiryFunction(canonical)(expirySeed);
+                        }
+                        catch
+                        {
+                            // No expiry function registered — last-day-of-month fallback so GenerateFutureTicker still works.
+                            expiry = new DateTime(expirySeed.Year, expirySeed.Month, DateTime.DaysInMonth(expirySeed.Year, expirySeed.Month));
+                        }
+
+                        var symbol = Symbol.CreateFuture(leanRoot, market, expiry);
+                        brokerageSymbolLabel = symbolMapper.GetBrokerageSymbol(symbol);
+
+                        var props = spdb.GetSymbolProperties(market, symbol, SecurityType.Future, Currencies.USD);
+                        var spdbMagnifier = props.PriceMagnifier > 1 ? props.PriceMagnifier : 1m;
+                        magnifierLabel = props.PriceMagnifier > 1 ? props.PriceMagnifier.ToString(CultureInfo.InvariantCulture) : "-";
+
+                        try
+                        {
+                            var snapshot = await apiClient.GetQuoteSnapshot(brokerageSymbolLabel);
+                            var quote = snapshot.Quotes?.FirstOrDefault();
+                            if (quote?.Last is decimal tsLast)
+                            {
+                                tsLastLabel = tsLast.ToString(CultureInfo.InvariantCulture);
+                                if (leanOpen.HasValue)
+                                {
+                                    var expectedTs = leanOpen.Value * spdbMagnifier;
+                                    var diffPct = tsLast == 0 ? 1m : Math.Abs(expectedTs - tsLast) / tsLast;
+                                    matchLabel = diffPct < 0.05m ? "✅" : "❌";
+                                }
+                                else
+                                {
+                                    // TS quote ok but Lean has no universe price to compare against.
+                                    matchLabel = "⚙️";
+                                }
+                            }
+                            else if (snapshot.Errors?.FirstOrDefault().Error is { } err)
+                            {
+                                if (err.IndexOf("INVALID SYMBOL", StringComparison.OrdinalIgnoreCase) >= 0)
+                                {
+                                    matchLabel = "⚠️";
+                                }
+                                else if (err.IndexOf("NOT ENTITLED", StringComparison.OrdinalIgnoreCase) >= 0)
+                                {
+                                    matchLabel = "🔒";
+                                }
+                                else
+                                {
+                                    tsLastLabel = $"err: {err}";
+                                }
+                            }
+                            else if (!leanOpen.HasValue)
+                            {
+                                // No quote, no Lean price — nothing to compare.
+                                matchLabel = "⚙️";
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            tsLastLabel = $"ex: {ex.Message}";
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        tsLastLabel = $"ex: {ex.Message}";
+                    }
+
+                    Log.Trace($"| {market} | {leanRoot} | {magnifierLabel} | {leanOpenLabel} | {brokerageSymbolLabel} | {tsLastLabel} | {matchLabel} |");
+                }
+            }
         }
 
         [TestCase("AAPL,INTL,TSLA,NVDA", Description = "Equtities")]
