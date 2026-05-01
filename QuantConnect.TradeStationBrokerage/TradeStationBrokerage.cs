@@ -532,25 +532,46 @@ public partial class TradeStationBrokerage : Brokerage
         var symbol = _symbolMapper.GetBrokerageSymbol(crossZeroOrderRequest.LeanOrder.Symbol);
         var tradeAction = ConvertDirection(crossZeroOrderRequest.LeanOrder.SecurityType, crossZeroOrderRequest.OrderPosition);
 
+        // First-part call (isPlaceOrderWithLeanEvent == true) is invoked synchronously from PlaceOrder,
+        // which already holds _messageHandler.WithLockedStream — re-entering would throw LockRecursionException
+        // because the underlying ReaderWriterLockSlim is created with LockRecursionPolicy.NoRecursion.
+        // Second-part call (isPlaceOrderWithLeanEvent == false) runs from Brokerage.TryHandleRemainingCrossZeroOrder
+        // on a Task.Run with no outer stream lock, so we must take the lock here so the new BrokerId and
+        // _skipWebSocketUpdatesForLeanOrders are registered before any WS event for that brokerage ID is dispatched.
+        if (isPlaceOrderWithLeanEvent)
+        {
+            return PlaceCrossZeroOrderInternal(crossZeroOrderRequest, symbol, tradeAction, isPlaceOrderWithLeanEvent);
+        }
+
         var crossZeroOrderResponse = default(CrossZeroOrderResponse);
         _messageHandler.WithLockedStream(() =>
         {
-            // PlaceOrderCommon will not check the order type. Should this call PlaceTradeStationOrder?
-            var (trailingAmount, trailingAsPercentage) = crossZeroOrderRequest.LeanOrder.GetTrailingStopInfo();
-            var response = PlaceOrderCommon(new List<Order> { crossZeroOrderRequest.LeanOrder }, crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
-                crossZeroOrderRequest.AbsoluteOrderQuantity, tradeAction, symbol, crossZeroOrderRequest.LeanOrder.GetLimitPrice(), crossZeroOrderRequest.LeanOrder.GetStopPrice(),
-                trailingAmount, trailingAsPercentage, isPlaceOrderWithLeanEvent);
-
-            if (response == null || !response.Value.Orders.Any())
-            {
-                crossZeroOrderResponse = new CrossZeroOrderResponse(string.Empty, false);
-                return;
-            }
-
-            var brokerageId = response.Value.Orders.Single().OrderID;
-            crossZeroOrderResponse = new CrossZeroOrderResponse(brokerageId, true);
+            crossZeroOrderResponse = PlaceCrossZeroOrderInternal(crossZeroOrderRequest, symbol, tradeAction, isPlaceOrderWithLeanEvent);
         });
         return crossZeroOrderResponse;
+    }
+
+    /// <summary>
+    /// Submits the cross-zero order leg to TradeStation and shapes the response.
+    /// </summary>
+    /// <remarks>
+    /// Caller is responsible for holding <c>_messageHandler.WithLockedStream</c> when needed
+    /// (see <see cref="PlaceCrossZeroOrder"/>). PlaceOrderCommon will not check the order type.
+    /// </remarks>
+    private CrossZeroOrderResponse PlaceCrossZeroOrderInternal(CrossZeroFirstOrderRequest crossZeroOrderRequest, string symbol, string tradeAction, bool isPlaceOrderWithLeanEvent)
+    {
+        var (trailingAmount, trailingAsPercentage) = crossZeroOrderRequest.LeanOrder.GetTrailingStopInfo();
+        var response = PlaceOrderCommon(new List<Order> { crossZeroOrderRequest.LeanOrder }, crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
+            crossZeroOrderRequest.AbsoluteOrderQuantity, tradeAction, symbol, crossZeroOrderRequest.LeanOrder.GetLimitPrice(), crossZeroOrderRequest.LeanOrder.GetStopPrice(),
+            trailingAmount, trailingAsPercentage, isPlaceOrderWithLeanEvent);
+
+        if (response == null || !response.Value.Orders.Any())
+        {
+            return new CrossZeroOrderResponse(string.Empty, false);
+        }
+
+        var brokerageId = response.Value.Orders.Single().OrderID;
+        return new CrossZeroOrderResponse(brokerageId, true);
     }
 
     /// <summary>
