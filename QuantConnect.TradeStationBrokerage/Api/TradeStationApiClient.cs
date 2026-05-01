@@ -474,6 +474,18 @@ public class TradeStationApiClient : IDisposable
     }
 
     /// <summary>
+    /// Fetches symbol details and formatting information for one symbol and relevant errors, if any.
+    /// </summary>
+    /// <param name="symbol">The valid symbol
+    /// </param>
+    /// <example>StockL "MSFT", Future: "@TU"</example>
+    /// <returns>The instance of <see cref="SymbolDetails"/> containing the symbol details and formatting information.</returns>
+    public async Task<SymbolDetails> GetSymbolDetailsAsync(string symbol)
+    {
+        return (await RequestAsync<SymbolDetailsResponse>($"/v3/marketdata/symbols/{symbol}", HttpMethod.Get)).Symbols[0];
+    }
+
+    /// <summary>
     /// Fetches marketdata bars for the given symbol, interval, and timeframe.
     /// The maximum amount of intraday bars a user can fetch is 57,500 per request.
     /// </summary>
@@ -503,7 +515,14 @@ public class TradeStationApiClient : IDisposable
         var bars = default(IEnumerable<TradeStationBar>);
         try
         {
-            bars = (await RequestAsync<TradeStationBars>(url.ToString(), HttpMethod.Get)).Bars;
+            var result = await RequestAsync<TradeStationBars>(url.ToString(), HttpMethod.Get);
+
+            if (result.Bars == null || !string.IsNullOrEmpty(result.Error))
+            {
+                throw new Exception($"[{result.Error}] {result.Message}");
+            }
+
+            bars = result.Bars;
         }
         catch (Exception ex)
         {

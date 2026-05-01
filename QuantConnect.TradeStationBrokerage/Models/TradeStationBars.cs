@@ -21,18 +21,22 @@ namespace QuantConnect.Brokerages.TradeStation.Models;
 /// <summary>
 /// Represents a collection of TradeStation bars.
 /// </summary>
-public readonly struct TradeStationBars
+public struct TradeStationBars
 {
     /// <summary>
     /// Gets the collection of TradeStation bars.
     /// </summary>
-    public readonly IEnumerable<TradeStationBar> Bars { get; }
+    public IEnumerable<TradeStationBar> Bars { get; set; }
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="TradeStationBars"/> struct.
+    /// Gets the error title.
     /// </summary>
-    /// <param name="bars">The collection of TradeStation bars.</param>
-    public TradeStationBars(IEnumerable<TradeStationBar> bars) => Bars = bars;
+    public string Error { get; set; }
+
+    /// <summary>
+    /// Gets the description of the error.
+    /// </summary>
+    public string Message { get; set; }
 }
 
 /// <summary>
