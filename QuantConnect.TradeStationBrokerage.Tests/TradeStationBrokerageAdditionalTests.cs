@@ -63,73 +63,6 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         }
 
         [Test]
-        public void DeserializeSymbolDetailsSuccessResponse()
-        {
-            var jsonResponse = @"{
-                ""Symbols"": [
-                    {
-                        ""AssetType"": ""FUTURE"",
-                        ""Country"": ""United States"",
-                        ""Currency"": ""USD"",
-                        ""Description"": ""2 Year U.S. Treasury Notes Continuous Contract [Jun26]"",
-                        ""Exchange"": ""CBOT"",
-                        ""FutureType"": ""Electronic"",
-                        ""Symbol"": ""@TU"",
-                        ""Root"": ""TU"",
-                        ""Underlying"": ""TUM26"",
-                        ""PriceFormat"": {
-                            ""Format"": ""SubFraction"",
-                            ""Fraction"": ""32"",
-                            ""SubFraction"": ""8"",
-                            ""IncrementStyle"": ""Simple"",
-                            ""Increment"": ""0.00390625"",
-                            ""PointValue"": ""2000""
-                        },
-                        ""QuantityFormat"": {
-                            ""Format"": ""Decimal"",
-                            ""Decimals"": ""0"",
-                            ""IncrementStyle"": ""Simple"",
-                            ""Increment"": ""1"",
-                            ""MinimumTradeQuantity"": ""1""
-                        }
-                    }
-                ],
-                ""Errors"": []
-            }";
-
-            var res = JsonConvert.DeserializeObject<SymbolDetailsResponse>(jsonResponse);
-
-            Assert.IsNotNull(res);
-            Assert.That(res.Symbols.Count, Is.EqualTo(1));
-            Assert.That(res.Errors.Count, Is.EqualTo(0));
-            Assert.That(res.Symbols[0].PriceFormat.Increment, Is.EqualTo(0.00390625m));
-            Assert.That(res.Symbols[0].PriceFormat.PointValue, Is.EqualTo(2000m));
-        }
-
-        [Test]
-        public void DeserializeSymbolDetailsErrorResponse()
-        {
-            var jsonResponse = @"{
-                ""Symbols"": [],
-                ""Errors"": [
-                    {
-                        ""Error"": ""NotFound"",
-                        ""Message"": ""invalid symbol"",
-                        ""Symbol"": ""@TUT""
-                    }
-                ]
-            }";
-
-            var res = JsonConvert.DeserializeObject<SymbolDetailsResponse>(jsonResponse);
-
-            Assert.IsNotNull(res);
-            Assert.That(res.Symbols.Count, Is.EqualTo(0));
-            Assert.That(res.Errors.Count, Is.EqualTo(1));
-            Assert.That(res.Errors.First().Error, Is.EqualTo("NotFound"));
-            Assert.That(res.Errors.First().Message, Is.EqualTo("invalid symbol"));
-        }
-
-        [Test]
         public void DeserializeBarsErrorResponse()
         {
             var jsonResponse = @"{
@@ -180,6 +113,18 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var jpy = Symbol.CreateFuture(Futures.Currencies.JPY, Market.CME, jpyExpiry);
             yield return new TestCaseData(jpy, 0.006300m, 0.6300m);
 
+            var j7Expiry = new DateTime(2026, 06, 15);
+            var j7 = Symbol.CreateFuture(Futures.Currencies.JapaneseYenEmini, Market.CME, j7Expiry);
+            yield return new TestCaseData(j7, 0.006300m, 0.6300m);
+
+            var mjyExpiry = new DateTime(2026, 06, 15);
+            var mjy = Symbol.CreateFuture(Futures.Currencies.MicroJPY, Market.CME, mjyExpiry);
+            yield return new TestCaseData(mjy, 0.006300m, 0.6300m);
+
+            var enyExpiry = new DateTime(2026, 06, 15);
+            var eny = Symbol.CreateFuture(Futures.Indices.Nikkei225YenEMini, Market.CME, enyExpiry);
+            yield return new TestCaseData(eny, 385.00m, 38500.00m);
+
             var e7Expiry = new DateTime(2026, 06, 15);
             var e7 = Symbol.CreateFuture(Futures.Currencies.EuroFXEmini, Market.CME, e7Expiry);
             yield return new TestCaseData(e7, 1.0800m, 1.0800m);
@@ -193,7 +138,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         public void GetBrokeragePrice(Symbol symbol, decimal leanPrice, decimal expectedBrokeragePrice)
         {
             var apiClient = CreateTradeStationApiClient();
-            var priceMapper = new PriceMapper(apiClient, new TradeStationSymbolMapper());
+            var priceMapper = new PriceMapper();
 
             var actual = priceMapper.GetBrokeragePrice(symbol, leanPrice);
 
@@ -223,6 +168,18 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var jpy = Symbol.CreateFuture(Futures.Currencies.JPY, Market.CME, jpyExpiry);
             yield return new TestCaseData(jpy, 0.6300m, 0.006300m);
 
+            var j7Expiry = new DateTime(2026, 06, 15);
+            var j7 = Symbol.CreateFuture(Futures.Currencies.JapaneseYenEmini, Market.CME, j7Expiry);
+            yield return new TestCaseData(j7, 0.6300m, 0.006300m);
+
+            var mjyExpiry = new DateTime(2026, 06, 15);
+            var mjy = Symbol.CreateFuture(Futures.Currencies.MicroJPY, Market.CME, mjyExpiry);
+            yield return new TestCaseData(mjy, 0.6300m, 0.006300m);
+
+            var enyExpiry = new DateTime(2026, 06, 15);
+            var eny = Symbol.CreateFuture(Futures.Indices.Nikkei225YenEMini, Market.CME, enyExpiry);
+            yield return new TestCaseData(eny, 38500.00m, 385.00m);
+
             var e7Expiry = new DateTime(2026, 06, 15);
             var e7 = Symbol.CreateFuture(Futures.Currencies.EuroFXEmini, Market.CME, e7Expiry);
             yield return new TestCaseData(e7, 1.0800m, 1.0800m);
@@ -236,7 +193,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         public void GetLeanPrice(Symbol symbol, decimal brokeragePrice, decimal expectedLeanPrice)
         {
             var apiClient = CreateTradeStationApiClient();
-            var priceMapper = new PriceMapper(apiClient, new TradeStationSymbolMapper());
+            var priceMapper = new PriceMapper();
 
             var actual = priceMapper.GetLeanPrice(symbol, brokeragePrice);
 
@@ -755,7 +712,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
             var comboLimitOrder = new ComboLimitOrder(Symbols.AAPL, default, groupOrderManager.LimitPrice, default, groupOrderManager);
 
-            var priceMapper = new PriceMapper(null, null);
+            var priceMapper = new PriceMapper();
 
             var actualLimitPrice = TradeStationExtensions.GetLimitPrice(comboLimitOrder, priceMapper);
 

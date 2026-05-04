@@ -288,7 +288,7 @@ public partial class TradeStationBrokerage : Brokerage
             Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(Initialize)}: AccountID: {accountId} - AccountType: {_tradeStationAccountType}");
         }
 
-        _priceMapper = new PriceMapper(_tradeStationApiClient, _symbolMapper);
+        _priceMapper = new PriceMapper();
         _messageHandler = new(HandleTradeStationMessage, ConcurrencyEnabled);
 
         _aggregator = Composer.Instance.GetPart<IDataAggregator>();

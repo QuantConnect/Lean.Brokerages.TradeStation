@@ -13,10 +13,7 @@
  * limitations under the License.
 */
 
-using QuantConnect.Brokerages.TradeStation.Api;
-using QuantConnect.Logging;
 using QuantConnect.Securities;
-using System;
 using System.Collections.Generic;
 using System.Threading;
 
@@ -42,16 +39,10 @@ namespace QuantConnect.Brokerages.TradeStation
         private static readonly SymbolPropertiesDatabase _spDb = SymbolPropertiesDatabase.FromDataFolder();
 
         /// <summary>
-        /// TradeStation API client used to fetch live symbol details when the database magnifier is
-        /// not meaningful (≤ 1).
+        /// Lean futures roots whose price magnifier is hardcoded to 100, bypassing the
+        /// <see cref="SymbolPropertiesDatabase"/> lookup.
         /// </summary>
-        private readonly TradeStationApiClient _apiClient;
-
-        /// <summary>
-        /// Symbol mapper used to convert a Lean <see cref="Symbol"/> to a TradeStation brokerage
-        /// ticker string before querying the API.
-        /// </summary>
-        private readonly TradeStationSymbolMapper _symbolMapper;
+        private static readonly HashSet<string> _specialMagnifierRoots = ["6J", "ENY", "J7", "MJY"];
 
         /// <summary>
         /// Cache of resolved price magnifiers keyed by canonical symbol, populated on first access
@@ -63,17 +54,6 @@ namespace QuantConnect.Brokerages.TradeStation
         /// Protects concurrent read/write access to <see cref="_priceMagnifierByCanonicalSymbol"/>.
         /// </summary>
         private readonly Lock _magnifierLock = new();
-
-        /// <summary>
-        /// Creates a price mapper backed by the supplied TradeStation API client and symbol mapper.
-        /// </summary>
-        /// <param name="apiClient">TradeStation API client for live symbol-detail lookups.</param>
-        /// <param name="symbolMapper">Symbol mapper for converting Lean symbols to brokerage tickers.</param>
-        public PriceMapper(TradeStationApiClient apiClient, TradeStationSymbolMapper symbolMapper)
-        {
-            _apiClient = apiClient;
-            _symbolMapper = symbolMapper;
-        }
 
         /// <summary>
         /// Converts a Lean price to the equivalent TradeStation brokerage price for the given symbol.
@@ -143,9 +123,8 @@ namespace QuantConnect.Brokerages.TradeStation
         /// Resolution order:
         /// <list type="number">
         ///   <item><description>Return the cached value if already computed for the canonical symbol.</description></item>
-        ///   <item><description>Use <see cref="SymbolPropertiesDatabase"/> when its magnifier is greater than 1.</description></item>
-        ///   <item><description>Otherwise fetch live symbol details from the TradeStation API and derive the
-        ///   magnifier as <c>PriceFormat.Increment / MinimumPriceVariation</c>.</description></item>
+        ///   <item><description>Use the hardcoded magnifier of 100 when the root is in <see cref="_specialMagnifierRoots"/>.</description></item>
+        ///   <item><description>Otherwise use the magnifier from <see cref="SymbolPropertiesDatabase"/>.</description></item>
         /// </list>
         /// Thread-safe via <see cref="_magnifierLock"/>.
         /// </remarks>
@@ -158,21 +137,14 @@ namespace QuantConnect.Brokerages.TradeStation
                     return priceMagnifier;
                 }
 
-                var properties = _spDb.GetSymbolProperties(symbol.ID.Market, symbol, symbol.SecurityType, Currencies.USD);
-
-                priceMagnifier = properties.PriceMagnifier;
-                if (priceMagnifier <= 1)
+                if (_specialMagnifierRoots.Contains(symbol.ID.Symbol))
                 {
-                    var brokerageSymbol = _symbolMapper.GetBrokerageSymbol(symbol);
-                    var symbolDetail = _apiClient.GetSymbolDetailsAsync(brokerageSymbol).SynchronouslyAwaitTaskResult();
-
-                    // Increment is the price-scaling factor we need. ContractMultiplier/PointValue gives the same value.
-                    priceMagnifier = symbolDetail.PriceFormat.Increment / properties.MinimumPriceVariation;
-
-                    if (priceMagnifier != properties.PriceMagnifier)
-                    {
-                        Log.Trace($"{nameof(PriceMapper)}.{nameof(GetMagnifier)}: {symbol} computed magnifier={priceMagnifier} differs from database PriceMagnifier={properties.PriceMagnifier}.");
-                    }
+                    priceMagnifier = 100m;
+                }
+                else
+                {
+                    var properties = _spDb.GetSymbolProperties(symbol.ID.Market, symbol, symbol.SecurityType, Currencies.USD);
+                    priceMagnifier = properties.PriceMagnifier;
                 }
 
                 _priceMagnifierByCanonicalSymbol[symbol.Canonical] = priceMagnifier;
