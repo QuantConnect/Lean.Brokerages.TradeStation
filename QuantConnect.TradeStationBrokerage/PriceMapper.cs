@@ -13,7 +13,9 @@
  * limitations under the License.
 */
 
+using QuantConnect.Logging;
 using QuantConnect.Securities;
+using System;
 using System.Collections.Generic;
 using System.Threading;
 
@@ -42,7 +44,7 @@ namespace QuantConnect.Brokerages.TradeStation
         /// Lean futures roots whose price magnifier is hardcoded to 100, bypassing the
         /// <see cref="SymbolPropertiesDatabase"/> lookup.
         /// </summary>
-        private static readonly HashSet<string> _specialMagnifierRoots = ["6J", "ENY", "J7", "MJY"];
+        private static readonly HashSet<string> _specialMagnifierRoots = new(StringComparer.OrdinalIgnoreCase) { "6J", "ENY", "J7", "MJY" };
 
         /// <summary>
         /// Cache of resolved price magnifiers keyed by canonical symbol, populated on first access
@@ -147,6 +149,7 @@ namespace QuantConnect.Brokerages.TradeStation
                     priceMagnifier = properties.PriceMagnifier;
                 }
 
+                Log.Trace($"{nameof(PriceMapper)}.{nameof(GetMagnifier)}: {symbol}: magnifier={priceMagnifier}.");
                 _priceMagnifierByCanonicalSymbol[symbol.Canonical] = priceMagnifier;
                 return priceMagnifier;
             }
