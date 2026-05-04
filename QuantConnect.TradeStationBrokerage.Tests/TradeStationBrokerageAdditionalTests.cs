@@ -129,6 +129,21 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.That(res.Errors.First().Message, Is.EqualTo("invalid symbol"));
         }
 
+        [Test]
+        public void DeserializeBarsErrorResponse()
+        {
+            var jsonResponse = @"{
+                ""Error"": ""Failed"",
+                ""Message"": ""Not entitled to data for this symbol""
+            }";
+
+            var res = JsonConvert.DeserializeObject<TradeStationBars>(jsonResponse);
+
+            Assert.IsNull(res.Bars);
+            Assert.That(res.Error, Is.EqualTo("Failed"));
+            Assert.That(res.Message, Is.EqualTo("Not entitled to data for this symbol"));
+        }
+
         [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""BuyOrSell"": ""BUY"" } ] } ],""Errors"":[] }", TradeStationTradeActionType.Buy)]
         [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""BuyOrSell"": ""Buy"" } ] } ],""Errors"":[] }", TradeStationTradeActionType.Buy)]
         [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""BuyOrSell"": ""SELL"" } ] } ],""Errors"":[] }", TradeStationTradeActionType.Sell)]

@@ -517,7 +517,7 @@ public class TradeStationApiClient : IDisposable
         {
             var result = await RequestAsync<TradeStationBars>(url.ToString(), HttpMethod.Get);
 
-            if (result.Bars == null || !string.IsNullOrEmpty(result.Error))
+            if (!string.IsNullOrEmpty(result.Error))
             {
                 throw new Exception($"[{result.Error}] {result.Message}");
             }
