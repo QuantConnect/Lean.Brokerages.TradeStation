@@ -503,7 +503,14 @@ public class TradeStationApiClient : IDisposable
         var bars = default(IEnumerable<TradeStationBar>);
         try
         {
-            bars = (await RequestAsync<TradeStationBars>(url.ToString(), HttpMethod.Get)).Bars;
+            var result = await RequestAsync<TradeStationBars>(url.ToString(), HttpMethod.Get);
+
+            if (!string.IsNullOrEmpty(result.Error))
+            {
+                throw new Exception($"[{result.Error}] {result.Message}");
+            }
+
+            bars = result.Bars;
         }
         catch (Exception ex)
         {

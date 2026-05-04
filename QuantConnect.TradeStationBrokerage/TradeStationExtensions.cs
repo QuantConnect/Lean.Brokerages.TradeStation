@@ -229,35 +229,60 @@ public static class TradeStationExtensions
     /// Gets the stop price of the specified order.
     /// </summary>
     /// <param name="order">The order to retrieve the stop price from.</param>
+    /// <param name="priceMapper">The price mapper used to convert the price to the brokerage format.</param>
     /// <returns>The stop price if the order is a StopMarketOrder or StopLimitOrder; otherwise, null.</returns>
-    public static decimal? GetStopPrice(this Order order) => order switch
+    public static decimal? GetStopPrice(this Order order, PriceMapper priceMapper)
     {
-        StopMarketOrder smo => smo.StopPrice,
-        StopLimitOrder slo => slo.StopPrice,
-        _ => null
-    };
+        var stopPrice = default(decimal);
+        switch (order)
+        {
+            case StopMarketOrder smo:
+                stopPrice = smo.StopPrice;
+                break;
+            case StopLimitOrder slo:
+                stopPrice = slo.StopPrice;
+                break;
+            default:
+                return null;
+        }
+        return priceMapper.GetBrokeragePrice(order.Symbol, stopPrice);
+    }
 
     /// <summary>
     /// Gets the limit price of the specified order.
     /// </summary>
     /// <param name="order">The order to retrieve the limit price from.</param>
+    /// <param name="priceMapper">The price mapper used to convert the price to the brokerage format.</param>
     /// <returns>The limit price if the order is a LimitOrder or StopLimitOrder; otherwise, null.</returns>
-    public static decimal? GetLimitPrice(this Order order) => order switch
+    public static decimal? GetLimitPrice(this Order order, PriceMapper priceMapper)   
     {
-        LimitOrder lo => lo.LimitPrice,
-        StopLimitOrder slo => slo.LimitPrice,
-        ComboLimitOrder clo => (clo.GroupOrderManager.Quantity * order.GroupOrderManager.LimitPrice) switch
+        var limitPrice = default(decimal);
+        switch (order)
         {
-            // TS uses the sign of the limit price:
-            // > 0 => Debit
-            // < 0 => Credit
-            // Normalize to positive debit / negative credit form
-            > 0 => Math.Abs(clo.GroupOrderManager.LimitPrice),
-            < 0 => decimal.Negate(Math.Abs(clo.GroupOrderManager.LimitPrice)),
-            _ => throw new NotSupportedException("Not supported GroupOrderManager Direction = " + clo.GroupOrderManager.Direction)
-        },
-        _ => null
-    };
+            case LimitOrder lo:
+                limitPrice = lo.LimitPrice;
+                break;
+            case StopLimitOrder slo:
+                limitPrice = slo.LimitPrice;
+                break;
+            case ComboLimitOrder clo:
+                limitPrice = (clo.GroupOrderManager.Quantity * order.GroupOrderManager.LimitPrice) switch
+                {
+                    // TS uses the sign of the limit price:
+                    // > 0 => Debit
+                    // < 0 => Credit
+                    // Normalize to positive debit / negative credit form
+                    > 0 => Math.Abs(clo.GroupOrderManager.LimitPrice),
+                    < 0 => decimal.Negate(Math.Abs(clo.GroupOrderManager.LimitPrice)),
+                    _ => throw new NotSupportedException("Not supported GroupOrderManager Direction = " + clo.GroupOrderManager.Direction)
+                };
+                break;
+            default:
+                return null;
+        }
+
+        return priceMapper.GetBrokeragePrice(order.Symbol, limitPrice);
+    }
 
     /// <summary>
     /// Gets the trailing stop information from the specified order.

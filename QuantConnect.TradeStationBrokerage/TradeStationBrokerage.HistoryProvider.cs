@@ -110,7 +110,12 @@ public partial class TradeStationBrokerage
 
         foreach (var bar in _tradeStationApiClient.GetBars(brokerageSymbol, brokerageUnitTime, request.StartTimeUtc, request.EndTimeUtc).ToEnumerable())
         {
-            var tradeBar = new TradeBar(bar.TimeStamp.ConvertFromUtc(request.ExchangeHours.TimeZone), request.Symbol, bar.Open, bar.High, bar.Low, bar.Close, bar.TotalVolume, period);
+            var tradeBar = new TradeBar(bar.TimeStamp.ConvertFromUtc(request.ExchangeHours.TimeZone), request.Symbol,
+                _priceMapper.GetLeanPrice(request.Symbol, bar.Open),
+                _priceMapper.GetLeanPrice(request.Symbol, bar.High),
+                _priceMapper.GetLeanPrice(request.Symbol, bar.Low),
+                _priceMapper.GetLeanPrice(request.Symbol, bar.Close),
+                bar.TotalVolume, period);
 
             if (request.ExchangeHours.IsOpen(tradeBar.Time, tradeBar.EndTime, request.IncludeExtendedMarketHours))
             {
