@@ -80,6 +80,11 @@ public partial class TradeStationBrokerage : Brokerage
     private bool _isSubscribeOnStreamOrderUpdate;
 
     /// <summary>
+    /// Indicates whether the warning for an update rejected because the order's prior stop already triggered has been fired.
+    /// </summary>
+    private volatile bool _priorStopTriggeredWarningFired;
+
+    /// <summary>
     /// Signals to a <see cref="CancellationToken"/> that it should be canceled.
     /// </summary>
     private readonly CancellationTokenSource _cancellationTokenSource = new();
@@ -718,6 +723,14 @@ public partial class TradeStationBrokerage : Brokerage
             catch (Exception exception) when (exception.Message.Equals("Failed to Cancel/Replace order: Not an open order.", StringComparison.InvariantCultureIgnoreCase))
             {
                 OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "UpdateNotOpenOrder", $"Failed to update Order: OrderId: {order.Id} (BrokerId: {brokerageOrderId}) for {order.Symbol}, the order is already closed"));
+            }
+            catch (Exception exception) when (exception.Message.Contains("prior stop already triggered", StringComparison.InvariantCultureIgnoreCase))
+            {
+                if (!_priorStopTriggeredWarningFired)
+                {
+                    _priorStopTriggeredWarningFired = true;
+                    OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "UpdatePriorStopTriggered", $"Failed to update Order: OrderId: {order.Id} (BrokerId: {brokerageOrderId}) for {order.Symbol}, the prior stop has already triggered"));
+                }
             }
             catch (Exception exception)
             {
