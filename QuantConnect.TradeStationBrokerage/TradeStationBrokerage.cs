@@ -169,6 +169,16 @@ public partial class TradeStationBrokerage : Brokerage
     private readonly Dictionary<string, Exchange> _tradeStationRouteToLeanExchange = new();
 
     /// <summary>
+    /// Maps TradeStation update-order rejection substrings that should be treated as non-fatal warnings
+    /// (because the order is no longer modifiable) to the warning code and reason emitted to Lean.
+    /// </summary>
+    private static readonly Dictionary<string, (string Code, string Reason)> _updateOrderSoftRejects = new(StringComparer.InvariantCultureIgnoreCase)
+    {
+        ["Failed to Cancel/Replace order: Not an open order."] = ("UpdateNotOpenOrder", "the order is already closed"),
+        ["Cancel/Replace not allowed after cancel has been attempted"] = ("UpdateAfterCancelAttempted", "a cancel has already been attempted on the order"),
+    };
+
+    /// <summary>
     /// Represents a type capable of fetching the holdings for the specified symbol
     /// </summary>
     protected ISecurityProvider SecurityProvider { get; private set; }
@@ -720,9 +730,9 @@ public partial class TradeStationBrokerage : Brokerage
                 response = true;
                 _updateSubmittedResponseResultByBrokerageID[brokerageOrderId] = true;
             }
-            catch (Exception exception) when (exception.Message.Equals("Failed to Cancel/Replace order: Not an open order.", StringComparison.InvariantCultureIgnoreCase))
+            catch (Exception exception) when (_updateOrderSoftRejects.TryGetValue(exception.Message, out var softReject))
             {
-                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "UpdateNotOpenOrder", $"Failed to update Order: OrderId: {order.Id} (BrokerId: {brokerageOrderId}) for {order.Symbol}, the order is already closed"));
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, softReject.Code, $"Failed to update Order: OrderId: {order.Id} (BrokerId: {brokerageOrderId}) for {order.Symbol}, {softReject.Reason}"));
             }
             catch (Exception exception) when (exception.Message.Contains("prior stop already triggered", StringComparison.InvariantCultureIgnoreCase))
             {
