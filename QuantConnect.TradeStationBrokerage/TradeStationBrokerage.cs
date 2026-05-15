@@ -1033,11 +1033,11 @@ public partial class TradeStationBrokerage : Brokerage
                         // to keep the Lean order lifecycle consistent.
                         if (brokerageOrder.Status is TradeStationOrderStatusType.Ack or TradeStationOrderStatusType.Don)
                         {
-                            // We skip 'ACK'/'DON' because these order types send fill data in the 'ACK' event
-                            // that will be duplicated in the final 'FLL' event.
-                            // Note: TrailingStop orders are executed as StopMarket orders in TradeStation.
-                            if (brokerageOrder.OrderType is TradeStationOrderType.StopMarket or TradeStationOrderType.StopLimit
-                                && brokerageOrder.Legs.Any(l => l.ExecQuantity > 0))
+                            // Skip any Ack/Don that already has fill data. The final FLL event
+                            // carries the same fill, so we wait for it. If we let this Ack pass,
+                            // it becomes UpdateSubmitted (which Lean does not apply to holdings)
+                            // and the later Filled event ends up with FillQuantity = 0 (#79, #84).
+                            if (brokerageOrder.Legs.Any(l => l.ExecQuantity > 0))
                             {
                                 return;
                             }
