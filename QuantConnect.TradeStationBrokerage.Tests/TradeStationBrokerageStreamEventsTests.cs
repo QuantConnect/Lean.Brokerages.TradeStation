@@ -1021,5 +1021,190 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.AreEqual(100m, filled.FillQuantity, "Filled event must carry the full fill quantity.");
             Assert.AreEqual(20.57m, filled.FillPrice, "Filled event must carry the fill price.");
         }
+
+        /// <summary>
+        /// Covers issue #84: an in-flight Lean UpdateOrder collides with a TradeStation fill, and
+        /// TradeStation streams TWO post-update ACK frames before the terminal FLL — a price-change
+        /// ACK (ExecQuantity = 0) followed by a fill-carrying ACK (ExecQuantity = 100).
+        /// <c>_skipWebSocketUpdatesForLeanOrders</c> drains only the first; the fill-carrying ACK is
+        /// then dropped by the ExecQuantity guard so the terminal FLL keeps the full fill delta.
+        /// </summary>
+        [Test]
+        public void EmitsFilledEventForLimitOrderWhenLeanUpdateCollidesWithFillFromTradeStation()
+        {
+            var orderProvider = new OrderProvider();
+            var ts = TestSetup.CreateBrokerageStub(orderProvider, default);
+
+            var capturedEvents = new List<OrderEvent>();
+            var filledEventReceived = new AutoResetEvent(false);
+
+            ts.OrdersStatusChanged += (_, orderEvents) =>
+            {
+                capturedEvents.AddRange(orderEvents);
+                if (orderEvents.Any(e => e.Status == OrderStatus.Filled))
+                {
+                    filledEventReceived.Set();
+                }
+            };
+
+            // init flag _isSubscribeOnStreamOrderUpdate which allow use WS msg updates
+            ts.Connect();
+
+            var limitOrder = new LimitOrder(Symbol.Create("AAPL", SecurityType.Equity, Market.USA), 100, 272m, DateTime.UtcNow);
+            limitOrder.BrokerId.Add("952173212");
+            orderProvider.Add(limitOrder);
+
+            // PlaceOrder stub: emits Submitted + seeds _skipWebSocketUpdatesForLeanOrders so Frame 1 is drained.
+            ts.PlaceOrder(limitOrder);
+
+            // Frame 1: initial post-PlaceOrder ACK (ExecQuantity = 0, LimitPrice = 272) - drained by skip marker.
+            var initialAckJson = @"{
+                ""AccountID"": ""SIM2784990M"",
+                ""CommissionFee"": ""0"",
+                ""Currency"": ""USD"",
+                ""Duration"": ""GTC"",
+                ""FilledPrice"": ""0"",
+                ""GoodTillDate"": ""2026-07-23T00:00:00Z"",
+                ""Legs"": [
+                    {
+                        ""AssetType"": ""STOCK"",
+                        ""BuyOrSell"": ""Buy"",
+                        ""ExecQuantity"": ""0"",
+                        ""OpenOrClose"": ""Open"",
+                        ""QuantityOrdered"": ""100"",
+                        ""QuantityRemaining"": ""100"",
+                        ""Symbol"": ""AAPL""
+                    }
+                ],
+                ""LimitPrice"": ""272"",
+                ""OpenedDateTime"": ""2026-04-24T14:43:14Z"",
+                ""OrderID"": ""952173212"",
+                ""OrderType"": ""Limit"",
+                ""PriceUsedForBuyingPower"": ""272"",
+                ""Routing"": ""Intelligent"",
+                ""Status"": ""ACK"",
+                ""StatusDescription"": ""Received"",
+                ""UnbundledRouteFee"": ""0""
+            }";
+
+            ts.HandleTradeStationMessage(initialAckJson);
+
+            // Lean calls UpdateOrder (limit 272 -> 272.3). Stub emits UpdateSubmitted + re-seeds skip marker.
+            ts.UpdateOrder(limitOrder);
+
+            // Frame 2: post-update price-change ACK (ExecQuantity = 0, LimitPrice = 272.3).
+            // Consumes the single skip marker UpdateOrder just seeded.
+            var postUpdatePriceChangeAckJson = @"{
+                ""AccountID"": ""SIM2784990M"",
+                ""CommissionFee"": ""0"",
+                ""Currency"": ""USD"",
+                ""Duration"": ""GTC"",
+                ""FilledPrice"": ""0"",
+                ""GoodTillDate"": ""2026-07-23T00:00:00Z"",
+                ""Legs"": [
+                    {
+                        ""AssetType"": ""STOCK"",
+                        ""BuyOrSell"": ""Buy"",
+                        ""ExecQuantity"": ""0"",
+                        ""OpenOrClose"": ""Open"",
+                        ""QuantityOrdered"": ""100"",
+                        ""QuantityRemaining"": ""100"",
+                        ""Symbol"": ""AAPL""
+                    }
+                ],
+                ""LimitPrice"": ""272.3"",
+                ""OpenedDateTime"": ""2026-04-24T14:43:14Z"",
+                ""OrderID"": ""952173212"",
+                ""OrderType"": ""Limit"",
+                ""PriceUsedForBuyingPower"": ""272.3"",
+                ""Routing"": ""Intelligent"",
+                ""Status"": ""ACK"",
+                ""StatusDescription"": ""Received"",
+                ""UnbundledRouteFee"": ""0""
+            }";
+
+            ts.HandleTradeStationMessage(postUpdatePriceChangeAckJson);
+
+            // Frame 3: post-update fill-carrying ACK (ExecQuantity = 100, ExecutionPrice = 272.22).
+            // Skip marker already exhausted by Frame 2; the ExecQuantity > 0 guard now drops this
+            // frame so the terminal FLL owns the fill delta (#84).
+            var postUpdateFillCarryingAckJson = @"{
+                ""AccountID"": ""SIM2784990M"",
+                ""CommissionFee"": ""1"",
+                ""Currency"": ""USD"",
+                ""Duration"": ""GTC"",
+                ""FilledPrice"": ""272.22"",
+                ""GoodTillDate"": ""2026-07-23T00:00:00Z"",
+                ""Legs"": [
+                    {
+                        ""AssetType"": ""STOCK"",
+                        ""BuyOrSell"": ""Buy"",
+                        ""ExecQuantity"": ""100"",
+                        ""ExecutionPrice"": ""272.22"",
+                        ""OpenOrClose"": ""Open"",
+                        ""QuantityOrdered"": ""100"",
+                        ""QuantityRemaining"": ""0"",
+                        ""Symbol"": ""AAPL""
+                    }
+                ],
+                ""LimitPrice"": ""272.3"",
+                ""OpenedDateTime"": ""2026-04-24T14:43:14Z"",
+                ""OrderID"": ""952173212"",
+                ""OrderType"": ""Limit"",
+                ""PriceUsedForBuyingPower"": ""272.3"",
+                ""Routing"": ""Intelligent"",
+                ""Status"": ""ACK"",
+                ""StatusDescription"": ""Received"",
+                ""UnbundledRouteFee"": ""0""
+            }";
+
+            ts.HandleTradeStationMessage(postUpdateFillCarryingAckJson);
+
+            // Frame 4: FLL - terminal Filled. Same leg/exec as Frame 3.
+            var fllJson = @"{
+                ""AccountID"": ""SIM2784990M"",
+                ""ClosedDateTime"": ""2026-04-24T14:43:16Z"",
+                ""CommissionFee"": ""1"",
+                ""Currency"": ""USD"",
+                ""Duration"": ""GTC"",
+                ""FilledPrice"": ""272.22"",
+                ""GoodTillDate"": ""2026-07-23T00:00:00Z"",
+                ""Legs"": [
+                    {
+                        ""AssetType"": ""STOCK"",
+                        ""BuyOrSell"": ""Buy"",
+                        ""ExecQuantity"": ""100"",
+                        ""ExecutionPrice"": ""272.22"",
+                        ""OpenOrClose"": ""Open"",
+                        ""QuantityOrdered"": ""100"",
+                        ""QuantityRemaining"": ""0"",
+                        ""Symbol"": ""AAPL""
+                    }
+                ],
+                ""LimitPrice"": ""272.3"",
+                ""OpenedDateTime"": ""2026-04-24T14:43:14Z"",
+                ""OrderID"": ""952173212"",
+                ""OrderType"": ""Limit"",
+                ""PriceUsedForBuyingPower"": ""272.3"",
+                ""Routing"": ""Intelligent"",
+                ""Status"": ""FLL"",
+                ""StatusDescription"": ""Filled"",
+                ""UnbundledRouteFee"": ""0""
+            }";
+
+            ts.HandleTradeStationMessage(fllJson);
+
+            Assert.IsTrue(filledEventReceived.WaitOne(TimeSpan.FromSeconds(1)), "Did not receive a Filled order event.");
+
+            // Expected lifecycle: Submitted (PlaceOrder stub), UpdateSubmitted (UpdateOrder stub),
+            // Filled (Frame 4 FLL). Frames 1, 2, 3 are drained by the skip marker and the ExecQuantity guard.
+            Assert.IsFalse(capturedEvents.Any(e => e.Status == OrderStatus.UpdateSubmitted && e.FillQuantity != 0),
+                "Fill-carrying post-update ACK must not be rewritten to UpdateSubmitted (#84).");
+
+            var filled = capturedEvents.SingleOrDefault(e => e.Status == OrderStatus.Filled);
+            Assert.IsNotNull(filled, "Expected a Filled event after FLL frame (#84).");
+            Assert.AreEqual(100m, filled.FillQuantity, "Filled event must carry the full fill quantity (#84).");
+            Assert.AreEqual(272.22m, filled.FillPrice, "Filled event must carry the fill price (#84).");
+        }
     }
 }
