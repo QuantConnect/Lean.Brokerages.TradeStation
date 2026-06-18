@@ -61,31 +61,6 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         }
 
         [Test]
-        public void SoftRejectDoesNotClobberOrderThatIsNoLongerCancelPending()
-        {
-            var orderProvider = new OrderProvider();
-            var brokerage = CreateBrokerage(orderProvider, _ => throw new Exception("Not an open order."));
-
-            // The order reached a terminal state concurrently (e.g. a fill that arrived on the stream thread) before the
-            // soft-reject is handled. We must not overwrite it with a Canceled event.
-            var order = CreateCancelPendingOrder(orderProvider, "957819089");
-            order.Status = OrderStatus.Filled;
-
-            var orderEvents = new List<OrderEvent>();
-            BrokerageMessageEvent message = null;
-            brokerage.OrdersStatusChanged += (_, events) => orderEvents.AddRange(events);
-            brokerage.Message += (_, msg) => message = msg;
-
-            var result = brokerage.CancelOrder(order);
-
-            Assert.IsTrue(result);
-            // The warning is still emitted, but no terminal event is produced for the already-resolved order.
-            Assert.IsNotNull(message);
-            Assert.That(message.Type, Is.EqualTo(BrokerageMessageType.Warning));
-            Assert.That(orderEvents, Is.Empty);
-        }
-
-        [Test]
         public void UnexpectedCancelErrorIsReportedAsError()
         {
             var orderProvider = new OrderProvider();

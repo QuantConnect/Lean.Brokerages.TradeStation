@@ -796,13 +796,6 @@ public partial class TradeStationBrokerage : Brokerage
                 // (it treats a false return as a transient failure and would otherwise loop in CancelPending forever).
                 foreach (var groupOrder in orders)
                 {
-                    // Only resolve orders the algorithm is still waiting to cancel; do not clobber an order that has
-                    // already reached a terminal state (e.g. a fill that arrived concurrently on the stream thread).
-                    if (groupOrder.Status != OrderStatus.CancelPending)
-                    {
-                        continue;
-                    }
-
                     OnOrderEvent(new OrderEvent(groupOrder, DateTime.UtcNow, OrderFee.Zero, softReject.Reason)
                     {
                         Status = OrderStatus.Canceled
