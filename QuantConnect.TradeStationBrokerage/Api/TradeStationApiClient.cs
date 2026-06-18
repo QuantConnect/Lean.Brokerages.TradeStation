@@ -167,7 +167,17 @@ public class TradeStationApiClient : IDisposable
     /// </param>
     public async Task<bool> CancelOrder(string orderID)
     {
-        await RequestAsync<TradeStationAccount>($"/v3/orderexecution/orders/{orderID}", HttpMethod.Delete);
+        // The cancel endpoint returns an order-execution response (OrderID/Error/Message), same shape as ReplaceOrder.
+        // An HTTP error status throws inside RequestAsync (this is how "Not an open order." / "Invalid order ID." surface).
+        // A per-order rejection returned with a success status carries a non-null Error; it is not fatal for the cancel
+        // flow, so just log it for diagnostics rather than throwing.
+        var response = await RequestAsync<Models.OrderResponse>($"/v3/orderexecution/orders/{orderID}", HttpMethod.Delete);
+
+        if (response.Error != null)
+        {
+            Log.Debug($"{nameof(TradeStationApiClient)}.{nameof(CancelOrder)}: OrderID {orderID} returned [{response.Error}] {response.Message}");
+        }
+
         return true;
     }
 
