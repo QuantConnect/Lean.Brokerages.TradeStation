@@ -179,6 +179,19 @@ public partial class TradeStationBrokerage : Brokerage
     };
 
     /// <summary>
+    /// Maps TradeStation cancel-order rejection messages that mean the order is no longer active at the brokerage
+    /// (so there is nothing left to cancel) to the warning code and reason emitted to Lean. These are treated as
+    /// non-fatal: the Lean order is transitioned to a terminal state instead of crashing the algorithm.
+    /// </summary>
+    private static readonly Dictionary<string, (string Code, string Reason)> _cancelOrderSoftRejects = new(StringComparer.InvariantCultureIgnoreCase)
+    {
+        // The order exists in TradeStation but is already in a terminal state (e.g. filled/expired).
+        ["Not an open order."] = ("CancelNotOpenOrder", "the order is already closed"),
+        // The order id has been purged from TradeStation entirely (e.g. a DAY order on a later trading session).
+        ["Invalid order ID."] = ("CancelOrderInvalid", "the order no longer exists at the brokerage"),
+    };
+
+    /// <summary>
     /// Represents a type capable of fetching the holdings for the specified symbol
     /// </summary>
     protected ISecurityProvider SecurityProvider { get; private set; }
@@ -769,14 +782,26 @@ public partial class TradeStationBrokerage : Brokerage
         {
             try
             {
-                if (_tradeStationApiClient.CancelOrder(brokerageOrderId).SynchronouslyAwaitTaskResult())
+                if (CancelBrokerageOrder(brokerageOrderId))
                 {
                     result = true;
                 }
             }
-            catch (Exception ex) when (ex.Message.Equals("Not an open order.", StringComparison.InvariantCultureIgnoreCase))
+            catch (Exception ex) when (_cancelOrderSoftRejects.TryGetValue(ex.Message, out var softReject))
             {
-                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "CancelNotOpenOrder", $"Failed to cancel Order: OrderId: {order.Id} (BrokerId: {brokerageOrderId}) for {order.Symbol}, the order is already closed"));
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, softReject.Code, $"Failed to cancel Order: OrderId: {order.Id} (BrokerId: {brokerageOrderId}) for {order.Symbol}, {softReject.Reason}"));
+
+                // The order is no longer active at the brokerage, so the cancel can never complete. Transition the
+                // Lean order to a terminal state so the transaction handler stops retrying the cancel on every bar
+                // (it treats a false return as a transient failure and would otherwise loop in CancelPending forever).
+                foreach (var groupOrder in orders)
+                {
+                    OnOrderEvent(new OrderEvent(groupOrder, DateTime.UtcNow, OrderFee.Zero, softReject.Reason)
+                    {
+                        Status = OrderStatus.Canceled
+                    });
+                }
+                result = true;
             }
             catch (Exception ex)
             {
@@ -784,6 +809,17 @@ public partial class TradeStationBrokerage : Brokerage
             }
         });
         return result;
+    }
+
+    /// <summary>
+    /// Sends the cancel request for the given brokerage order id to TradeStation. Extracted as a seam so the
+    /// soft-reject handling in <see cref="CancelOrder"/> can be unit tested without a live API connection.
+    /// </summary>
+    /// <param name="brokerageOrderId">The brokerage order id to cancel.</param>
+    /// <returns>True if TradeStation accepted the cancel request.</returns>
+    protected virtual bool CancelBrokerageOrder(string brokerageOrderId)
+    {
+        return _tradeStationApiClient.CancelOrder(brokerageOrderId).SynchronouslyAwaitTaskResult();
     }
 
     /// <summary>
