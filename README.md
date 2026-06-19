@@ -22,13 +22,13 @@ This repository hosts the TradeStation Brokerage Plugin Integration with the Qua
 
 [TradeStation](https://www.tradestation.com/) was founded by brothers William (Bill) and Rafael (Ralph) Cruz in 1982 as Omega Research, Inc. In 2001, the company converted itself from a trading software company to an online securities brokerage and renamed itself "TradeStation" with the mission to "create the ultimate trading experience". TradeStation provides access to trading Equities, Equity Options, and Futures for clients in over 150 markets, 34 countries, and 27 currencies. TradeStation also delivers custody, clearing, execution, and billing on behalf of registered advisors.
 
-For more information about the TradeStation brokerage, see the [QuantConnect-TradeStation Integration Page](https://www.quantconnect.com/docs/v2/our-platform/live-trading/brokerages/tradestation).
+For more information about the TradeStation brokerage, see the [QuantConnect-TradeStation Integration Page](https://www.quantconnect.com/docs/v2/cloud-platform/live-trading/brokerages/tradestation).
 
 ## Using the Brokerage Plugin
   
 ### Deploying TradeStation with VSCode User Interface
 
-  You can deploy using a visual interface in the QuantConnect cloud. For instructions, see the [QuantConnect-TradeStation Integration Page](https://www.quantconnect.com/docs/v2/our-platform/live-trading/brokerages/tradestation). 
+  You can deploy using a visual interface in the QuantConnect cloud. For instructions, see the [QuantConnect-TradeStation Integration Page](https://www.quantconnect.com/docs/v2/cloud-platform/live-trading/brokerages/tradestation). 
 
 ![tradestation-deployment](https://github.com/user-attachments/assets/c7b6546f-bcb2-402c-b663-e2c01c4e28b2)
 
@@ -39,7 +39,7 @@ For more information about the TradeStation brokerage, see the [QuantConnect-Tra
 
 Follow these steps to start local live trading with the TradeStation brokerage:
 
-1.  Open a terminal in your [CLI root directory](https://www.quantconnect.com/docs/v2/lean-cli/initialization/directory-structure#02-lean-init).
+1.  Open a terminal in your [organization workspace](https://www.quantconnect.com/docs/v2/lean-cli/initialization/organization-workspaces).
 2.  Run `lean live "<projectName>"` to start a live deployment wizard for the project in `./<projectName>` and then enter the brokerage number.
 
 	```
@@ -108,8 +108,8 @@ Follow these steps to start local live trading with the TradeStation brokerage:
     To enter multiple options, separate them with comma: 20
     ```
 
-    If you select IQFeed, see [IQFeed](https://www.quantconnect.com/docs/v2/lean-cli/live-trading/other-data-feeds/iqfeed) for set up instructions.  
-    If you select Polygon Data Feed, see [Polygon](https://www.quantconnect.com/docs/v2/lean-cli/live-trading/other-data-feeds/polygon) for set up instructions.
+    If you select IQFeed, see [IQFeed](https://www.quantconnect.com/docs/v2/lean-cli/live-trading/data-providers/iqfeed) for set up instructions.  
+    If you select Polygon Data Feed, see [Polygon](https://www.quantconnect.com/docs/v2/lean-cli/live-trading/data-providers/polygon) for set up instructions.
 
 6.  In the browser window that automatically opens, click Allow.
 
@@ -170,7 +170,7 @@ To view the TradeStation trading fees, see the [Pricing](https://www.tradestatio
 
 We model buying power and margin calls to ensure your algorithm stays within the margin requirements.
 
-[Read Documentation](https://www.quantconnect.com/docs/v2/our-platform/live-trading/brokerages/tradestation#07-Margin)
+[Read Documentation](https://www.quantconnect.com/docs/v2/cloud-platform/live-trading/brokerages/tradestation#08-Margin)
 
 #### Buying Power
 
