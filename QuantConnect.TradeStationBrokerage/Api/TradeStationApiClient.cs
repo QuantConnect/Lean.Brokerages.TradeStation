@@ -23,6 +23,7 @@ using System.Threading;
 using QuantConnect.Util;
 using QuantConnect.Orders;
 using QuantConnect.Logging;
+using QuantConnect.Configuration;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using Lean = QuantConnect.Orders;
@@ -42,6 +43,21 @@ public class TradeStationApiClient : IDisposable
     /// Maximum number of bars that can be requested in a single call to <see cref="GetBars(string, TradeStationUnitTimeIntervalType, DateTime, DateTime)"/>.
     /// </summary>
     private const int MaxBars = 57500;
+
+    /// <summary>
+    /// Maximum time to wait for a single line from a streaming response before treating the
+    /// connection as dead.
+    /// </summary>
+    /// <remarks>
+    /// TradeStation sends a heartbeat roughly every few seconds on its streaming endpoints, so a
+    /// prolonged silence indicates the underlying TCP connection was silently dropped (e.g. NAT
+    /// table eviction or a server-side half-close that does not send a TCP RST). Without this guard
+    /// <see cref="StreamReader.ReadLineAsync(CancellationToken)"/> would block indefinitely without
+    /// throwing, so the caller's reconnect logic (which only triggers on exceptions) would never fire.
+    /// Configurable via the <c>trade-station-stream-read-timeout-seconds</c> setting.
+    /// </remarks>
+    private readonly TimeSpan _streamReadTimeout = TimeSpan.FromSeconds(
+        Config.GetInt("trade-station-stream-read-timeout-seconds", 30));
 
     /// <summary>
     /// Represents the API Key used by the client application to authenticate requests.
@@ -85,6 +101,19 @@ public class TradeStationApiClient : IDisposable
         _cliendId = clientId;
         _redirectUri = redirectUri;
         _httpClient = new(restApiUrl, clientId, clientSecret, authorizationCode, redirectUri, refreshToken);
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TradeStationApiClient"/> class using an already
+    /// constructed <see cref="HttpClientRetryWrapper"/>. Intended for unit testing so a fake HTTP
+    /// handler can be injected.
+    /// </summary>
+    /// <param name="httpClient">The HTTP client wrapper to use for requests.</param>
+    /// <param name="accountId">The specific user account id.</param>
+    internal TradeStationApiClient(HttpClientRetryWrapper httpClient, string accountId)
+    {
+        _httpClient = httpClient;
+        _accountID = new Lazy<string>(() => accountId);
     }
 
     /// <summary>
@@ -701,6 +730,7 @@ public class TradeStationApiClient : IDisposable
     /// <exception cref="HttpRequestException">Thrown when the HTTP response status code does not indicate success.</exception>
     /// <exception cref="TaskCanceledException">Thrown if the operation is canceled.</exception>
     /// <exception cref="OperationCanceledException">Thrown if the operation is canceled via the <paramref name="cancellationToken"/>.</exception>
+    /// <exception cref="TimeoutException">Thrown when no data is received from the stream within <see cref="_streamReadTimeout"/>, indicating the connection was silently dropped.</exception>
     /// <remarks>
     /// This method sends an HTTP GET request to the specified URI and streams the response content line by line.
     /// It ensures that the HTTP response is successful and then reads the response stream asynchronously.
@@ -711,22 +741,40 @@ public class TradeStationApiClient : IDisposable
     /// </remarks>
     private async IAsyncEnumerable<string> StreamRequestAsyncEnumerable(string resource, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        using (var response = await _httpClient.GetStreamAsync(resource, cancellationToken).ConfigureAwait(false))
-        {
-            response.EnsureSuccessStatusCode();
+        using var response = await _httpClient.GetStreamAsync(resource, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
 
-            using (var stream = await response.Content.ReadAsStreamAsync(cancellationToken))
+        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            // Guard each read with an inactivity timeout. If the underlying TCP connection is
+            // silently dropped, ReadLineAsync would otherwise block forever without throwing,
+            // and the reconnect logic (which only triggers on exceptions) would never fire.
+            // TradeStation sends periodic heartbeats, so exceeding the timeout reliably
+            // indicates a dead stream. We do not rely on reader.EndOfStream here because it
+            // performs a synchronous, uncancellable read that can hang for the same reason.
+            using var inactivityCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            inactivityCts.CancelAfter(_streamReadTimeout);
+
+            string jsonLine;
+            try
             {
-                using (StreamReader reader = new StreamReader(stream))
-                {
-                    while (!reader.EndOfStream)
-                    {
-                        var jsonLine = await reader.ReadLineAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
-                        if (jsonLine == null || cancellationToken.IsCancellationRequested) break;
-                        yield return jsonLine;
-                    }
-                }
+                jsonLine = await reader.ReadLineAsync(inactivityCts.Token).ConfigureAwait(false);
             }
+            catch (OperationCanceledException) when (inactivityCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException(
+                    $"{nameof(TradeStationApiClient)}.{nameof(StreamRequestAsyncEnumerable)}: no data received from stream '{resource}' " +
+                    $"within {_streamReadTimeout.TotalSeconds} seconds. Treating the connection as dead so it can be re-established.");
+            }
+
+            if (jsonLine == null)
+            {
+                break;
+            }
+            yield return jsonLine;
         }
     }
 
