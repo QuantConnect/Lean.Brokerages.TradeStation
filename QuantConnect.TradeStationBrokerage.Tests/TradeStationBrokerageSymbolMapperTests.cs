@@ -262,6 +262,33 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             yield return new TestCaseData("BTCZ24", Symbol.CreateFuture(Futures.Currencies.BTC, Market.CME, new DateTime(2024, 12, 27)));
         }
 
+        // Issue #96: TradeStation's streaming API occasionally delivers quote events with lowercase
+        // tickers even though GetBrokerageSymbol stored the keys in uppercase. The cached lookup must
+        // be case-insensitive so HandleQuoteEvents does not drop those quotes.
+        [TestCase("SPY", "spy", TradeStationAssetType.Stock)]
+        [TestCase("MESU26", "mesu26", TradeStationAssetType.Future)]
+        public void ResolvesCachedSymbolCaseInsensitively(string registeredBrokerageSymbol, string lowercaseBrokerageSymbol, TradeStationAssetType assetType)
+        {
+            // Sanity check: the keys really do differ only by case.
+            Assert.AreEqual(registeredBrokerageSymbol, lowercaseBrokerageSymbol.ToUpperInvariant());
+
+            Symbol registeredLeanSymbol;
+            switch (assetType)
+            {
+                case TradeStationAssetType.Future:
+                    Assert.IsTrue(_symbolMapper.TryGetLeanSymbol(registeredBrokerageSymbol, assetType, new DateTime(2026, 9, 18), out registeredLeanSymbol));
+                    break;
+                default:
+                    registeredLeanSymbol = _symbolMapper.GetLeanSymbol(registeredBrokerageSymbol, assetType.ConvertAssetTypeToSecurityType());
+                    Assert.IsNotNull(_symbolMapper.GetBrokerageSymbol(registeredLeanSymbol));
+                    break;
+            }
+
+            // The lowercase symbol delivered by the streaming API must resolve to the same Lean symbol.
+            Assert.IsTrue(_symbolMapper.TryGetLeanSymbol(lowercaseBrokerageSymbol, assetType, registeredLeanSymbol.ID.Date, out var resolvedLeanSymbol));
+            Assert.AreEqual(registeredLeanSymbol, resolvedLeanSymbol);
+        }
+
         [TestCaseSource(nameof(GetFutureSymbolsTestCases))]
         public void ConvertsFutureSymbolRoundTrip(string brokerageSymbol, Symbol leanSymbol)
         {
