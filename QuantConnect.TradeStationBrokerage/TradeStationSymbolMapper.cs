@@ -37,7 +37,12 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// <summary>
     /// A concurrent dictionary that maps brokerage symbols to Lean symbols.
     /// </summary>
-    private readonly ConcurrentDictionary<string, Symbol> _leanSymbolByBrokerageSymbol = new();
+    /// <remarks>
+    /// Uses a case-insensitive comparer because TradeStation's streaming API occasionally
+    /// delivers quote events with lowercase tickers (e.g. "spy", "mesu26") even though the
+    /// keys were stored in uppercase by <see cref="GetBrokerageSymbol"/>.
+    /// </remarks>
+    private readonly ConcurrentDictionary<string, Symbol> _leanSymbolByBrokerageSymbol = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Represents a set of supported security types.
