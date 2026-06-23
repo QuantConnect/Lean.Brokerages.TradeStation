@@ -1006,11 +1006,11 @@ public partial class TradeStationBrokerage : Brokerage
                     }
 
                     // Reconcile only Lean orders that are still open; recovering a missed fill/cancel for
-                    // them. Skip everything else so we don't re-notify external orders or re-emit terminal
-                    // events for orders already in sync. Already-counted fill quantity is deduplicated
-                    // downstream via _orderIdToFillQuantity (a re-sent partial yields FillQuantity 0).
-                    var knownOrders = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID);
-                    if (knownOrders == null || knownOrders.All(o => o.Status.IsClosed()))
+                    // them. Skip everything else (no matching order, or all already terminal) so we don't
+                    // re-notify external orders or re-emit events for orders already in sync. Already-counted
+                    // fill quantity is deduplicated downstream via _orderIdToFillQuantity (a re-sent partial
+                    // yields FillQuantity 0).
+                    if (OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID)?.All(o => o.Status.IsClosed()) ?? true)
                     {
                         return;
                     }
