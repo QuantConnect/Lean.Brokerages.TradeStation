@@ -990,13 +990,27 @@ public partial class TradeStationBrokerage : Brokerage
                 var brokerageOrder = jObj.ToObject<TradeStationOrder>();
 
                 // The live flag is still false until EndSnapshot, so reaching here with it unset means
-                // this frame is part of a reconnect's re-sent snapshot. Reconcile only orders Lean placed
-                // and still considers open, recovering a missed fill/cancel for them. Skip everything else
-                // so we don't re-notify external orders or re-emit terminal events already in sync.
+                // this frame is part of a reconnect's re-sent snapshot. We only want to recover MISSED
+                // terminal/progress events (fills, cancels, rejects) for orders Lean placed and still
+                // considers open.
                 if (!_isSubscribeOnStreamOrderUpdate)
                 {
+                    // Skip working acknowledgements (Ack/Don/Stp): they carry no terminal progress and
+                    // would otherwise re-emit a spurious UpdateSubmitted for every open order on each
+                    // reconnect. Genuine fill deltas (Fpr/Fll/...) and cancels/rejects still flow through.
+                    if (brokerageOrder.Status is TradeStationOrderStatusType.Ack
+                        or TradeStationOrderStatusType.Don
+                        or TradeStationOrderStatusType.Stp)
+                    {
+                        return;
+                    }
+
+                    // Reconcile only Lean orders that are still open; recovering a missed fill/cancel for
+                    // them. Skip everything else so we don't re-notify external orders or re-emit terminal
+                    // events for orders already in sync. Already-counted fill quantity is deduplicated
+                    // downstream via _orderIdToFillQuantity (a re-sent partial yields FillQuantity 0).
                     var knownOrders = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID);
-                    if (knownOrders == null || !knownOrders.Any(o => !o.Status.IsClosed()))
+                    if (knownOrders == null || knownOrders.All(o => o.Status.IsClosed()))
                     {
                         return;
                     }
