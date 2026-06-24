@@ -80,6 +80,15 @@ public partial class TradeStationBrokerage : Brokerage
     private bool _isSubscribeOnStreamOrderUpdate;
 
     /// <summary>
+    /// Indicates whether the very first order-stream snapshot has completed (i.e. an <c>EndSnapshot</c>
+    /// has been received at least once). Used to tell a reconnect's snapshot apart from the initial one:
+    /// the initial snapshot is ignored (Lean's starting order state comes from the REST setup handler),
+    /// while a reconnect's snapshot is reconciled to recover terminal events (e.g. fills) that the live
+    /// stream missed while the connection was down.
+    /// </summary>
+    private bool _initialSnapshotCompleted;
+
+    /// <summary>
     /// Indicates whether the warning for an update rejected because the order's prior stop already triggered has been fired.
     /// </summary>
     private volatile bool _priorStopTriggeredWarningFired;
@@ -962,14 +971,50 @@ public partial class TradeStationBrokerage : Brokerage
         try
         {
             var jObj = JObject.Parse(json);
-            if (_isSubscribeOnStreamOrderUpdate && jObj["AccountID"] != null)
+            if (jObj["AccountID"] != null)
             {
+                // Order frame. The frames before the first EndSnapshot are the initial snapshot, which
+                // we ignore (Lean's starting order state is loaded by the REST setup handler). Once that
+                // has completed, process live frames normally and treat a reconnect's re-sent snapshot
+                // as a reconciliation to recover terminal events (e.g. fills) missed while disconnected.
+                if (!_isSubscribeOnStreamOrderUpdate && !_initialSnapshotCompleted)
+                {
+                    return;
+                }
+
                 if (Log.DebuggingEnabled)
                 {
                     Log.Debug($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}.WebSocket.JSON: {json}");
                 }
 
                 var brokerageOrder = jObj.ToObject<TradeStationOrder>();
+
+                // The live flag is still false until EndSnapshot, so reaching here with it unset means
+                // this frame is part of a reconnect's re-sent snapshot. We only want to recover MISSED
+                // terminal/progress events (fills, cancels, rejects) for orders Lean placed and still
+                // considers open.
+                if (!_isSubscribeOnStreamOrderUpdate)
+                {
+                    // Skip working acknowledgements (Ack/Don/Stp): they carry no terminal progress and
+                    // would otherwise re-emit a spurious UpdateSubmitted for every open order on each
+                    // reconnect. Genuine fill deltas (Fpr/Fll/...) and cancels/rejects still flow through.
+                    if (brokerageOrder.Status is TradeStationOrderStatusType.Ack
+                        or TradeStationOrderStatusType.Don
+                        or TradeStationOrderStatusType.Stp)
+                    {
+                        return;
+                    }
+
+                    // Reconcile only Lean orders that are still open; recovering a missed fill/cancel for
+                    // them. Skip everything else (no matching order, or all already terminal) so we don't
+                    // re-notify external orders or re-emit events for orders already in sync. Already-counted
+                    // fill quantity is deduplicated downstream via _orderIdToFillQuantity (a re-sent partial
+                    // yields FillQuantity 0).
+                    if (OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID)?.All(o => o.Status.IsClosed()) ?? true)
+                    {
+                        return;
+                    }
+                }
 
                 var globalLeanOrderStatus = default(OrderStatus);
                 var eventMessage = string.Empty;
@@ -1214,6 +1259,7 @@ public partial class TradeStationBrokerage : Brokerage
                 {
                     case "EndSnapshot":
                         _isSubscribeOnStreamOrderUpdate = true;
+                        _initialSnapshotCompleted = true;
                         _autoResetEvent.Set();
                         break;
                     default:

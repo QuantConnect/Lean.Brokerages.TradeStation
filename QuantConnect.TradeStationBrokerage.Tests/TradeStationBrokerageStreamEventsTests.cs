@@ -16,6 +16,7 @@
 using System;
 using System.Linq;
 using NUnit.Framework;
+using System.Reflection;
 using System.Threading;
 using QuantConnect.Orders;
 using System.Collections.Generic;
@@ -1205,6 +1206,228 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.IsNotNull(filled, "Expected a Filled event after FLL frame (#84).");
             Assert.AreEqual(100m, filled.FillQuantity, "Filled event must carry the full fill quantity (#84).");
             Assert.AreEqual(272.22m, filled.FillPrice, "Filled event must carry the fill price (#84).");
+        }
+
+        /// <summary>
+        /// Covers the reconnect-recovery half of issue #94. TradeStation can drop a live order frame
+        /// while the stream stays otherwise connected, so Lean never sees the fill. On every
+        /// (re)connection TradeStation re-sends a full order snapshot (the frames before EndSnapshot);
+        /// the brokerage reconciles that snapshot to recover the missed terminal event. The initial
+        /// snapshot is ignored (Lean's starting state comes from the REST setup handler), and the
+        /// reconcile is idempotent so already-synced orders are never re-emitted.
+        /// </summary>
+        [Test]
+        public void ReconnectSnapshotRecoversFillMissedWhileStreamWasDown()
+        {
+            var orderProvider = new OrderProvider();
+            var ts = TestSetup.CreateBrokerage(orderProvider, default);
+
+            var capturedEvents = new List<OrderEvent>();
+            var filledEventReceived = new AutoResetEvent(false);
+
+            ts.OrdersStatusChanged += (_, orderEvents) =>
+            {
+                capturedEvents.AddRange(orderEvents);
+                if (orderEvents.Any(e => e.Status == OrderStatus.Filled))
+                {
+                    filledEventReceived.Set();
+                }
+            };
+
+            // Lean placed this order and saw Submitted, but the live FLL frame was dropped, so Lean
+            // still considers it working.
+            var order = new MarketOrder(Symbol.Create("AAPL", SecurityType.Equity, Market.USA), 1, DateTime.UtcNow)
+            {
+                Status = OrderStatus.Submitted
+            };
+            order.BrokerId.Add("958726647");
+            orderProvider.Add(order);
+
+            // The terminal frame TradeStation re-sends inside the snapshot on the next (re)connection.
+            var fllSnapshotJson = @"{
+                ""AccountID"": ""SIM2784990M"",
+                ""ClosedDateTime"": ""2026-06-23T16:06:00Z"",
+                ""CommissionFee"": ""1"",
+                ""Currency"": ""USD"",
+                ""Duration"": ""DAY"",
+                ""FilledPrice"": ""298.38"",
+                ""Legs"": [
+                    {
+                        ""AssetType"": ""STOCK"",
+                        ""BuyOrSell"": ""Buy"",
+                        ""ExecQuantity"": ""1"",
+                        ""ExecutionPrice"": ""298.38"",
+                        ""OpenOrClose"": ""Open"",
+                        ""QuantityOrdered"": ""1"",
+                        ""QuantityRemaining"": ""0"",
+                        ""Symbol"": ""AAPL""
+                    }
+                ],
+                ""OpenedDateTime"": ""2026-06-23T16:06:00Z"",
+                ""OrderID"": ""958726647"",
+                ""OrderType"": ""Market"",
+                ""Routing"": ""Intelligent"",
+                ""Status"": ""FLL"",
+                ""StatusDescription"": ""Filled"",
+                ""UnbundledRouteFee"": ""0""
+            }";
+
+            // Before the first EndSnapshot, snapshot frames must be ignored (initial state comes from REST).
+            ts.HandleTradeStationMessage(fllSnapshotJson);
+            Assert.IsFalse(capturedEvents.Any(e => e.Status == OrderStatus.Filled), "Initial-connection snapshot frames must be ignored.");
+
+            // First connection completes its snapshot.
+            ts.HandleTradeStationMessage(@"{""StreamStatus"": ""EndSnapshot""}");
+
+            // Reconnect: the SubscribeOnOrderUpdate loop clears the live flag before re-reading the snapshot.
+            EnterReconnectSnapshotWindow(ts);
+
+            // The reconnect snapshot re-delivers the order as FLL -> the missed fill is reconciled.
+            ts.HandleTradeStationMessage(fllSnapshotJson);
+
+            Assert.IsTrue(filledEventReceived.WaitOne(TimeSpan.FromSeconds(1)), "Reconnect snapshot did not recover the missed fill.");
+            var filled = capturedEvents.Single(e => e.Status == OrderStatus.Filled);
+            Assert.AreEqual(1m, filled.FillQuantity, "Recovered fill must carry the full fill quantity.");
+            Assert.AreEqual(298.38m, filled.FillPrice, "Recovered fill must carry the fill price.");
+
+            // Idempotency: once Lean has the fill applied, a later reconnect snapshot must not re-emit it.
+            order.Status = OrderStatus.Filled; // the transaction handler applies this in production
+            capturedEvents.Clear();
+            EnterReconnectSnapshotWindow(ts);
+            ts.HandleTradeStationMessage(fllSnapshotJson);
+            Assert.IsFalse(capturedEvents.Any(e => e.Status == OrderStatus.Filled), "Reconnect snapshot must not re-emit a fill for an already-filled order.");
+        }
+
+        /// <summary>
+        /// A partial fill Lean already recorded must not be double-counted when the reconnect snapshot
+        /// re-paints the order at the same executed quantity: the fill-quantity delta is 0, so no event
+        /// is emitted and the order is NOT promoted to Filled.
+        /// </summary>
+        [Test]
+        public void ReconnectSnapshotDoesNotDoubleCountAnAlreadyRecordedPartialFill()
+        {
+            var orderProvider = new OrderProvider();
+            var ts = TestSetup.CreateBrokerage(orderProvider, default);
+
+            var capturedEvents = new List<OrderEvent>();
+            ts.OrdersStatusChanged += (_, orderEvents) => capturedEvents.AddRange(orderEvents);
+
+            var order = new MarketOrder(Symbol.Create("AAPL", SecurityType.Equity, Market.USA), 2, DateTime.UtcNow)
+            {
+                Status = OrderStatus.Submitted
+            };
+            order.BrokerId.Add("958800001");
+            orderProvider.Add(order);
+
+            // 1 of 2 filled, delivered live before the disconnect (QuantityRemaining = 1 -> stays partial).
+            var partialFprJson = @"{
+                ""AccountID"": ""SIM2784990M"",
+                ""CommissionFee"": ""1"",
+                ""Currency"": ""USD"",
+                ""Duration"": ""DAY"",
+                ""FilledPrice"": ""298.00"",
+                ""Legs"": [
+                    {
+                        ""AssetType"": ""STOCK"",
+                        ""BuyOrSell"": ""Buy"",
+                        ""ExecQuantity"": ""1"",
+                        ""ExecutionPrice"": ""298.00"",
+                        ""OpenOrClose"": ""Open"",
+                        ""QuantityOrdered"": ""2"",
+                        ""QuantityRemaining"": ""1"",
+                        ""Symbol"": ""AAPL""
+                    }
+                ],
+                ""OpenedDateTime"": ""2026-06-23T16:06:00Z"",
+                ""OrderID"": ""958800001"",
+                ""OrderType"": ""Market"",
+                ""Routing"": ""Intelligent"",
+                ""Status"": ""FPR"",
+                ""StatusDescription"": ""Partial Fill (alive)"",
+                ""UnbundledRouteFee"": ""0""
+            }";
+
+            // First connection completes, then the live partial fill arrives.
+            ts.HandleTradeStationMessage(@"{""StreamStatus"": ""EndSnapshot""}");
+            ts.HandleTradeStationMessage(partialFprJson);
+
+            Assert.AreEqual(1, capturedEvents.Count(e => e.Status == OrderStatus.PartiallyFilled), "Expected one live PartiallyFilled event.");
+            Assert.AreEqual(1m, capturedEvents.Single(e => e.Status == OrderStatus.PartiallyFilled).FillQuantity);
+
+            // Reconnect: the snapshot re-paints the order still at ExecQuantity 1.
+            capturedEvents.Clear();
+            EnterReconnectSnapshotWindow(ts);
+            ts.HandleTradeStationMessage(partialFprJson);
+
+            Assert.IsEmpty(capturedEvents, "Re-painted partial fill must not emit a duplicate event.");
+            Assert.AreNotEqual(OrderStatus.Filled, order.Status, "Order must not be marked Filled by a re-painted partial.");
+        }
+
+        /// <summary>
+        /// A still-working order (no executions) re-painted by the reconnect snapshot as a plain Ack
+        /// must not produce a spurious UpdateSubmitted: the reconnect path skips working acknowledgements.
+        /// </summary>
+        [Test]
+        public void ReconnectSnapshotIgnoresWorkingAcknowledgement()
+        {
+            var orderProvider = new OrderProvider();
+            var ts = TestSetup.CreateBrokerage(orderProvider, default);
+
+            var capturedEvents = new List<OrderEvent>();
+            ts.OrdersStatusChanged += (_, orderEvents) => capturedEvents.AddRange(orderEvents);
+
+            var order = new LimitOrder(Symbol.Create("AAPL", SecurityType.Equity, Market.USA), 1, 1m, DateTime.UtcNow)
+            {
+                Status = OrderStatus.Submitted
+            };
+            order.BrokerId.Add("958800002");
+            orderProvider.Add(order);
+
+            var workingAckJson = @"{
+                ""AccountID"": ""SIM2784990M"",
+                ""CommissionFee"": ""0"",
+                ""Currency"": ""USD"",
+                ""Duration"": ""DAY"",
+                ""FilledPrice"": ""0"",
+                ""Legs"": [
+                    {
+                        ""AssetType"": ""STOCK"",
+                        ""BuyOrSell"": ""Buy"",
+                        ""ExecQuantity"": ""0"",
+                        ""OpenOrClose"": ""Open"",
+                        ""QuantityOrdered"": ""1"",
+                        ""QuantityRemaining"": ""1"",
+                        ""Symbol"": ""AAPL""
+                    }
+                ],
+                ""LimitPrice"": ""1"",
+                ""OpenedDateTime"": ""2026-06-23T16:06:00Z"",
+                ""OrderID"": ""958800002"",
+                ""OrderType"": ""Limit"",
+                ""Routing"": ""Intelligent"",
+                ""Status"": ""ACK"",
+                ""StatusDescription"": ""Received"",
+                ""UnbundledRouteFee"": ""0""
+            }";
+
+            ts.HandleTradeStationMessage(@"{""StreamStatus"": ""EndSnapshot""}");
+
+            EnterReconnectSnapshotWindow(ts);
+            ts.HandleTradeStationMessage(workingAckJson);
+
+            Assert.IsEmpty(capturedEvents, "A re-painted working order must not emit any event (no spurious UpdateSubmitted).");
+        }
+
+        /// <summary>
+        /// Forces the order stream into the "reconnect snapshot" window: a stream that has already
+        /// completed its initial snapshot is reconnecting and about to re-read the snapshot. Mirrors
+        /// the flag reset the SubscribeOnOrderUpdate loop performs at the start of each connection.
+        /// </summary>
+        private static void EnterReconnectSnapshotWindow(TradeStationBrokerage ts)
+        {
+            typeof(TradeStationBrokerage)
+                .GetField("_isSubscribeOnStreamOrderUpdate", BindingFlags.NonPublic | BindingFlags.Instance)
+                .SetValue(ts, false);
         }
     }
 }

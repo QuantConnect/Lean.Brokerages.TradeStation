@@ -14,11 +14,14 @@
 */
 
 using System;
+using System.IO;
 using System.Net;
+using System.Text;
 using NUnit.Framework;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using QuantConnect.Configuration;
 using QuantConnect.Brokerages.TradeStation.Api;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests;
@@ -73,6 +76,43 @@ public class TradeStationBrokerageHttpClientRetryWrapperTests
 
         Assert.IsTrue(cts.IsCancellationRequested);
         Assert.GreaterOrEqual(heartbeatResponseCounter, 2);
+    }
+
+    [Test]
+    public void StreamRequestThrowsTimeoutExceptionWhenStreamSilentlyHangs()
+    {
+        // Regression test for issue #94: a silently-dropped SSE connection used to leave ReadLineAsync
+        // blocked indefinitely with no exception, so the reconnect logic never fired and all subsequent
+        // order fills were lost. The stream must now surface a TimeoutException after a period of silence.
+        var previousTimeout = Config.Get("trade-station-stream-read-timeout-seconds");
+        Config.Set("trade-station-stream-read-timeout-seconds", "1");
+        try
+        {
+            var handler = new TestHttpMessageHandler((req, ct) =>
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    // Emit a single heartbeat line and then hang forever, mimicking a NAT/half-close drop.
+                    Content = new StreamContent(new HeartbeatThenHangStream("{\"Heartbeat\":1}"))
+                };
+                return Task.FromResult(response);
+            });
+
+            using var wrapper = new HttpClientRetryWrapper(
+                _baseUrl, handler, maxRetries: 1, ctsAttemptTimeout: TimeSpan.FromSeconds(30), backOffDelay: TimeSpan.Zero);
+            using var apiClient = new TradeStationApiClient(wrapper, accountId: "123");
+
+            Assert.ThrowsAsync<TimeoutException>(async () =>
+            {
+                await foreach (var _ in apiClient.StreamOrders(CancellationToken.None))
+                {
+                }
+            });
+        }
+        finally
+        {
+            Config.Set("trade-station-stream-read-timeout-seconds", previousTimeout);
+        }
     }
 
     [Test]
@@ -175,4 +215,50 @@ public class TestHttpMessageHandler : HttpMessageHandler
     {
         return _sendAsync(request, cancellationToken);
     }
+}
+
+/// <summary>
+/// A read-only stream that returns a single chunk of data once and then blocks forever (honoring the
+/// read cancellation token), simulating an SSE connection that emits one heartbeat and is then silently
+/// dropped without a TCP RST.
+/// </summary>
+public class HeartbeatThenHangStream : Stream
+{
+    private readonly byte[] _firstChunk;
+    private int _position;
+
+    public HeartbeatThenHangStream(string firstLine)
+    {
+        _firstChunk = Encoding.UTF8.GetBytes(firstLine + "\n");
+    }
+
+    public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        if (_position < _firstChunk.Length)
+        {
+            var count = Math.Min(buffer.Length, _firstChunk.Length - _position);
+            _firstChunk.AsSpan(_position, count).CopyTo(buffer.Span);
+            _position += count;
+            return count;
+        }
+
+        // Block until the caller's per-read inactivity timeout cancels the read.
+        await Task.Delay(Timeout.Infinite, cancellationToken);
+        return 0;
+    }
+
+    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        => ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+    public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+    public override void Flush() { }
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 }
