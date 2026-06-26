@@ -17,6 +17,7 @@ using System;
 using System.IO;
 using System.Net;
 using System.Text;
+using System.Diagnostics;
 using NUnit.Framework;
 using System.Net.Http;
 using System.Threading;
@@ -159,6 +160,170 @@ public class TradeStationBrokerageHttpClientRetryWrapperTests
         {
             await wrapper.SendAsync("/resource", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, externalCancellationToken: CancellationToken.None);
         });
+    }
+
+    [Test]
+    public async Task SendAsyncProactivelyThrottlesRequestsToConfiguredQuota()
+    {
+        // Proactive throttling (issue #98): a RateGate keeps requests under the documented quota. With a
+        // quota of 2 per 1s window, the 3rd request must wait for the window to roll before it is sent.
+        // Uses the option endpoint because its quota window is a per-construction setting (the general and
+        // quote windows share the static 5-min back-off window, which can't be shortened at runtime).
+        var previousQuota = Config.Get("trade-station-rate-limit-option-requests");
+        var previousWindow = Config.Get("trade-station-rate-limit-option-window-seconds");
+        Config.Set("trade-station-rate-limit-option-requests", "2");
+        Config.Set("trade-station-rate-limit-option-window-seconds", "1");
+        try
+        {
+            var callCount = 0;
+            var handler = new TestHttpMessageHandler((req, ct) =>
+            {
+                Interlocked.Increment(ref callCount);
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+            });
+
+            using var wrapper = new HttpClientRetryWrapper(
+                _baseUrl, handler, maxRetries: 1, ctsAttemptTimeout: TimeSpan.FromSeconds(10), backOffDelay: TimeSpan.Zero);
+
+            var stopwatch = Stopwatch.StartNew();
+            for (var i = 0; i < 3; i++)
+            {
+                await wrapper.SendAsync("/v3/marketdata/options/strikes/AAPL", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, externalCancellationToken: CancellationToken.None);
+            }
+            stopwatch.Stop();
+
+            Assert.AreEqual(3, callCount);
+            Assert.GreaterOrEqual(stopwatch.Elapsed, TimeSpan.FromMilliseconds(900), "The 3rd request should be throttled until the 1s quota window rolls.");
+        }
+        finally
+        {
+            RestoreConfig("trade-station-rate-limit-option-requests", previousQuota, "90");
+            RestoreConfig("trade-station-rate-limit-option-window-seconds", previousWindow, "60");
+        }
+    }
+
+    [Test]
+    public async Task SendAsyncDoesNotThrottleStreamingEndpoints()
+    {
+        // Streaming endpoints do not consume request quota, so even with a quota of 1 per 5min they must
+        // not be throttled. The low general quota acts as a tripwire: were a streaming request misrouted to
+        // the general gate, the 2nd call would block for the (static 5-min) window.
+        var previousQuota = Config.Get("trade-station-rate-limit-general-requests");
+        Config.Set("trade-station-rate-limit-general-requests", "1");
+        try
+        {
+            var handler = new TestHttpMessageHandler((req, ct) =>
+                Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+
+            using var wrapper = new HttpClientRetryWrapper(
+                _baseUrl, handler, maxRetries: 1, ctsAttemptTimeout: TimeSpan.FromSeconds(10), backOffDelay: TimeSpan.Zero);
+
+            var stopwatch = Stopwatch.StartNew();
+            for (var i = 0; i < 3; i++)
+            {
+                await wrapper.SendAsync("/v3/brokerage/stream/accounts/123/orders", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, externalCancellationToken: CancellationToken.None);
+            }
+            stopwatch.Stop();
+
+            Assert.Less(stopwatch.Elapsed, TimeSpan.FromSeconds(5), "Streaming endpoints must not be rate limited.");
+        }
+        finally
+        {
+            RestoreConfig("trade-station-rate-limit-general-requests", previousQuota, "320");
+        }
+    }
+
+    /// <summary>
+    /// Restores a config key after a test. <see cref="Config.Get"/> returns an empty string for an unset
+    /// key, but explicitly setting a key to "" makes it present-but-empty, which <see cref="Config.GetInt"/>
+    /// fails to parse. So when the key was previously unset we restore the production default instead.
+    /// </summary>
+    private static void RestoreConfig(string key, string previousValue, string productionDefault)
+    {
+        Config.Set(key, string.IsNullOrEmpty(previousValue) ? productionDefault : previousValue);
+    }
+
+    [Test]
+    public async Task SendAsyncRetriesOn429ThenReturnsSuccessfulResponse()
+    {
+        // Regression test for issue #98: a 429 Too Many Requests must trigger a back-off + retry rather
+        // than surface as a hard failure. Here the first call is rate limited and the retry succeeds.
+        var callCount = 0;
+        var handler = new TestHttpMessageHandler((req, ct) =>
+        {
+            if (Interlocked.Increment(ref callCount) == 1)
+            {
+                var rateLimited = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+                {
+                    Content = new StringContent("{\"Message\":\"Too Many Requests\"}")
+                };
+                rateLimited.Headers.Add("X-RateLimit-Reset", "0");
+                return Task.FromResult(rateLimited);
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("ok") });
+        });
+
+        using var wrapper = new HttpClientRetryWrapper(
+            _baseUrl, handler, maxRetries: 3, ctsAttemptTimeout: TimeSpan.FromSeconds(10), backOffDelay: TimeSpan.Zero);
+
+        var response = await wrapper.SendAsync("/resource", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, externalCancellationToken: CancellationToken.None);
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        Assert.AreEqual(2, callCount);
+    }
+
+    [Test]
+    public void SendAsyncRateLimitedReturns429AfterExhaustingRetriesWithoutThrowing()
+    {
+        // A persistent 429 must retry maxRetries+1 times and then return the 429 response (the caller
+        // surfaces it), rather than throwing from within the retry loop.
+        var callCount = 0;
+        var handler = new TestHttpMessageHandler((req, ct) =>
+        {
+            Interlocked.Increment(ref callCount);
+            var rateLimited = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+            rateLimited.Headers.Add("X-RateLimit-Reset", "0");
+            return Task.FromResult(rateLimited);
+        });
+
+        using var wrapper = new HttpClientRetryWrapper(
+            _baseUrl, handler, maxRetries: 2, ctsAttemptTimeout: TimeSpan.FromSeconds(10), backOffDelay: TimeSpan.Zero);
+
+        HttpResponseMessage response = null;
+        Assert.DoesNotThrowAsync(async () =>
+            response = await wrapper.SendAsync("/resource", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, externalCancellationToken: CancellationToken.None));
+
+        Assert.IsNotNull(response);
+        Assert.AreEqual(HttpStatusCode.TooManyRequests, response.StatusCode);
+        Assert.AreEqual(3, callCount);
+    }
+
+    [Test]
+    public async Task SendAsyncHonorsXRateLimitResetBackOffDuration()
+    {
+        // The back-off before retrying a 429 must honor the X-RateLimit-Reset value (seconds until reset).
+        var callCount = 0;
+        var handler = new TestHttpMessageHandler((req, ct) =>
+        {
+            if (Interlocked.Increment(ref callCount) == 1)
+            {
+                var rateLimited = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+                rateLimited.Headers.Add("X-RateLimit-Reset", "1");
+                return Task.FromResult(rateLimited);
+            }
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        });
+
+        using var wrapper = new HttpClientRetryWrapper(
+            _baseUrl, handler, maxRetries: 3, ctsAttemptTimeout: TimeSpan.FromSeconds(10), backOffDelay: TimeSpan.Zero);
+
+        var stopwatch = Stopwatch.StartNew();
+        var response = await wrapper.SendAsync("/resource", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, externalCancellationToken: CancellationToken.None);
+        stopwatch.Stop();
+
+        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        Assert.GreaterOrEqual(stopwatch.Elapsed, TimeSpan.FromMilliseconds(900), "Back-off should honor the 1s X-RateLimit-Reset value.");
     }
 
     [TestCase(true, 5, 6)]
