@@ -179,12 +179,19 @@ public class HttpClientRetryWrapper : IDisposable
         CancellationToken externalCancellationToken = default)
     {
         // Proactive throttle: keep this resource group under TradeStation's documented quota so we avoid
-        // tripping a 429 in the first place. Streaming endpoints (RateLimitGroup.None) consume no quota.
-        var rateGate = rateLimitGroup == RateLimitGroup.None ? null : _rateGates[rateLimitGroup];
+        // tripping a 429 in the first place. Streaming endpoints (RateLimitGroup.None) have no gate, so
+        // TryGetValue leaves rateGate null and the wait below is skipped.
+        _rateGates.TryGetValue(rateLimitGroup, out var rateGate);
 
         for (var attempt = 0; ; attempt++)
         {
-            WaitToProceed(rateGate, externalCancellationToken);
+            // Poll with a short timeout so a canceled token can abort the wait instead of blocking for the
+            // full quota window (RateGate.WaitToProceed has no cancellation-aware overload). A null gate
+            // (streaming) short-circuits the condition and skips the wait.
+            while (rateGate?.WaitToProceed(TimeSpan.FromMilliseconds(250)) == false)
+            {
+                externalCancellationToken.ThrowIfCancellationRequested();
+            }
 
             using var requestMessage = new HttpRequestMessage(httpMethod, $"{_baseUrl}{resource}");
             using var timeoutCts = new CancellationTokenSource(_ctsAttemptTimeout);
@@ -230,28 +237,6 @@ public class HttpClientRetryWrapper : IDisposable
             }
 
             return response;
-        }
-    }
-
-    /// <summary>
-    /// Blocks until the supplied <paramref name="rateGate"/> allows another request, honoring cancellation.
-    /// A <c>null</c> gate (streaming endpoints) returns immediately.
-    /// </summary>
-    /// <param name="rateGate">The throttle to wait on, or <c>null</c> to skip throttling.</param>
-    /// <param name="cancellationToken">Token used to abort the wait.</param>
-    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is canceled while waiting.</exception>
-    private static void WaitToProceed(RateGate rateGate, CancellationToken cancellationToken)
-    {
-        if (rateGate == null)
-        {
-            return;
-        }
-
-        // Poll with a short timeout so a canceled token can abort the wait instead of blocking for the
-        // full quota window (RateGate.WaitToProceed has no cancellation-aware overload).
-        while (!rateGate.WaitToProceed(TimeSpan.FromMilliseconds(250)))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
         }
     }
 
