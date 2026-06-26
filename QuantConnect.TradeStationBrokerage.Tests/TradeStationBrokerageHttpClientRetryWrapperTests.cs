@@ -17,6 +17,7 @@ using System;
 using System.IO;
 using System.Net;
 using System.Text;
+using System.Linq;
 using System.Diagnostics;
 using NUnit.Framework;
 using System.Net.Http;
@@ -221,6 +222,91 @@ public class TradeStationBrokerageHttpClientRetryWrapperTests
         stopwatch.Stop();
 
         Assert.Less(stopwatch.Elapsed, TimeSpan.FromSeconds(5), "Streaming endpoints (RateLimitGroup.None) must not be rate limited.");
+    }
+
+    [Test]
+    public async Task SendAsyncRaisesRateLimitedWarningOnceUnderSustainedThrottling()
+    {
+        // Issue #98: the user must be warned once (not per request) when proactive throttling kicks in.
+        var previousQuota = Config.Get("trade-station-rate-limit-option-requests");
+        var previousWindow = Config.Get("trade-station-rate-limit-option-window-seconds");
+        Config.Set("trade-station-rate-limit-option-requests", "1");
+        Config.Set("trade-station-rate-limit-option-window-seconds", "1");
+        try
+        {
+            var handler = new TestHttpMessageHandler((req, ct) =>
+                Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+
+            using var wrapper = new HttpClientRetryWrapper(
+                _baseUrl, handler, maxRetries: 1, ctsAttemptTimeout: TimeSpan.FromSeconds(10), backOffDelay: TimeSpan.Zero);
+
+            var warnings = 0;
+            string lastMessage = null;
+            wrapper.RateLimited += m => { Interlocked.Increment(ref warnings); lastMessage = m; };
+
+            // Quota of 1 per 1s: the 2nd and 3rd calls are throttled, but only one warning must be raised.
+            for (var i = 0; i < 3; i++)
+            {
+                await wrapper.SendAsync("/v3/marketdata/options/strikes/AAPL", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, RateLimitGroup.OptionStrikes, externalCancellationToken: CancellationToken.None);
+            }
+
+            Assert.AreEqual(1, warnings, "The rate-limit warning must be raised exactly once.");
+            Assert.IsNotNull(lastMessage);
+        }
+        finally
+        {
+            RestoreConfig("trade-station-rate-limit-option-requests", previousQuota, "90");
+            RestoreConfig("trade-station-rate-limit-option-window-seconds", previousWindow, "60");
+        }
+    }
+
+    [Test]
+    public async Task SendAsyncRaisesRateLimitedWarningOn429()
+    {
+        // A 429 back-off must also surface the one-time warning.
+        var handler = new TestHttpMessageHandler((req, ct) =>
+        {
+            var rateLimited = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+            rateLimited.Headers.Add("X-RateLimit-Reset", "0");
+            return Task.FromResult(rateLimited);
+        });
+
+        using var wrapper = new HttpClientRetryWrapper(
+            _baseUrl, handler, maxRetries: 2, ctsAttemptTimeout: TimeSpan.FromSeconds(10), backOffDelay: TimeSpan.Zero);
+
+        var warnings = 0;
+        wrapper.RateLimited += _ => Interlocked.Increment(ref warnings);
+
+        await wrapper.SendAsync("/resource", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, RateLimitGroup.General, externalCancellationToken: CancellationToken.None);
+
+        Assert.AreEqual(1, warnings, "A 429 back-off must raise the rate-limit warning exactly once.");
+    }
+
+    [Test]
+    public async Task RateLimitedWarningIsRaisedOncePerGroup()
+    {
+        // The warning is per rate-limit group: a second hit on the same group is silent, but a different
+        // group warns again (each group has its own quota).
+        var handler = new TestHttpMessageHandler((req, ct) =>
+        {
+            var rateLimited = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+            rateLimited.Headers.Add("X-RateLimit-Reset", "0");
+            return Task.FromResult(rateLimited);
+        });
+
+        using var wrapper = new HttpClientRetryWrapper(
+            _baseUrl, handler, maxRetries: 1, ctsAttemptTimeout: TimeSpan.FromSeconds(10), backOffDelay: TimeSpan.Zero);
+
+        var warnedGroups = new System.Collections.Concurrent.ConcurrentBag<string>();
+        wrapper.RateLimited += m => warnedGroups.Add(m);
+
+        await wrapper.SendAsync("/orders", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, RateLimitGroup.General, externalCancellationToken: CancellationToken.None);
+        await wrapper.SendAsync("/orders", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, RateLimitGroup.General, externalCancellationToken: CancellationToken.None);
+        await wrapper.SendAsync("/quotes", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, RateLimitGroup.Quote, externalCancellationToken: CancellationToken.None);
+
+        // General (once, despite two hits) + Quote (once) = 2 warnings.
+        Assert.AreEqual(2, warnedGroups.Count, "Each rate-limit group warns once: General + Quote.");
+        Assert.IsTrue(warnedGroups.Any(m => m.Contains("General")) && warnedGroups.Any(m => m.Contains("Quote")));
     }
 
     /// <summary>

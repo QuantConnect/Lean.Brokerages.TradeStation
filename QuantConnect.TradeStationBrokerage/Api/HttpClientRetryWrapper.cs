@@ -23,6 +23,7 @@ using QuantConnect.Logging;
 using System.Threading.Tasks;
 using QuantConnect.Configuration;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 
 namespace QuantConnect.Brokerages.TradeStation.Api;
 
@@ -90,6 +91,20 @@ public class HttpClientRetryWrapper : IDisposable
             Config.GetInt("trade-station-rate-limit-option-requests", 90),
             TimeSpan.FromSeconds(Config.GetInt("trade-station-rate-limit-option-window-seconds", 60))),
     };
+
+    /// <summary>
+    /// The rate-limit groups for which a warning has already been raised, so <see cref="RateLimited"/> fires
+    /// at most once per group (each group has its own quota; it would otherwise be noisy under sustained
+    /// throttling).
+    /// </summary>
+    private readonly ConcurrentDictionary<RateLimitGroup, byte> _rateLimitWarned = new();
+
+    /// <summary>
+    /// Raised once, the first time a request is rate limited — either proactively throttled to stay under a
+    /// quota or backed off after a <c>429 Too Many Requests</c>. The argument is a user-facing message.
+    /// Lets the brokerage surface a one-time warning so the user knows their throughput is being constrained.
+    /// </summary>
+    public event Action<string> RateLimited;
 
     /// <summary>
     /// Initializes a new instance of <see cref="HttpClientRetryWrapper"/>.
@@ -190,6 +205,11 @@ public class HttpClientRetryWrapper : IDisposable
             // (streaming) short-circuits the condition and skips the wait.
             while (rateGate?.WaitToProceed(TimeSpan.FromMilliseconds(250)) == false)
             {
+                if (!_rateLimitWarned.ContainsKey(rateLimitGroup))
+                {
+                    WarnRateLimitedOnce(rateLimitGroup, $"Requests are being throttled to stay under TradeStation's rate limit for " +
+                        $"{rateLimitGroup} endpoints; throughput may be reduced. Consider lowering your request frequency.");
+                }
                 externalCancellationToken.ThrowIfCancellationRequested();
             }
 
@@ -231,12 +251,28 @@ public class HttpClientRetryWrapper : IDisposable
                 var retryDelay = response.GetRateLimitRetryDelay(_backOffDelay, _maxRateLimitDelay);
                 Log.Trace($"{nameof(HttpClientRetryWrapper)}.{nameof(SendAsync)}: rate limited (429) on [{requestMessage.Method.Method}]({requestMessage.RequestUri}), " +
                     $"backing off {retryDelay.TotalSeconds:F1}s before retry (attempt={attempt}/{_maxRetries}).");
+                WarnRateLimitedOnce(rateLimitGroup, $"TradeStation returned HTTP 429 (rate limit) for {rateLimitGroup} endpoints; " +
+                    "backing off and retrying automatically. Throughput may be reduced.");
                 response.Dispose();
                 await Task.Delay(retryDelay, externalCancellationToken);
                 continue;
             }
 
             return response;
+        }
+    }
+
+    /// <summary>
+    /// Raises <see cref="RateLimited"/> with <paramref name="message"/> the first time it is called for the
+    /// given <paramref name="rateLimitGroup"/>, then stays silent for that group (each group has its own quota).
+    /// </summary>
+    /// <param name="rateLimitGroup">The group that was rate limited.</param>
+    /// <param name="message">The user-facing warning to surface.</param>
+    private void WarnRateLimitedOnce(RateLimitGroup rateLimitGroup, string message)
+    {
+        if (_rateLimitWarned.TryAdd(rateLimitGroup, 0))
+        {
+            RateLimited?.Invoke(message);
         }
     }
 

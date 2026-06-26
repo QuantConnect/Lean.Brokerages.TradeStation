@@ -88,6 +88,16 @@ public class TradeStationApiClient : IDisposable
     private readonly HttpClientRetryWrapper _httpClient;
 
     /// <summary>
+    /// Raised once, the first time a request is rate limited (proactively throttled or backed off after a
+    /// <c>429</c>). Forwards <see cref="HttpClientRetryWrapper.RateLimited"/> so the brokerage can warn the user.
+    /// </summary>
+    internal event Action<string> RateLimited
+    {
+        add => _httpClient.RateLimited += value;
+        remove => _httpClient.RateLimited -= value;
+    }
+
+    /// <summary>
     /// Initializes a new instance of the TradeStationApiClient class
     /// </summary>
     /// <param name="clientId">The API Key used by the client application to authenticate requests.</param>
