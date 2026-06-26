@@ -16,16 +16,13 @@
 using System;
 using System.Net;
 using System.Text;
-using System.Linq;
-using System.Buffers;
 using System.Net.Http;
 using System.Threading;
 using QuantConnect.Util;
-using System.Globalization;
 using QuantConnect.Logging;
 using System.Threading.Tasks;
 using QuantConnect.Configuration;
-using System.Collections.Concurrent;
+using System.Collections.Generic;
 
 namespace QuantConnect.Brokerages.TradeStation.Api;
 
@@ -78,25 +75,21 @@ public class HttpClientRetryWrapper : IDisposable
     // See https://api.tradestation.com/docs/fundamentals/rate-limiting/.
 
     /// <summary>
-    /// Throttles keyed by resource group. The fixed groups (general 320 / 5 min, quote 500 / 5 min) are
-    /// seeded here; per-option-endpoint gates (90 / 1 min each) are added lazily in <see cref="GetRateGate"/>
-    /// since their key is only known per request.
+    /// One proactive throttle per <see cref="RateLimitGroup"/>. General (320 / 5 min) and quote
+    /// (500 / 5 min) share the static 5-minute window; each option endpoint gets its own 90 / 1 min gate.
+    /// <see cref="RateLimitGroup.None"/> (streaming) has no gate.
     /// </summary>
-    private readonly ConcurrentDictionary<string, RateGate> _rateGates = new()
+    private readonly Dictionary<RateLimitGroup, RateGate> _rateGates = new()
     {
-        ["general"] = new RateGate(Config.GetInt("trade-station-rate-limit-general-requests", 320), _maxRateLimitDelay),
-        ["quote"] = new RateGate(Config.GetInt("trade-station-rate-limit-quote-requests", 500), _maxRateLimitDelay),
+        [RateLimitGroup.General] = new RateGate(Config.GetInt("trade-station-rate-limit-general-requests", 320), _maxRateLimitDelay),
+        [RateLimitGroup.Quote] = new RateGate(Config.GetInt("trade-station-rate-limit-quote-requests", 500), _maxRateLimitDelay),
+        [RateLimitGroup.OptionExpirations] = new RateGate(
+            Config.GetInt("trade-station-rate-limit-option-requests", 90),
+            TimeSpan.FromSeconds(Config.GetInt("trade-station-rate-limit-option-window-seconds", 60))),
+        [RateLimitGroup.OptionStrikes] = new RateGate(
+            Config.GetInt("trade-station-rate-limit-option-requests", 90),
+            TimeSpan.FromSeconds(Config.GetInt("trade-station-rate-limit-option-window-seconds", 60))),
     };
-
-    /// <summary>
-    /// Number of requests allowed per <see cref="_optionWindow"/> for each individual option endpoint.
-    /// </summary>
-    private readonly int _optionQuota = Config.GetInt("trade-station-rate-limit-option-requests", 90);
-
-    /// <summary>
-    /// Rolling window for each option endpoint's request quota.
-    /// </summary>
-    private readonly TimeSpan _optionWindow = TimeSpan.FromSeconds(Config.GetInt("trade-station-rate-limit-option-window-seconds", 60));
 
     /// <summary>
     /// Initializes a new instance of <see cref="HttpClientRetryWrapper"/>.
@@ -160,7 +153,7 @@ public class HttpClientRetryWrapper : IDisposable
     /// <returns>The HTTP response message.</returns>
     public async Task<HttpResponseMessage> GetStreamAsync(string resource, CancellationToken cancellationToken)
     {
-        return await SendAsync(resource, HttpMethod.Get, jsonBody: null, retryOnTimeout: true, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        return await SendAsync(resource, HttpMethod.Get, jsonBody: null, retryOnTimeout: true, RateLimitGroup.None, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
     }
 
     /// <summary>
@@ -171,6 +164,7 @@ public class HttpClientRetryWrapper : IDisposable
     /// <param name="httpMethod">HTTP method to use (GET/POST/PUT/etc.).</param>
     /// <param name="jsonBody">Optional JSON body to send (will be serialized as UTF-8 application/json).</param>
     /// <param name="retryOnTimeout">If true, the method will retry when an attempt times out (default: true).</param>
+    /// <param name="rateLimitGroup">The TradeStation rate-limit group this request belongs to, used to select the proactive throttle.</param>
     /// <param name="httpCompletionOption">Completion option to pass to <see cref="HttpClient.SendAsync(HttpRequestMessage, HttpCompletionOption, CancellationToken)"/>.</param>
     /// <param name="externalCancellationToken">Cancellation token to cancel the entire operation from the caller side.</param>
     /// <returns>The successful <see cref="HttpResponseMessage"/>.</returns>
@@ -180,12 +174,13 @@ public class HttpClientRetryWrapper : IDisposable
         HttpMethod httpMethod,
         string jsonBody,
         bool retryOnTimeout,
+        RateLimitGroup rateLimitGroup,
         HttpCompletionOption httpCompletionOption = HttpCompletionOption.ResponseContentRead, // default in <see cref="HttpClient.DefaultCompletionOption"/>
         CancellationToken externalCancellationToken = default)
     {
         // Proactive throttle: keep this resource group under TradeStation's documented quota so we avoid
-        // tripping a 429 in the first place. Streaming endpoints do not consume request quota (null gate).
-        var rateGate = GetRateGate(resource);
+        // tripping a 429 in the first place. Streaming endpoints (RateLimitGroup.None) consume no quota.
+        var rateGate = rateLimitGroup == RateLimitGroup.None ? null : _rateGates[rateLimitGroup];
 
         for (var attempt = 0; ; attempt++)
         {
@@ -226,7 +221,7 @@ public class HttpClientRetryWrapper : IDisposable
             // default back-off) and retry within the retry budget so a transient quota hit does not fail the operation.
             if (response.StatusCode == HttpStatusCode.TooManyRequests && attempt < _maxRetries)
             {
-                var retryDelay = GetRateLimitRetryDelay(response);
+                var retryDelay = response.GetRateLimitRetryDelay(_backOffDelay, _maxRateLimitDelay);
                 Log.Trace($"{nameof(HttpClientRetryWrapper)}.{nameof(SendAsync)}: rate limited (429) on [{requestMessage.Method.Method}]({requestMessage.RequestUri}), " +
                     $"backing off {retryDelay.TotalSeconds:F1}s before retry (attempt={attempt}/{_maxRetries}).");
                 response.Dispose();
@@ -258,111 +253,6 @@ public class HttpClientRetryWrapper : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
         }
-    }
-
-    /// <summary>
-    /// Resolves the proactive throttle for the given <paramref name="resource"/> based on its TradeStation
-    /// quota group, creating it lazily. Returns <c>null</c> for streaming endpoints, which do not consume
-    /// request quota.
-    /// </summary>
-    /// <param name="resource">Relative resource path being requested.</param>
-    /// <returns>The <see cref="RateGate"/> guarding the resource's quota group, or <c>null</c> when unthrottled.</returns>
-    private RateGate GetRateGate(string resource)
-    {
-        if (resource.Contains("/stream/", StringComparison.OrdinalIgnoreCase))
-        {
-            // Streaming endpoints do not consume request quota.
-            return null;
-        }
-
-        if (resource.Contains("/marketdata/options/", StringComparison.OrdinalIgnoreCase))
-        {
-            // Each option endpoint has its own quota and its key is only known per request, so create it
-            // lazily. The static factory avoids allocating a closure on the (common) already-present path.
-            return _rateGates.GetOrAdd($"option:{GetOptionEndpointName(resource)}",
-                static (_, quota) => new RateGate(quota.Occurrences, quota.Window), (Occurrences: _optionQuota, Window: _optionWindow));
-        }
-
-        if (resource.Contains("/marketdata/quotes/", StringComparison.OrdinalIgnoreCase))
-        {
-            return _rateGates["quote"];
-        }
-
-        return _rateGates["general"];
-    }
-
-    /// <summary>
-    /// Delimiters that terminate the option endpoint segment within a resource path.
-    /// </summary>
-    private static readonly SearchValues<char> _optionEndpointDelimiters = SearchValues.Create("/?");
-
-    /// <summary>
-    /// Extracts the option endpoint name (the path segment following <c>/options/</c>) used to give each
-    /// option endpoint its own throttle.
-    /// </summary>
-    /// <param name="resource">Relative resource path containing <c>/options/</c>.</param>
-    /// <returns>The endpoint segment (e.g. <c>expirations</c> or <c>strikes</c>).</returns>
-    private static string GetOptionEndpointName(string resource)
-    {
-        const string marker = "/options/";
-        var start = resource.IndexOf(marker, StringComparison.OrdinalIgnoreCase) + marker.Length;
-        var rest = resource.AsSpan(start);
-        var end = rest.IndexOfAny(_optionEndpointDelimiters);
-        return (end >= 0 ? rest[..end] : rest).ToString();
-    }
-
-    /// <summary>
-    /// Computes how long to wait before retrying a <c>429 Too Many Requests</c> response, preferring the
-    /// <c>X-RateLimit-Reset</c> header (seconds until the quota window resets), then <c>Retry-After</c>,
-    /// then the default back-off. The result is clamped to <see cref="_maxRateLimitDelay"/>.
-    /// </summary>
-    /// <param name="response">The rate-limited HTTP response.</param>
-    /// <returns>The delay to wait before the next attempt.</returns>
-    private TimeSpan GetRateLimitRetryDelay(HttpResponseMessage response)
-    {
-        var delay = _backOffDelay;
-
-        if (TryGetSecondsHeader(response, "X-RateLimit-Reset", out var resetDelay))
-        {
-            delay = resetDelay;
-        }
-        else if (response.Headers.RetryAfter?.Delta is TimeSpan retryAfterDelta)
-        {
-            delay = retryAfterDelta;
-        }
-        else if (TryGetSecondsHeader(response, "Retry-After", out var retryAfterSeconds))
-        {
-            delay = retryAfterSeconds;
-        }
-
-        if (delay < TimeSpan.Zero)
-        {
-            delay = _backOffDelay;
-        }
-
-        return delay > _maxRateLimitDelay ? _maxRateLimitDelay : delay;
-    }
-
-    /// <summary>
-    /// Attempts to read the named response header and interpret its value as a number of seconds.
-    /// </summary>
-    /// <param name="response">The HTTP response to read from.</param>
-    /// <param name="headerName">The header name to look up.</param>
-    /// <param name="delay">The parsed delay, when the header is present and numeric.</param>
-    /// <returns><c>true</c> when the header was present and parsed; otherwise <c>false</c>.</returns>
-    private static bool TryGetSecondsHeader(HttpResponseMessage response, string headerName, out TimeSpan delay)
-    {
-        delay = default;
-        if (response.Headers.TryGetValues(headerName, out var values))
-        {
-            var raw = values.FirstOrDefault();
-            if (double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds))
-            {
-                delay = TimeSpan.FromSeconds(seconds);
-                return true;
-            }
-        }
-        return false;
     }
 
     /// <summary>

@@ -46,7 +46,7 @@ public class TradeStationBrokerageHttpClientRetryWrapperTests
 
         using var wrapper = new HttpClientRetryWrapper(_baseUrl, handler, 5, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(2));
 
-        var response = await wrapper.SendAsync("/resource", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, externalCancellationToken: CancellationToken.None);
+        var response = await wrapper.SendAsync("/resource", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, RateLimitGroup.General, externalCancellationToken: CancellationToken.None);
 
         Assert.IsNotNull(response);
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
@@ -137,7 +137,7 @@ public class TradeStationBrokerageHttpClientRetryWrapperTests
 
         Assert.ThrowsAsync<TaskCanceledException>(async () =>
         {
-            await wrapper.SendAsync("/resource", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, externalCancellationToken: cts.Token);
+            await wrapper.SendAsync("/resource", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, RateLimitGroup.General, externalCancellationToken: cts.Token);
         });
     }
 
@@ -158,7 +158,7 @@ public class TradeStationBrokerageHttpClientRetryWrapperTests
 
         Assert.ThrowsAsync<TaskCanceledException>(async () =>
         {
-            await wrapper.SendAsync("/resource", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, externalCancellationToken: CancellationToken.None);
+            await wrapper.SendAsync("/resource", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, RateLimitGroup.General, externalCancellationToken: CancellationToken.None);
         });
     }
 
@@ -167,8 +167,8 @@ public class TradeStationBrokerageHttpClientRetryWrapperTests
     {
         // Proactive throttling (issue #98): a RateGate keeps requests under the documented quota. With a
         // quota of 2 per 1s window, the 3rd request must wait for the window to roll before it is sent.
-        // Uses the option endpoint because its quota window is a per-construction setting (the general and
-        // quote windows share the static 5-min back-off window, which can't be shortened at runtime).
+        // Uses the OptionStrikes group because its quota window is configurable per-construction (the general
+        // and quote windows share the static 5-min back-off window, which can't be shortened at runtime).
         var previousQuota = Config.Get("trade-station-rate-limit-option-requests");
         var previousWindow = Config.Get("trade-station-rate-limit-option-window-seconds");
         Config.Set("trade-station-rate-limit-option-requests", "2");
@@ -188,7 +188,7 @@ public class TradeStationBrokerageHttpClientRetryWrapperTests
             var stopwatch = Stopwatch.StartNew();
             for (var i = 0; i < 3; i++)
             {
-                await wrapper.SendAsync("/v3/marketdata/options/strikes/AAPL", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, externalCancellationToken: CancellationToken.None);
+                await wrapper.SendAsync("/v3/marketdata/options/strikes/AAPL", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, RateLimitGroup.OptionStrikes, externalCancellationToken: CancellationToken.None);
             }
             stopwatch.Stop();
 
@@ -205,32 +205,22 @@ public class TradeStationBrokerageHttpClientRetryWrapperTests
     [Test]
     public async Task SendAsyncDoesNotThrottleStreamingEndpoints()
     {
-        // Streaming endpoints do not consume request quota, so even with a quota of 1 per 5min they must
-        // not be throttled. The low general quota acts as a tripwire: were a streaming request misrouted to
-        // the general gate, the 2nd call would block for the (static 5-min) window.
-        var previousQuota = Config.Get("trade-station-rate-limit-general-requests");
-        Config.Set("trade-station-rate-limit-general-requests", "1");
-        try
+        // Streaming endpoints (RateLimitGroup.None) consume no request quota and must never be throttled,
+        // no matter how many requests are made.
+        var handler = new TestHttpMessageHandler((req, ct) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+
+        using var wrapper = new HttpClientRetryWrapper(
+            _baseUrl, handler, maxRetries: 1, ctsAttemptTimeout: TimeSpan.FromSeconds(10), backOffDelay: TimeSpan.Zero);
+
+        var stopwatch = Stopwatch.StartNew();
+        for (var i = 0; i < 3; i++)
         {
-            var handler = new TestHttpMessageHandler((req, ct) =>
-                Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
-
-            using var wrapper = new HttpClientRetryWrapper(
-                _baseUrl, handler, maxRetries: 1, ctsAttemptTimeout: TimeSpan.FromSeconds(10), backOffDelay: TimeSpan.Zero);
-
-            var stopwatch = Stopwatch.StartNew();
-            for (var i = 0; i < 3; i++)
-            {
-                await wrapper.SendAsync("/v3/brokerage/stream/accounts/123/orders", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, externalCancellationToken: CancellationToken.None);
-            }
-            stopwatch.Stop();
-
-            Assert.Less(stopwatch.Elapsed, TimeSpan.FromSeconds(5), "Streaming endpoints must not be rate limited.");
+            await wrapper.SendAsync("/v3/brokerage/stream/accounts/123/orders", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, RateLimitGroup.None, externalCancellationToken: CancellationToken.None);
         }
-        finally
-        {
-            RestoreConfig("trade-station-rate-limit-general-requests", previousQuota, "320");
-        }
+        stopwatch.Stop();
+
+        Assert.Less(stopwatch.Elapsed, TimeSpan.FromSeconds(5), "Streaming endpoints (RateLimitGroup.None) must not be rate limited.");
     }
 
     /// <summary>
@@ -267,7 +257,7 @@ public class TradeStationBrokerageHttpClientRetryWrapperTests
         using var wrapper = new HttpClientRetryWrapper(
             _baseUrl, handler, maxRetries: 3, ctsAttemptTimeout: TimeSpan.FromSeconds(10), backOffDelay: TimeSpan.Zero);
 
-        var response = await wrapper.SendAsync("/resource", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, externalCancellationToken: CancellationToken.None);
+        var response = await wrapper.SendAsync("/resource", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, RateLimitGroup.General, externalCancellationToken: CancellationToken.None);
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
         Assert.AreEqual(2, callCount);
@@ -292,7 +282,7 @@ public class TradeStationBrokerageHttpClientRetryWrapperTests
 
         HttpResponseMessage response = null;
         Assert.DoesNotThrowAsync(async () =>
-            response = await wrapper.SendAsync("/resource", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, externalCancellationToken: CancellationToken.None));
+            response = await wrapper.SendAsync("/resource", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, RateLimitGroup.General, externalCancellationToken: CancellationToken.None));
 
         Assert.IsNotNull(response);
         Assert.AreEqual(HttpStatusCode.TooManyRequests, response.StatusCode);
@@ -319,7 +309,7 @@ public class TradeStationBrokerageHttpClientRetryWrapperTests
             _baseUrl, handler, maxRetries: 3, ctsAttemptTimeout: TimeSpan.FromSeconds(10), backOffDelay: TimeSpan.Zero);
 
         var stopwatch = Stopwatch.StartNew();
-        var response = await wrapper.SendAsync("/resource", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, externalCancellationToken: CancellationToken.None);
+        var response = await wrapper.SendAsync("/resource", HttpMethod.Get, jsonBody: null, retryOnTimeout: true, RateLimitGroup.General, externalCancellationToken: CancellationToken.None);
         stopwatch.Stop();
 
         Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
@@ -356,6 +346,7 @@ public class TradeStationBrokerageHttpClientRetryWrapperTests
                 httpMethod: HttpMethod.Get,
                 jsonBody: null,
                 retryOnTimeout: retryOnTimeout,
+                rateLimitGroup: RateLimitGroup.General,
                 externalCancellationToken: CancellationToken.None);
         });
 

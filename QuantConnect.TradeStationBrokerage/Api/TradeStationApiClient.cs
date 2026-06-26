@@ -196,7 +196,7 @@ public class TradeStationApiClient : IDisposable
     /// </param>
     public async Task<bool> CancelOrder(string orderID)
     {
-        await RequestAsync<TradeStationAccount>($"/v3/orderexecution/orders/{orderID}", HttpMethod.Delete);
+        await RequestAsync<TradeStationAccount>($"/v3/orderexecution/orders/{orderID}", HttpMethod.Delete, RateLimitGroup.General);
         return true;
     }
 
@@ -280,7 +280,7 @@ public class TradeStationApiClient : IDisposable
         }
 
         return await RequestAsync<TradeStationPlaceOrderResponse>("/v3/orderexecution/orders", HttpMethod.Post,
-            JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings), retryOnTimeout: false
+            RateLimitGroup.General, JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings), retryOnTimeout: false
         );
     }
 
@@ -327,7 +327,7 @@ public class TradeStationApiClient : IDisposable
 
 
         var result = await RequestAsync<Models.OrderResponse>($"/v3/orderexecution/orders/{brokerId}", HttpMethod.Put,
-            JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
+            RateLimitGroup.General, JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings));
 
         if (result.Error != null)
         {
@@ -392,7 +392,7 @@ public class TradeStationApiClient : IDisposable
 
     public async Task<TradeStationQuoteSnapshot> GetQuoteSnapshot(string ticker)
     {
-        return await RequestAsync<TradeStationQuoteSnapshot>($"/v3/marketdata/quotes/{ticker}", HttpMethod.Get);
+        return await RequestAsync<TradeStationQuoteSnapshot>($"/v3/marketdata/quotes/{ticker}", HttpMethod.Get, RateLimitGroup.Quote);
     }
 
     /// <summary>
@@ -499,7 +499,7 @@ public class TradeStationApiClient : IDisposable
     /// </returns>
     public async Task<TradeStationRoute> GetRoutes()
     {
-        return await RequestAsync<TradeStationRoute>("/v3/orderexecution/routes", HttpMethod.Get);
+        return await RequestAsync<TradeStationRoute>("/v3/orderexecution/routes", HttpMethod.Get, RateLimitGroup.General);
     }
 
     /// <summary>
@@ -532,7 +532,7 @@ public class TradeStationApiClient : IDisposable
         var bars = default(IEnumerable<TradeStationBar>);
         try
         {
-            var result = await RequestAsync<TradeStationBars>(url.ToString(), HttpMethod.Get);
+            var result = await RequestAsync<TradeStationBars>(url.ToString(), HttpMethod.Get, RateLimitGroup.General);
 
             if (!string.IsNullOrEmpty(result.Error))
             {
@@ -562,7 +562,7 @@ public class TradeStationApiClient : IDisposable
     /// </returns>
     private async Task<TradeStationOptionExpiration> GetOptionExpirations(string ticker)
     {
-        return await RequestAsync<TradeStationOptionExpiration>($"/v3/marketdata/options/expirations/{ticker}", HttpMethod.Get);
+        return await RequestAsync<TradeStationOptionExpiration>($"/v3/marketdata/options/expirations/{ticker}", HttpMethod.Get, RateLimitGroup.OptionExpirations);
     }
 
     /// <summary>
@@ -575,7 +575,7 @@ public class TradeStationApiClient : IDisposable
     /// </returns>
     private async Task<TradeStationOptionStrike> GetOptionStrikes(string underlying, DateTime expirationDate)
     {
-        return await RequestAsync<TradeStationOptionStrike>($"/v3/marketdata/options/strikes/{underlying}?expiration={expirationDate.ToStringInvariant("MM-dd-yyyy")}", HttpMethod.Get);
+        return await RequestAsync<TradeStationOptionStrike>($"/v3/marketdata/options/strikes/{underlying}?expiration={expirationDate.ToStringInvariant("MM-dd-yyyy")}", HttpMethod.Get, RateLimitGroup.OptionStrikes);
     }
 
     /// <summary>
@@ -587,7 +587,7 @@ public class TradeStationApiClient : IDisposable
     /// </returns>
     private async Task<TradeStationOrderResponse> GetOrdersByAccountID(string accountID)
     {
-        return await RequestAsync<TradeStationOrderResponse>($"/v3/brokerage/accounts/{accountID}/orders", HttpMethod.Get);
+        return await RequestAsync<TradeStationOrderResponse>($"/v3/brokerage/accounts/{accountID}/orders", HttpMethod.Get, RateLimitGroup.General);
     }
 
     /// <summary>
@@ -597,7 +597,7 @@ public class TradeStationApiClient : IDisposable
     /// <returns></returns>
     private async Task<TradeStationPosition> GetPositions(string accountID)
     {
-        return await RequestAsync<TradeStationPosition>($"/v3/brokerage/accounts/{accountID}/positions", HttpMethod.Get);
+        return await RequestAsync<TradeStationPosition>($"/v3/brokerage/accounts/{accountID}/positions", HttpMethod.Get, RateLimitGroup.General);
     }
 
     /// <summary>
@@ -631,7 +631,7 @@ public class TradeStationApiClient : IDisposable
     /// </returns>
     private async Task<IEnumerable<Account>> GetAccounts()
     {
-        return (await RequestAsync<TradeStationAccount>("/v3/brokerage/accounts", HttpMethod.Get)).Accounts;
+        return (await RequestAsync<TradeStationAccount>("/v3/brokerage/accounts", HttpMethod.Get, RateLimitGroup.General)).Accounts;
     }
 
     /// <summary>
@@ -643,7 +643,7 @@ public class TradeStationApiClient : IDisposable
     /// </returns>
     private async Task<TradeStationBalance> GetBalanceByID(string accountID)
     {
-        return await RequestAsync<TradeStationBalance>($"/v3/brokerage/accounts/{accountID}/balances", HttpMethod.Get);
+        return await RequestAsync<TradeStationBalance>($"/v3/brokerage/accounts/{accountID}/balances", HttpMethod.Get, RateLimitGroup.General);
     }
 
     /// <summary>
@@ -672,6 +672,7 @@ public class TradeStationApiClient : IDisposable
     /// <typeparam name="T">The type to deserialize the response content to.</typeparam>
     /// <param name="resource">The resource path of the request relative to the base URL.</param>
     /// <param name="httpMethod">The HTTP method of the request.</param>
+    /// <param name="rateLimitGroup">The TradeStation rate-limit group this request belongs to (for proactive throttling).</param>
     /// <param name="jsonBody">Optional. The JSON body of the request.</param>
     /// <param name="retryOnTimeout">If true, the method will retry when an attempt times out (default: true).</param>
     /// <returns>
@@ -679,9 +680,9 @@ public class TradeStationApiClient : IDisposable
     /// </returns>
     /// <exception cref="JsonException">Thrown when the JSON deserialization fails.</exception>
     /// <exception cref="Exception">Thrown when an unexpected error occurs.</exception>
-    private async Task<T> RequestAsync<T>(string resource, HttpMethod httpMethod, string jsonBody = null, bool retryOnTimeout = true)
+    private async Task<T> RequestAsync<T>(string resource, HttpMethod httpMethod, RateLimitGroup rateLimitGroup, string jsonBody = null, bool retryOnTimeout = true)
     {
-        using var responseMessage = await _httpClient.SendAsync(resource, httpMethod, jsonBody, retryOnTimeout);
+        using var responseMessage = await _httpClient.SendAsync(resource, httpMethod, jsonBody, retryOnTimeout, rateLimitGroup);
 
         if (!responseMessage.IsSuccessStatusCode)
         {
