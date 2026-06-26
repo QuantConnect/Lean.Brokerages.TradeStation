@@ -14,8 +14,11 @@
 */
 
 using System;
+using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using QuantConnect.Orders;
+using System.Globalization;
 using System.Threading.Tasks;
 using QuantConnect.Securities;
 using System.Collections.Generic;
@@ -382,5 +385,62 @@ public static class TradeStationExtensions
         leanOrder.BrokerId.Add(order.OrderID);
 
         return leanOrder;
+    }
+
+    /// <summary>
+    /// Computes how long to wait before retrying a <c>429 Too Many Requests</c> response, preferring the
+    /// <c>X-RateLimit-Reset</c> header (seconds until the quota window resets), then <c>Retry-After</c>,
+    /// then <paramref name="defaultBackOff"/>. The result is clamped to <paramref name="maxDelay"/> to guard
+    /// against unexpectedly large or epoch-style header values.
+    /// </summary>
+    /// <param name="response">The rate-limited HTTP response.</param>
+    /// <param name="defaultBackOff">Fallback delay when no usable header is present.</param>
+    /// <param name="maxDelay">Upper bound on the returned delay.</param>
+    /// <returns>The delay to wait before the next attempt.</returns>
+    internal static TimeSpan GetRateLimitRetryDelay(this HttpResponseMessage response, TimeSpan defaultBackOff, TimeSpan maxDelay)
+    {
+        var delay = defaultBackOff;
+
+        if (response.TryGetSecondsFromHeader("X-RateLimit-Reset", out var resetDelay))
+        {
+            delay = resetDelay;
+        }
+        else if (response.Headers.RetryAfter?.Delta is TimeSpan retryAfterDelta)
+        {
+            delay = retryAfterDelta;
+        }
+        else if (response.TryGetSecondsFromHeader("Retry-After", out var retryAfterSeconds))
+        {
+            delay = retryAfterSeconds;
+        }
+
+        if (delay < TimeSpan.Zero)
+        {
+            delay = defaultBackOff;
+        }
+
+        return delay > maxDelay ? maxDelay : delay;
+    }
+
+    /// <summary>
+    /// Attempts to read the named response header and interpret its value as a number of seconds.
+    /// </summary>
+    /// <param name="response">The HTTP response to read from.</param>
+    /// <param name="headerName">The header name to look up.</param>
+    /// <param name="delay">The parsed delay, when the header is present and numeric.</param>
+    /// <returns><c>true</c> when the header was present and parsed; otherwise <c>false</c>.</returns>
+    private static bool TryGetSecondsFromHeader(this HttpResponseMessage response, string headerName, out TimeSpan delay)
+    {
+        delay = default;
+        if (response.Headers.TryGetValues(headerName, out var values))
+        {
+            var raw = values.FirstOrDefault();
+            if (double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds))
+            {
+                delay = TimeSpan.FromSeconds(seconds);
+                return true;
+            }
+        }
+        return false;
     }
 }
