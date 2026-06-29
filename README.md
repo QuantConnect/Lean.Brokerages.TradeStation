@@ -170,7 +170,7 @@ To view the TradeStation trading fees, see the [Pricing](https://www.tradestatio
 
 We model buying power and margin calls to ensure your algorithm stays within the margin requirements.
 
-[Read Documentation](https://www.quantconnect.com/docs/v2/cloud-platform/live-trading/brokerages/tradestation#08-Margin)
+[Read Documentation](https://www.quantconnect.com/docs/v2/cloud-platform/live-trading/brokerages/tradestation#09-Margin)
 
 #### Buying Power
 
