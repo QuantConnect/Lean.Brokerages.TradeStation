@@ -325,9 +325,6 @@ public partial class TradeStationBrokerage : Brokerage
             Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(Initialize)}: AccountID: {accountId} - AccountType: {_tradeStationAccountType}");
         }
 
-        // Surface a one-time warning to the algorithm when requests start getting rate limited.
-        _tradeStationApiClient.RateLimited += OnRateLimited;
-
         _priceMapper = new PriceMapper();
         _messageHandler = new(HandleTradeStationMessage, ConcurrencyEnabled);
 
@@ -905,13 +902,6 @@ public partial class TradeStationBrokerage : Brokerage
     /// <param name="_">The sender of the event, typically unused in this implementation.</param>
     /// <param name="brokerageMessageEvent">The event data containing details of the brokerage message, such as type and content.</param>
     private void OnBrokerageMessageEventHandler(object _, BrokerageMessageEvent brokerageMessageEvent) => OnMessage(brokerageMessageEvent);
-
-    /// <summary>
-    /// Surfaces a one-time warning to the algorithm the first time the brokerage starts rate-limiting requests
-    /// (proactive throttling or a 429 back-off). Subsequent rate-limit events stay silent to avoid log spam.
-    /// </summary>
-    /// <param name="message">The user-facing warning message.</param>
-    private void OnRateLimited(string message) => OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "RateLimit", message));
 
     /// <summary>
     /// Determines if the provided <paramref name="securityType"/> matches the <see cref="TradeStationAccountType"/>.
