@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -143,7 +143,8 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// <example>{AAPL 240510C167.5}</example>
     private string GenerateBrokerageOption(Symbol symbol)
     {
-        return $"{symbol.Canonical.Value.Replace("?", string.Empty)} {symbol.ID.Date:yyMMdd}{symbol.ID.OptionRight.ToString()[0]}{symbol.ID.StrikePrice}";
+        // TradeStation rejects a strike padded with trailing zeros, so 327.500 has to be sent as 327.5
+        return $"{symbol.Canonical.Value.Replace("?", string.Empty)} {symbol.ID.Date:yyMMdd}{symbol.ID.OptionRight.ToString()[0]}{symbol.ID.StrikePrice.Normalize()}";
     }
 
     /// <summary>
