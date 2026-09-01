@@ -27,11 +27,11 @@ using QuantConnect.Tests.Brokerages;
 namespace QuantConnect.Brokerages.TradeStation.Tests;
 
 /// <summary>
-/// Offline coverage of the replace order request the brokerage sends when Lean updates an order,
+/// Offline coverage of the requests the brokerage sends when Lean updates or cancels an order,
 /// driven through a fake HTTP handler so no TradeStation account is required.
 /// </summary>
 [TestFixture]
-public class TradeStationBrokerageUpdateOrderTests
+public class TradeStationBrokerageComboOrderTests
 {
     private const string BrokerageOrderId = "123456789";
 
@@ -140,6 +140,26 @@ public class TradeStationBrokerageUpdateOrderTests
         Assert.AreEqual(1, requests.Count);
         Assert.AreEqual("10", requests[0].Body["Quantity"]?.Value<string>());
         Assert.AreEqual("210", requests[0].Body["LimitPrice"]?.Value<string>());
+    }
+
+    /// <summary>
+    /// A combo is a single TradeStation order shared by every leg, so cancelling one leg's ticket - all Lean
+    /// pushes to the brokerage - has to cancel the whole thing. Waiting for the remaining legs left the order
+    /// working at the broker while Lean reported the cancel as accepted.
+    /// </summary>
+    [Test]
+    public void CancelsComboOrderWhenOnlyOneLegIsCancelled()
+    {
+        var orderProvider = new OrderProvider();
+        var comboOrders = CreateComboLimitOrderGroup(orderProvider, limitPrice: 1.5m);
+
+        using var brokerage = CreateBrokerage(orderProvider, out var requests);
+
+        Assert.IsTrue(brokerage.CancelOrder(comboOrders[0]));
+
+        Assert.AreEqual(1, requests.Count);
+        Assert.AreEqual(HttpMethod.Delete, requests[0].Method);
+        Assert.AreEqual($"/v3/orderexecution/orders/{BrokerageOrderId}", requests[0].Path);
     }
 
     /// <summary>

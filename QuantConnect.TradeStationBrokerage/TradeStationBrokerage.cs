@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -1083,9 +1083,12 @@ public partial class TradeStationBrokerage : Brokerage
     /// <returns>True if the request was made for the order to be canceled, false otherwise</returns>
     public override bool CancelOrder(Order order)
     {
-        if (!GroupOrderCacheManager.TryGetGroupCachedOrders(order, out var orders))
+        // A combo is a single TradeStation order, so cancelling any leg cancels all of them and Lean pushes only
+        // the leg whose ticket was cancelled. Resolve the rest of the group from the order provider rather than
+        // waiting for cancels that never arrive.
+        if (OrderProvider == null || !order.TryGetGroupOrders(OrderProvider.GetOrderById, out var orders))
         {
-            return true;
+            orders = [order];
         }
 
         var brokerageOrderId = order.BrokerId.Last();
