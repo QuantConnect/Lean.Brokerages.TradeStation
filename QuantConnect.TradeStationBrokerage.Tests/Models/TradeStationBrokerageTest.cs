@@ -19,6 +19,7 @@ using QuantConnect.Securities;
 using System.Collections.Generic;
 using QuantConnect.Logging;
 using QuantConnect.Brokerages.TradeStation.Api;
+using QuantConnect.Util;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests;
 
@@ -76,5 +77,9 @@ public class TradeStationBrokerageTest : TradeStationBrokerage
     /// Swaps in an api client so a test can assert the requests the brokerage sends without reaching TradeStation.
     /// </summary>
     /// <param name="apiClient">The api client to use from now on.</param>
-    public void SetApiClient(TradeStationApiClient apiClient) => _tradeStationApiClient = apiClient;
+    public void SetApiClient(TradeStationApiClient apiClient)
+    {
+        _tradeStationApiClient.DisposeSafely();
+        _tradeStationApiClient = apiClient;
+    }
 }

@@ -143,8 +143,8 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// <example>{AAPL 240510C167.5}</example>
     private string GenerateBrokerageOption(Symbol symbol)
     {
-        // TradeStation rejects a strike padded with trailing zeros, so 327.500 has to be sent as 327.5
-        return $"{symbol.Canonical.Value.Replace("?", string.Empty)} {symbol.ID.Date:yyMMdd}{symbol.ID.OptionRight.ToString()[0]}{symbol.ID.StrikePrice.Normalize()}";
+        // TradeStation rejects strikes with trailing zeros (327.500 -> 327.5); keep the separator culture-invariant
+        return $"{symbol.Canonical.Value.Replace("?", string.Empty)} {symbol.ID.Date:yyMMdd}{symbol.ID.OptionRight.ToString()[0]}{symbol.ID.StrikePrice.NormalizeToStr()}";
     }
 
     /// <summary>

@@ -27,8 +27,8 @@ using QuantConnect.Tests.Brokerages;
 namespace QuantConnect.Brokerages.TradeStation.Tests;
 
 /// <summary>
-/// Offline coverage of the requests the brokerage sends when Lean updates or cancels an order,
-/// driven through a fake HTTP handler so no TradeStation account is required.
+/// Requests the brokerage sends on update/cancel, driven through a fake HTTP handler. No TradeStation account
+/// needed, but the QC subscription validation still requires valid api credentials in config.
 /// </summary>
 [TestFixture]
 public class TradeStationBrokerageComboOrderTests
@@ -36,10 +36,7 @@ public class TradeStationBrokerageComboOrderTests
     private const string BrokerageOrderId = "123456789";
 
     /// <summary>
-    /// Regression test for issue #106: Lean applies a combo update to the group order manager shared by every
-    /// leg and only hands the brokerage the leg whose ticket was updated. Waiting for the remaining legs (the way
-    /// the place order path does) meant the replace request was never sent, so <see cref="TradeStationBrokerage.UpdateOrder"/>
-    /// reported success while the order stayed at its original limit price at TradeStation.
+    /// Issue #106: Lean pushes only the updated leg; waiting for the remaining legs meant the replace was never sent.
     /// </summary>
     [Test]
     public void UpdatesComboOrderWhenOnlyOneLegIsUpdated()
@@ -52,8 +49,7 @@ public class TradeStationBrokerageComboOrderTests
         var orderEvents = new List<OrderEvent>();
         brokerage.OrdersStatusChanged += (_, events) => orderEvents.AddRange(events);
 
-        // Lean's own ComboLimitOrderAlgorithm updates a single leg's ticket: the new price reaches every leg
-        // through the shared group order manager.
+        // The new price reaches every leg through the shared group order manager
         var updatedLeg = comboOrders[0];
         updatedLeg.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, updatedLeg.Id, new() { LimitPrice = 2.25m }));
 
@@ -70,9 +66,7 @@ public class TradeStationBrokerageComboOrderTests
     }
 
     /// <summary>
-    /// A TradeStation order is leg keyed - a multi-leg order carries its size on each leg and the replace request
-    /// has no leg data - so there is no single quantity to replace. Lean's TradeStationBrokerageModel refuses combo
-    /// quantity updates as well, so the request must only carry the group level price.
+    /// The replace request has no leg data, so a combo replace carries only the group price.
     /// </summary>
     [Test]
     public void DoesNotSendAQuantityWhenReplacingAComboOrder()
@@ -90,9 +84,7 @@ public class TradeStationBrokerageComboOrderTests
     }
 
     /// <summary>
-    /// A combo is a single TradeStation order, so an algorithm that updates every leg's ticket must still produce
-    /// a single replace request: a repeated one would be acknowledged again and reported back to Lean as a new
-    /// submission of the same order.
+    /// Updating every leg's ticket must produce a single replace request.
     /// </summary>
     [Test]
     public void ReplacesTheComboOrderOnceWhenEveryLegIsUpdated()
@@ -116,6 +108,12 @@ public class TradeStationBrokerageComboOrderTests
 
         Assert.AreEqual(2, requests.Count);
         Assert.AreEqual("3.5", requests[1].Body["LimitPrice"]?.Value<string>());
+
+        // The same price at a different decimal scale is not a new update.
+        comboOrders[0].ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, comboOrders[0].Id, new() { LimitPrice = 3.50m }));
+        Assert.IsTrue(brokerage.UpdateOrder(comboOrders[0]));
+
+        Assert.AreEqual(2, requests.Count);
     }
 
     /// <summary>
@@ -143,9 +141,7 @@ public class TradeStationBrokerageComboOrderTests
     }
 
     /// <summary>
-    /// A combo is a single TradeStation order shared by every leg, so cancelling one leg's ticket - all Lean
-    /// pushes to the brokerage - has to cancel the whole thing. Waiting for the remaining legs left the order
-    /// working at the broker while Lean reported the cancel as accepted.
+    /// Cancelling one leg's ticket - all Lean pushes - must cancel the whole combo.
     /// </summary>
     [Test]
     public void CancelsComboOrderWhenOnlyOneLegIsCancelled()
@@ -160,6 +156,26 @@ public class TradeStationBrokerageComboOrderTests
         Assert.AreEqual(1, requests.Count);
         Assert.AreEqual(HttpMethod.Delete, requests[0].Method);
         Assert.AreEqual($"/v3/orderexecution/orders/{BrokerageOrderId}", requests[0].Path);
+    }
+
+    /// <summary>
+    /// Cancelling every leg's ticket must produce a single cancel request.
+    /// </summary>
+    [Test]
+    public void CancelsTheComboOrderOnceWhenEveryLegIsCancelled()
+    {
+        var orderProvider = new OrderProvider();
+        var comboOrders = CreateComboLimitOrderGroup(orderProvider, limitPrice: 1.5m);
+
+        using var brokerage = CreateBrokerage(orderProvider, out var requests);
+
+        foreach (var comboOrder in comboOrders)
+        {
+            Assert.IsTrue(brokerage.CancelOrder(comboOrder));
+        }
+
+        Assert.AreEqual(1, requests.Count);
+        Assert.AreEqual(HttpMethod.Delete, requests[0].Method);
     }
 
     /// <summary>
