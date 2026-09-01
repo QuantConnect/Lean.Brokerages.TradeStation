@@ -1,4 +1,4 @@
-/*
+﻿/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -63,7 +63,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// <summary>
     /// TradeStation api client implementation
     /// </summary>
-    private TradeStationApiClient _tradeStationApiClient;
+    private protected TradeStationApiClient _tradeStationApiClient;
 
     /// <summary>
     /// Provides the mapping between Lean symbols and brokerage specific symbols.
@@ -136,6 +136,12 @@ public partial class TradeStationBrokerage : Brokerage
     /// A concurrent dictionary to store the order ID and the corresponding filled quantity.
     /// </summary>
     private ConcurrentDictionary<int, decimal> _orderIdToFillQuantity = new();
+
+    /// <summary>
+    /// The last replace request submitted to TradeStation for each Lean order, used to skip the repeats an
+    /// algorithm produces by updating every leg of the same combo.
+    /// </summary>
+    private readonly ConcurrentDictionary<int, string> _lastSubmittedUpdateByLeanOrderId = new();
 
     /// <summary>
     /// Provides a thread-safe service for caching and managing original orders when they are part of a group.
@@ -999,35 +1005,50 @@ public partial class TradeStationBrokerage : Brokerage
     /// <returns>True if the request was made for the order to be updated, false otherwise</returns>
     public override bool UpdateOrder(Order order)
     {
-        var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol);
-
         if (!TryGetUpdateCrossZeroOrderQuantity(order, out var orderQuantity))
         {
             OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $"{nameof(TradeStationBrokerage)}.{nameof(UpdateOrder)}: Unable to modify order quantities."));
             return false;
         }
 
-        if (!GroupOrderCacheManager.TryGetGroupCachedOrders(order, out var orders))
+        // Lean hands us only the leg whose ticket was updated, the new price reaching the rest of the combo through
+        // the shared group order manager, so the remaining legs are resolved here instead of waited for.
+        if (OrderProvider == null || !order.TryGetGroupOrders(OrderProvider.GetOrderById, out var orders))
         {
-            return true;
+            orders = [order];
         }
 
         // Always use the first order in the group, as combo orders determine direction based on the first order's details.
+        var updatedOrderId = order.Id;
         order = orders.First();
         var brokerageOrderId = order.BrokerId.Last();
+
+        var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo();
+        var limitPrice = order.GetLimitPrice(_priceMapper);
+        var stopPrice = order.GetStopPrice(_priceMapper);
+        // A multi-leg order carries its size on each leg and the replace request has no leg data, so there is no
+        // single quantity to replace: only the group level price is sent.
+        var quantity = order.GroupOrderManager == null ? Math.Abs(orderQuantity) : default(decimal?);
+
+        // Every leg of a combo produces this very same request, so submit it once.
+        var updateSignature = $"{brokerageOrderId}|{quantity}|{limitPrice}|{stopPrice}|{trailingAmount}|{trailingAsPercentage}";
+        if (_lastSubmittedUpdateByLeanOrderId.TryGetValue(updatedOrderId, out var lastSubmittedUpdate) && lastSubmittedUpdate == updateSignature)
+        {
+            return true;
+        }
 
         var response = default(bool);
         _messageHandler.WithLockedStream(() =>
         {
             try
             {
-                var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo();
-                var result = _tradeStationApiClient.ReplaceOrder(brokerageOrderId, order.Type, Math.Abs(orderQuantity),
-                    order.GetLimitPrice(_priceMapper), order.GetStopPrice(_priceMapper), trailingAmount, trailingAsPercentage).SynchronouslyAwaitTaskResult();
+                _tradeStationApiClient.ReplaceOrder(brokerageOrderId, order.Type, quantity, limitPrice, stopPrice,
+                    trailingAmount, trailingAsPercentage).SynchronouslyAwaitTaskResult();
 
-                foreach (var order in orders)
+                foreach (var groupOrder in orders)
                 {
-                    OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)}.{nameof(UpdateOrder)} Order Event")
+                    _lastSubmittedUpdateByLeanOrderId[groupOrder.Id] = updateSignature;
+                    OnOrderEvent(new OrderEvent(groupOrder, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)}.{nameof(UpdateOrder)} Order Event")
                     {
                         Status = OrderStatus.UpdateSubmitted
                     });
@@ -1485,6 +1506,7 @@ public partial class TradeStationBrokerage : Brokerage
                     if (globalLeanOrderStatus.IsClosed())
                     {
                         _orderIdToFillQuantity.TryRemove(leanOrder.Id, out _);
+                        _lastSubmittedUpdateByLeanOrderId.TryRemove(leanOrder.Id, out _);
                     }
 
                     var orderEvent = new OrderEvent(

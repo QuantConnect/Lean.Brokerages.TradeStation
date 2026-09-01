@@ -1,4 +1,4 @@
-/*
+﻿/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -655,6 +655,15 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.IsTrue(manualResetEvent.WaitOne(TimeSpan.FromSeconds(60)));
 
             Brokerage.OrdersStatusChanged -= orderStatusCallback;
+
+            // Regression test for issue #106: the replace request used to be silently dropped, so the order stayed
+            // live at its original limit price even though Lean reported the update as submitted.
+            var brokerageOrderId = comboOrders.First().BrokerId.Last();
+            var brokerageComboOrders = Brokerage.GetOpenOrders().OfType<ComboLimitOrder>()
+                .Where(brokerageOrder => brokerageOrder.BrokerId.Contains(brokerageOrderId)).ToList();
+
+            Assert.IsNotEmpty(brokerageComboOrders);
+            Assert.IsTrue(brokerageComboOrders.TrueForAll(brokerageOrder => brokerageOrder.GroupOrderManager.LimitPrice == newComboLimitPrice));
 
             CancelComboOpenOrders(comboOrders);
         }
