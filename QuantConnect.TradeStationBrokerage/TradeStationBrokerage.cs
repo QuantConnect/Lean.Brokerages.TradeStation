@@ -38,6 +38,7 @@ using System.Collections.Concurrent;
 using System.Net.NetworkInformation;
 using System.Collections.ObjectModel;
 using System.Runtime.CompilerServices;
+using QuantConnect.Lean.Engine.Results;
 using QuantConnect.Brokerages.CrossZero;
 using QuantConnect.Brokerages.TradeStation.Api;
 using QuantConnect.Brokerages.LevelOneOrderBook;
@@ -351,6 +352,8 @@ public partial class TradeStationBrokerage : Brokerage
             .ToDictionary(g => g.Key, g => g.Select(x => x.Route).ToList().AsReadOnly());
         });
 
+        DeploymentDetailsHelper.Add("trade-station-account-type", _tradeStationAccountType.ToStringInvariant());
+        DeploymentDetailsHelper.Add("trade-station-account-id", accountId);
         ValidateSubscription();
     }
 
