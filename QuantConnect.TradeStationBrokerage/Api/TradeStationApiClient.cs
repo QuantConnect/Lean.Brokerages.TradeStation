@@ -26,13 +26,14 @@ using QuantConnect.Logging;
 using QuantConnect.Configuration;
 using System.Threading.Tasks;
 using System.Collections.Generic;
-using Lean = QuantConnect.Orders;
 using System.Runtime.CompilerServices;
 using QuantConnect.Brokerages.TradeStation.Models;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
 using QuantConnect.Brokerages.TradeStation.Models.Interfaces;
 
 namespace QuantConnect.Brokerages.TradeStation.Api;
+
+using Lean = QuantConnect.Orders;
 
 /// <summary>
 /// TradeStation api client implementation
