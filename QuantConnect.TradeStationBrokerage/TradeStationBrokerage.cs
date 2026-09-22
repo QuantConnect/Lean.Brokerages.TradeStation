@@ -135,8 +135,6 @@ public partial class TradeStationBrokerage : Brokerage
     /// <summary>
     /// Provides a thread-safe service for caching and managing original orders when they are part of a group.
     /// </summary>
-    private GroupOrderCacheManager _groupOrderCacheManager = new();
-
     /// <summary>
     /// Specifies the type of account on TradeStation in current session.
     /// </summary>
@@ -360,6 +358,86 @@ public partial class TradeStationBrokerage : Brokerage
     #region Brokerage
 
     /// <summary>
+    /// Rebuilds, best effort, the contingencies of the given open orders based on their linked orders
+    /// </summary>
+    internal static void SetContingencies(List<(TradeStationOrder BrokerageOrder, List<Order> LeanOrders)> openOrders)
+    {
+        try
+        {
+            var openOrdersById = openOrders.Where(x => !string.IsNullOrEmpty(x.BrokerageOrder.OrderID)).ToDictionary(x => x.BrokerageOrder.OrderID);
+            // the members of each group and the children of each parent, by brokerage order id
+            var groups = new Dictionary<string, (ContingencyType Type, HashSet<string> Members)>();
+            var children = new Dictionary<string, HashSet<string>>();
+            foreach (var openOrder in openOrders)
+            {
+                var brokerageOrderId = openOrder.BrokerageOrder.OrderID;
+                foreach (var linkedOrder in openOrder.BrokerageOrder.ConditionalOrders ?? [])
+                {
+                    if (string.IsNullOrEmpty(linkedOrder.OrderID) || !openOrdersById.ContainsKey(linkedOrder.OrderID))
+                    {
+                        // the linked order is gone: a parent which already filled, so this order is working
+                        continue;
+                    }
+
+                    switch (linkedOrder.Relationship?.ToUpperInvariant())
+                    {
+                        case "OCO":
+                        case "BRK":
+                            // all the orders of the group are linked to each other, so they all get the same key
+                            var groupOrderIds = (openOrder.BrokerageOrder.ConditionalOrders ?? [])
+                                .Where(x => !string.IsNullOrEmpty(x.OrderID) && openOrdersById.ContainsKey(x.OrderID)
+                                    && ("OCO".Equals(x.Relationship, StringComparison.InvariantCultureIgnoreCase) || "BRK".Equals(x.Relationship, StringComparison.InvariantCultureIgnoreCase)))
+                                .Select(x => x.OrderID).Append(brokerageOrderId).Distinct().OrderBy(x => x, StringComparer.Ordinal);
+                            var key = string.Join(",", groupOrderIds);
+                            if (!groups.TryGetValue(key, out var group))
+                            {
+                                var type = linkedOrder.Relationship.Equals("BRK", StringComparison.InvariantCultureIgnoreCase) ? ContingencyType.OneUpdatesOther : ContingencyType.OneCancelsOther;
+                                groups[key] = group = (type, new HashSet<string>());
+                            }
+                            group.Members.Add(brokerageOrderId);
+                            break;
+                        case "OSP":
+                            // the linked order is our parent
+                            AddChild(linkedOrder.OrderID, brokerageOrderId);
+                            break;
+                        case "OSO":
+                            // the linked order is our child
+                            AddChild(brokerageOrderId, linkedOrder.OrderID);
+                            break;
+                    }
+                }
+            }
+
+            void AddChild(string parentId, string childId)
+            {
+                if (!children.TryGetValue(parentId, out var parentChildren))
+                {
+                    children[parentId] = parentChildren = new HashSet<string>();
+                }
+                parentChildren.Add(childId);
+            }
+
+            foreach (var (type, members) in groups.Values.Where(group => group.Members.Count > 1))
+            {
+                OrderContingency.Relate(type, members.SelectMany(member => openOrdersById[member].LeanOrders));
+            }
+            foreach (var (parentId, parentChildren) in children)
+            {
+                OrderContingency.Trigger(openOrdersById[parentId].LeanOrders, parentChildren.SelectMany(child => openOrdersById[child].LeanOrders));
+            }
+        }
+        catch (Exception error)
+        {
+            // best effort, they will be handled as plain orders
+            Log.Error(error, "Failed to rebuild the contingencies of the open orders");
+            foreach (var order in openOrders.SelectMany(x => x.LeanOrders))
+            {
+                order.Contingency = null;
+            }
+        }
+    }
+
+    /// <summary>
     /// Gets all open orders on the account.
     /// NOTE: The order objects returned do not have QC order IDs.
     /// </summary>
@@ -369,13 +447,17 @@ public partial class TradeStationBrokerage : Brokerage
         var orders = _tradeStationApiClient.GetOrders().SynchronouslyAwaitTaskResult();
         var leanOrders = new List<Order>();
 
-        foreach (var order in orders.Orders.Where(o => o.Status is TradeStationOrderStatusType.Ack or TradeStationOrderStatusType.Don))
+        var openOrders = new List<(TradeStationOrder BrokerageOrder, List<Order> LeanOrders)>();
+        // the orders sent by another (OSO) are held until it fills
+        foreach (var order in orders.Orders.Where(o => o.Status is TradeStationOrderStatusType.Ack or TradeStationOrderStatusType.Don or TradeStationOrderStatusType.Oso))
         {
             if (TryConvertToLeanOrder(order, out var convertedOrders))
             {
                 leanOrders.AddRange(convertedOrders);
+                openOrders.Add((order, convertedOrders));
             }
         }
+        SetContingencies(openOrders);
         return leanOrders;
     }
 
@@ -501,7 +583,17 @@ public partial class TradeStationBrokerage : Brokerage
             return false;
         }
 
-        if (!_groupOrderCacheManager.TryGetGroupCachedOrders(order, out var orders))
+        if (order.Contingency != null)
+        {
+            // contingent orders are placed together, as an order group and/or order sends order, once they have all arrived
+            if (ContingentOrderCache.TryGetContingentCachedOrders(order, out var contingentOrders))
+            {
+                PlaceContingentOrders(contingentOrders);
+            }
+            return true;
+        }
+
+        if (!GroupOrderCacheManager.TryGetGroupCachedOrders(order, out var orders))
         {
             return true;
         }
@@ -525,6 +617,128 @@ public partial class TradeStationBrokerage : Brokerage
             OnOrderEvents(orderEvents);
         }
         return true;
+    }
+
+    /// <summary>
+    /// Places a set of contingent orders: orders where one cancels (OCO) or reduces (BRK) the rest are placed as an order group,
+    /// and the orders triggered by another are sent along with it as order sends order (OSO)
+    /// </summary>
+    /// <param name="contingentOrders">All the orders of the set, parents come before the orders they trigger</param>
+    private void PlaceContingentOrders(List<Order> contingentOrders)
+    {
+        try
+        {
+            _messageHandler.WithLockedStream(() =>
+            {
+                // the orders in the same order they are sent: each order is followed by the orders it sends
+                var placedOrders = new List<Order>(contingentOrders.Count);
+                var roots = contingentOrders.Where(order => order.GetContingencyLink(ContingencyRole.Child) == null).ToList();
+                var requests = roots.Select(order => CreateContingentOrderRequest(order, contingentOrders, placedOrders, new Dictionary<Symbol, decimal>())).ToList();
+
+                TradeStationPlaceOrderResponse response;
+                if (requests.Count == 1)
+                {
+                    response = _tradeStationApiClient.PlaceOrder(requests[0]).SynchronouslyAwaitTaskResult();
+                }
+                else
+                {
+                    var groupType = GetOrderGroupType(roots[0].GetSiblingLink());
+                    response = _tradeStationApiClient.PlaceOrderGroup(new TradeStationOrderGroupRequest(groupType, requests)).SynchronouslyAwaitTaskResult();
+                }
+
+                var brokerageOrders = response.Orders ?? [];
+                var error = brokerageOrders.FirstOrDefault(brokerageOrder => !string.IsNullOrEmpty(brokerageOrder.Error) || string.IsNullOrEmpty(brokerageOrder.OrderID));
+                if (error != null || brokerageOrders.Count != placedOrders.Count)
+                {
+                    // we do not leave any order behind
+                    foreach (var brokerageOrder in brokerageOrders.Where(brokerageOrder => !string.IsNullOrEmpty(brokerageOrder.OrderID)))
+                    {
+                        try
+                        {
+                            _tradeStationApiClient.CancelOrder(brokerageOrder.OrderID).SynchronouslyAwaitTaskResult();
+                        }
+                        catch (Exception cancelError)
+                        {
+                            Log.Error(cancelError);
+                        }
+                    }
+                    throw new InvalidOperationException(error?.Message ?? $"Unexpected order count in the response {brokerageOrders.Count}, expected {placedOrders.Count}");
+                }
+
+                var orderEvents = new List<OrderEvent>(placedOrders.Count);
+                for (var i = 0; i < placedOrders.Count; i++)
+                {
+                    var brokerageOrderId = brokerageOrders[i].OrderID;
+                    placedOrders[i].BrokerId.Add(brokerageOrderId);
+                    _skipWebSocketUpdatesForLeanOrders[brokerageOrderId] = true;
+                    orderEvents.Add(new OrderEvent(placedOrders[i], DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event") { Status = OrderStatus.Submitted });
+                }
+                OnOrderEvents(orderEvents);
+            });
+        }
+        catch (Exception error)
+        {
+            Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(PlaceContingentOrders)}: " + error);
+
+            OnOrderEvents(contingentOrders.ToList(order => new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, "PlaceOrder")
+            {
+                Status = OrderStatus.Invalid,
+                Message = error.Message
+            }));
+        }
+    }
+
+    /// <summary>
+    /// Creates the request for a contingent order, including the orders it sends once filled (OSO)
+    /// </summary>
+    /// <param name="order">The order to create the request for</param>
+    /// <param name="contingentOrders">All the orders of the set</param>
+    /// <param name="placedOrders">The orders in the same order they are sent</param>
+    /// <param name="triggeredQuantity">The quantity by symbol of the parent orders, which will be filled by the time this order starts working</param>
+    private TradeStationPlaceOrderRequest CreateContingentOrderRequest(Order order, List<Order> contingentOrders, List<Order> placedOrders, Dictionary<Symbol, decimal> triggeredQuantity)
+    {
+        placedOrders.Add(order);
+
+        var tradeStationOrderProperties = order.Properties as OrderProperties;
+        if (!GetTradeStationOrderRouteIdByOrderSecurityTypes(tradeStationOrderProperties, new List<SecurityType> { order.SecurityType }, out var routeId))
+        {
+            throw new InvalidOperationException($"Failed to find a valid TradeStation route for exchange '{tradeStationOrderProperties.Exchange.Name}' with the security type: {order.SecurityType}.");
+        }
+
+        // the trade action is determined based on the holdings once the parent orders have filled
+        var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol) + triggeredQuantity.GetValueOrDefault(order.Symbol);
+        var tradeAction = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity);
+        var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo();
+        var request = _tradeStationApiClient.CreatePlaceOrderRequest(order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, _symbolMapper.GetBrokerageSymbol(order.Symbol),
+            limitPrice: order.GetLimitPrice(_priceMapper), stopPrice: order.GetStopPrice(_priceMapper), trailingAmount: trailingAmount, trailingAsPercentage: trailingAsPercentage,
+            routeId: routeId, tradeStationOrderProperties: tradeStationOrderProperties as TradeStationOrderProperties);
+
+        var parent = order.GetContingencyLink(ContingencyRole.Parent);
+        if (parent != null)
+        {
+            var childrenTriggeredQuantity = new Dictionary<Symbol, decimal>(triggeredQuantity);
+            childrenTriggeredQuantity[order.Symbol] = childrenTriggeredQuantity.GetValueOrDefault(order.Symbol) + order.Quantity;
+
+            // the orders related to each other go in the same group, the independent ones all together
+            request.OSOs = order.GetContingentChildren(contingentOrders)
+                .GroupBy(child => child.GetSiblingLink()?.Id ?? 0)
+                .Select(group => new TradeStationOrderGroupRequest(GetOrderGroupType(group.First().GetSiblingLink()),
+                    group.Select(child => CreateContingentOrderRequest(child, contingentOrders, placedOrders, childrenTriggeredQuantity)).ToList()))
+                .ToList();
+        }
+        return request;
+    }
+
+    /// <summary>
+    /// Gets the order group type for the given contingency
+    /// </summary>
+    private static string GetOrderGroupType(ContingencyLink member)
+    {
+        if (member == null)
+        {
+            return TradeStationOrderGroupRequest.Normal;
+        }
+        return member.Type == ContingencyType.OneUpdatesOther ? TradeStationOrderGroupRequest.Bracket : TradeStationOrderGroupRequest.OneCancelsOther;
     }
 
     /// <summary>
@@ -728,7 +942,7 @@ public partial class TradeStationBrokerage : Brokerage
             return false;
         }
 
-        if (!_groupOrderCacheManager.TryGetGroupCachedOrders(order, out var orders))
+        if (!GroupOrderCacheManager.TryGetGroupCachedOrders(order, out var orders))
         {
             return true;
         }
@@ -783,7 +997,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// <returns>True if the request was made for the order to be canceled, false otherwise</returns>
     public override bool CancelOrder(Order order)
     {
-        if (!_groupOrderCacheManager.TryGetGroupCachedOrders(order, out var orders))
+        if (!GroupOrderCacheManager.TryGetGroupCachedOrders(order, out var orders))
         {
             return true;
         }
@@ -1231,6 +1445,9 @@ public partial class TradeStationBrokerage : Brokerage
                     if (!TryHandleRemainingCrossZeroOrder(leanOrder, orderEvent))
                     {
                         OnOrderEvent(orderEvent);
+
+                        // contingent orders: the orders sent by the one which filled are no longer held
+                        OnContingentOrdersTriggered([orderEvent], OrderProvider);
                     }
                 }
 

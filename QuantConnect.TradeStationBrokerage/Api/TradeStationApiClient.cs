@@ -246,6 +246,53 @@ public class TradeStationApiClient : IDisposable
         string routeId = null,
         TradeStationOrderProperties tradeStationOrderProperties = null)
     {
+        var tradeStationOrder = CreatePlaceOrderRequest(leanOrderType, leanTimeInForce, leanAbsoluteQuantity, tradeAction, symbol, legs, limitPrice, stopPrice,
+            trailingAmount, trailingAsPercentage, routeId, tradeStationOrderProperties);
+        return await PlaceOrder(tradeStationOrder);
+    }
+
+    /// <summary>
+    /// Places the given order request, which might send other orders once filled: order sends order (OSO).
+    /// </summary>
+    /// <param name="tradeStationOrder">The order request.</param>
+    /// <returns>A <see cref="TradeStationPlaceOrderResponse"/> containing the result of the order placement, an entry for each order.</returns>
+    public async Task<TradeStationPlaceOrderResponse> PlaceOrder(TradeStationPlaceOrderRequest tradeStationOrder)
+    {
+        return await RequestAsync<TradeStationPlaceOrderResponse>("/v3/orderexecution/orders", HttpMethod.Post,
+            JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings), retryOnTimeout: false
+        );
+    }
+
+    /// <summary>
+    /// Places a group of orders: OCO, where a fill cancels the rest, or BRK, where a fill reduces the rest.
+    /// </summary>
+    /// <param name="orderGroup">The order group request.</param>
+    /// <returns>A <see cref="TradeStationPlaceOrderResponse"/> containing the result of the order placement, an entry for each order.</returns>
+    public async Task<TradeStationPlaceOrderResponse> PlaceOrderGroup(TradeStationOrderGroupRequest orderGroup)
+    {
+        return await RequestAsync<TradeStationPlaceOrderResponse>("/v3/orderexecution/ordergroups", HttpMethod.Post,
+            JsonConvert.SerializeObject(orderGroup, jsonSerializerSettings), retryOnTimeout: false
+        );
+    }
+
+    /// <summary>
+    /// Creates the request to place an order.
+    /// </summary>
+    /// <remarks>See <see cref="PlaceOrder(OrderType, Lean.TimeInForce, decimal?, string, string, IReadOnlyCollection{TradeStationPlaceOrderLeg}, decimal?, decimal?, decimal?, bool?, string, TradeStationOrderProperties)"/></remarks>
+    public TradeStationPlaceOrderRequest CreatePlaceOrderRequest(
+        OrderType leanOrderType,
+        Lean.TimeInForce leanTimeInForce,
+        decimal? leanAbsoluteQuantity = null,
+        string tradeAction = null,
+        string symbol = null,
+        IReadOnlyCollection<TradeStationPlaceOrderLeg> legs = null,
+        decimal? limitPrice = null,
+        decimal? stopPrice = null,
+        decimal? trailingAmount = null,
+        bool? trailingAsPercentage = null,
+        string routeId = null,
+        TradeStationOrderProperties tradeStationOrderProperties = null)
+    {
         var orderType = leanOrderType.ConvertLeanOrderTypeToTradeStation();
 
         var (duration, expiryDateTime) = leanTimeInForce.GetBrokerageTimeInForce(leanOrderType, tradeStationOrderProperties?.OutsideRegularTradingHours ?? false);
@@ -294,9 +341,7 @@ public class TradeStationApiClient : IDisposable
                 break;
         }
 
-        return await RequestAsync<TradeStationPlaceOrderResponse>("/v3/orderexecution/orders", HttpMethod.Post,
-            JsonConvert.SerializeObject(tradeStationOrder, jsonSerializerSettings), retryOnTimeout: false
-        );
+        return tradeStationOrder;
     }
 
     /// <summary>
