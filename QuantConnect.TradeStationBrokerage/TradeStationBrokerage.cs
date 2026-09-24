@@ -128,6 +128,11 @@ public partial class TradeStationBrokerage : Brokerage
     private protected ConcurrentDictionary<string, bool> _skipWebSocketUpdatesForLeanOrders = [];
 
     /// <summary>
+    /// Whether the warning about canceling a member of an order group was already sent
+    /// </summary>
+    private bool _contingentOrderCancelWarningSent;
+
+    /// <summary>
     /// A concurrent dictionary to store the order ID and the corresponding filled quantity.
     /// </summary>
     private ConcurrentDictionary<int, decimal> _orderIdToFillQuantity = new();
@@ -630,8 +635,8 @@ public partial class TradeStationBrokerage : Brokerage
         {
             _messageHandler.WithLockedStream(() =>
             {
-                // the orders in the same order they are sent: each order is followed by the orders it sends
-                var placedOrders = new List<Order>(contingentOrders.Count);
+                // the orders in the order TradeStation confirms them: the orders sent by another come before it
+                var placedOrders = new List<(Order Order, TradeStationPlaceOrderRequest Request)>(contingentOrders.Count);
                 var roots = contingentOrders.Where(order => order.GetContingencyLink(ContingencyRole.Child) == null).ToList();
                 var requests = roots.Select(order => CreateContingentOrderRequest(order, contingentOrders, placedOrders, new Dictionary<Symbol, decimal>())).ToList();
 
@@ -648,7 +653,8 @@ public partial class TradeStationBrokerage : Brokerage
 
                 var brokerageOrders = response.Orders ?? [];
                 var error = brokerageOrders.FirstOrDefault(brokerageOrder => !string.IsNullOrEmpty(brokerageOrder.Error) || string.IsNullOrEmpty(brokerageOrder.OrderID));
-                if (error != null || brokerageOrders.Count != placedOrders.Count)
+                var confirmedOrders = error == null ? MatchConfirmedOrders(placedOrders, brokerageOrders) : null;
+                if (confirmedOrders == null)
                 {
                     // we do not leave any order behind
                     foreach (var brokerageOrder in brokerageOrders.Where(brokerageOrder => !string.IsNullOrEmpty(brokerageOrder.OrderID)))
@@ -662,16 +668,16 @@ public partial class TradeStationBrokerage : Brokerage
                             Log.Error(cancelError);
                         }
                     }
-                    throw new InvalidOperationException(error?.Message ?? $"Unexpected order count in the response {brokerageOrders.Count}, expected {placedOrders.Count}");
+                    throw new InvalidOperationException(error?.Message ?? $"Unexpected orders in the response: [{string.Join(", ", brokerageOrders.Select(x => x.Message))}]");
                 }
 
                 var orderEvents = new List<OrderEvent>(placedOrders.Count);
                 for (var i = 0; i < placedOrders.Count; i++)
                 {
-                    var brokerageOrderId = brokerageOrders[i].OrderID;
-                    placedOrders[i].BrokerId.Add(brokerageOrderId);
+                    var brokerageOrderId = confirmedOrders[i].OrderID;
+                    placedOrders[i].Order.BrokerId.Add(brokerageOrderId);
                     _skipWebSocketUpdatesForLeanOrders[brokerageOrderId] = true;
-                    orderEvents.Add(new OrderEvent(placedOrders[i], DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event") { Status = OrderStatus.Submitted });
+                    orderEvents.Add(new OrderEvent(placedOrders[i].Order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)} Order Event") { Status = OrderStatus.Submitted });
                 }
                 OnOrderEvents(orderEvents);
             });
@@ -693,12 +699,11 @@ public partial class TradeStationBrokerage : Brokerage
     /// </summary>
     /// <param name="order">The order to create the request for</param>
     /// <param name="contingentOrders">All the orders of the set</param>
-    /// <param name="placedOrders">The orders in the same order they are sent</param>
+    /// <param name="placedOrders">The orders and their requests in the order TradeStation confirms them</param>
     /// <param name="triggeredQuantity">The quantity by symbol of the parent orders, which will be filled by the time this order starts working</param>
-    private TradeStationPlaceOrderRequest CreateContingentOrderRequest(Order order, List<Order> contingentOrders, List<Order> placedOrders, Dictionary<Symbol, decimal> triggeredQuantity)
+    private TradeStationPlaceOrderRequest CreateContingentOrderRequest(Order order, List<Order> contingentOrders, List<(Order Order, TradeStationPlaceOrderRequest Request)> placedOrders,
+        Dictionary<Symbol, decimal> triggeredQuantity)
     {
-        placedOrders.Add(order);
-
         var tradeStationOrderProperties = order.Properties as OrderProperties;
         if (!GetTradeStationOrderRouteIdByOrderSecurityTypes(tradeStationOrderProperties, new List<SecurityType> { order.SecurityType }, out var routeId))
         {
@@ -726,7 +731,66 @@ public partial class TradeStationBrokerage : Brokerage
                     group.Select(child => CreateContingentOrderRequest(child, contingentOrders, placedOrders, childrenTriggeredQuantity)).ToList()))
                 .ToList();
         }
+        placedOrders.Add((order, request));
         return request;
+    }
+
+    /// <summary>
+    /// Matches the placed orders with the orders TradeStation confirms, which come in the same order. Their confirmation messages,
+    /// like "Sent order: Sell 1 AAPL @ 1000.00 Limit", are only used to rule out the orders they clearly don't belong to
+    /// </summary>
+    /// <returns>The confirmed order of each placed order, null if any can't be matched</returns>
+    private static List<Models.OrderResponse> MatchConfirmedOrders(List<(Order Order, TradeStationPlaceOrderRequest Request)> placedOrders, List<Models.OrderResponse> confirmedOrders)
+    {
+        if (confirmedOrders.Count != placedOrders.Count)
+        {
+            return null;
+        }
+        var remaining = new List<Models.OrderResponse>(confirmedOrders);
+        var matches = new List<Models.OrderResponse>(placedOrders.Count);
+        foreach (var (_, request) in placedOrders)
+        {
+            var index = remaining.FindIndex(confirmed => !IsConfirmationOfOtherOrder(confirmed.Message, request));
+            if (index == -1)
+            {
+                return null;
+            }
+            matches.Add(remaining[index]);
+            remaining.RemoveAt(index);
+        }
+        return matches;
+    }
+
+    /// <summary>
+    /// The order types as the confirmation messages end with them, like "Sent order: Sell 1 AAPL @ 50.00 Stop Market"
+    /// </summary>
+    private static readonly Dictionary<string, TradeStationOrderType> ConfirmedOrderTypes = new(StringComparer.InvariantCultureIgnoreCase)
+    {
+        { "Market", TradeStationOrderType.Market },
+        { "Limit", TradeStationOrderType.Limit },
+        { "Stop Market", TradeStationOrderType.StopMarket },
+        { "Stop Limit", TradeStationOrderType.StopLimit }
+    };
+
+    /// <summary>
+    /// Whether the confirmation message clearly belongs to another order: it's for the other side or another order type
+    /// </summary>
+    private static bool IsConfirmationOfOtherOrder(string message, TradeStationPlaceOrderRequest request)
+    {
+        if (string.IsNullOrEmpty(message))
+        {
+            return false;
+        }
+        var words = message.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var otherSide = request.TradeAction.StartsWith("BUY", StringComparison.InvariantCultureIgnoreCase) ? "Sell" : "Buy";
+        if (words.Contains(otherSide, StringComparer.InvariantCultureIgnoreCase))
+        {
+            return true;
+        }
+        // the order type follows the price, if any: "@ 1000.00 Limit", "@ Market"
+        var orderType = string.Join(' ', words.SkipWhile(word => word != "@").Skip(1)
+            .SkipWhile(word => decimal.TryParse(word, NumberStyles.Number, CultureInfo.InvariantCulture, out _)));
+        return ConfirmedOrderTypes.TryGetValue(orderType, out var confirmedOrderType) && confirmedOrderType != request.OrderType;
     }
 
     /// <summary>
@@ -1012,6 +1076,13 @@ public partial class TradeStationBrokerage : Brokerage
                 if (CancelBrokerageOrder(brokerageOrderId))
                 {
                     result = true;
+                    if (!_contingentOrderCancelWarningSent && order.GetSiblingLink() != null)
+                    {
+                        // TradeStation cancels the rest of an order group when one of them fills, but not when one of them is canceled
+                        _contingentOrderCancelWarningSent = true;
+                        OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "ContingentOrderCancel",
+                            "TradeStation does not cancel the rest of the orders of a one cancels other or one updates other group when one of them is canceled, they keep working."));
+                    }
                 }
             }
             catch (Exception ex) when (_cancelOrderSoftRejects.TryGetValue(ex.Message, out var softReject))
@@ -1271,6 +1342,10 @@ public partial class TradeStationBrokerage : Brokerage
                         break;
                     case TradeStationOrderStatusType.FLP:
                         eventMessage = "PartiallyFilled (Canceled)";
+                        globalLeanOrderStatus = OrderStatus.Canceled;
+                        break;
+                    // canceled by TradeStation, like the orders sent by a canceled order (OSO)
+                    case TradeStationOrderStatusType.Can:
                         globalLeanOrderStatus = OrderStatus.Canceled;
                         break;
                     // Sometimes, a Out event is received without the ClosedDateTime property set.

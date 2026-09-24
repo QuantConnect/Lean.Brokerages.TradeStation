@@ -13,39 +13,66 @@
  * limitations under the License.
 */
 
+using System;
+using System.Linq;
 using NUnit.Framework;
 using QuantConnect.Tests;
 using QuantConnect.Orders;
+using System.Collections.Generic;
 using QuantConnect.Tests.Brokerages;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests
 {
     public partial class TradeStationBrokerageTests
     {
-        private static readonly OrderTestParameters ContingentLimit = GetOrderTestParameters(OrderType.Limit, Symbols.AAPL, 1000m, 100m);
-        private static readonly OrderTestParameters ContingentOtherLimit = GetOrderTestParameters(OrderType.Limit, Symbols.AAPL, 1010m, 90m);
-        private static readonly OrderTestParameters ContingentStop = GetOrderTestParameters(OrderType.StopMarket, Symbols.AAPL, 1000m, 50m);
-        private static readonly OrderTestParameters ContingentMarket = GetOrderTestParameters(OrderType.Market, Symbols.AAPL);
+        /// <summary>
+        /// The symbols of each supported security type with prices far from the market, a high one and a low one.
+        /// The futures require a futures account
+        /// </summary>
+        private static readonly (Symbol Symbol, decimal HighPrice, decimal LowPrice)[] ContingentOrderSymbols =
+        [
+            (Symbols.AAPL, 1000m, 100m),
+            (Symbol.CreateOption(Symbols.AAPL, Market.USA, OptionStyle.American, OptionRight.Call, 340m, new DateTime(2026, 10, 2)), 100m, 1m),
+            (Symbol.CreateOption(Symbols.SPX, "SPXW", Market.USA, OptionStyle.European, OptionRight.Call, 7675m, new DateTime(2026, 10, 2)), 1000m, 2m),
+            (Symbol.CreateFuture("MES", Market.CME, new DateTime(2026, 12, 18)), 10000m, 5000m)
+        ];
 
         /// <summary>
-        /// Order groups (OCO, BRK) and order sends order (OSO), resting: the prices are far from the market
+        /// Order groups (OCO, BRK) and order sends order (OSO), resting. A bracket group (BRK) requires a stop order
         /// </summary>
-        private static TestCaseData[] RestingContingentOrders => new[]
+        private static IEnumerable<TestCaseData> RestingContingentOrders => ContingentOrderSymbols.SelectMany(x =>
         {
-            new TestCaseData(ContingentOrderTestParameters.OneCancelsOther(ContingentLimit, ContingentOtherLimit)),
-            new TestCaseData(ContingentOrderTestParameters.OneUpdatesOther(ContingentLimit, ContingentOtherLimit)),
-            new TestCaseData(ContingentOrderTestParameters.OneTriggersOther(ContingentLimit, ContingentOtherLimit)),
-            new TestCaseData(ContingentOrderTestParameters.Bracket(ContingentLimit, ContingentOtherLimit, ContingentStop))
-        };
+            var (limit, otherLimit, stop, _) = GetContingentOrderTestParameters(x.Symbol, x.HighPrice, x.LowPrice);
+            return new[]
+            {
+                new TestCaseData(ContingentOrderTestParameters.OneCancelsOther(limit, otherLimit)),
+                new TestCaseData(ContingentOrderTestParameters.OneUpdatesOther(limit, stop)),
+                new TestCaseData(ContingentOrderTestParameters.OneTriggersOther(limit, otherLimit)),
+                new TestCaseData(ContingentOrderTestParameters.Bracket(limit, otherLimit, stop))
+            };
+        });
 
         /// <summary>
         /// Order sends order where the first order fills right away
         /// </summary>
-        private static TestCaseData[] TriggeredContingentOrders => new[]
+        private static IEnumerable<TestCaseData> TriggeredContingentOrders => ContingentOrderSymbols.SelectMany(x =>
         {
-            new TestCaseData(ContingentOrderTestParameters.OneTriggersOther(ContingentMarket, ContingentLimit)),
-            new TestCaseData(ContingentOrderTestParameters.Bracket(ContingentMarket, ContingentLimit, ContingentStop))
-        };
+            var (limit, _, stop, market) = GetContingentOrderTestParameters(x.Symbol, x.HighPrice, x.LowPrice);
+            return new[]
+            {
+                new TestCaseData(ContingentOrderTestParameters.OneTriggersOther(market, limit)),
+                new TestCaseData(ContingentOrderTestParameters.Bracket(market, limit, stop))
+            };
+        });
+
+        private static (OrderTestParameters Limit, OrderTestParameters OtherLimit, OrderTestParameters Stop, OrderTestParameters Market)
+            GetContingentOrderTestParameters(Symbol symbol, decimal highPrice, decimal lowPrice)
+        {
+            return (GetOrderTestParameters(OrderType.Limit, symbol, highPrice, lowPrice),
+                GetOrderTestParameters(OrderType.Limit, symbol, highPrice * 1.01m, lowPrice * 0.9m),
+                GetOrderTestParameters(OrderType.StopMarket, symbol, highPrice, lowPrice / 2),
+                GetOrderTestParameters(OrderType.Market, symbol));
+        }
 
         [Test, Explicit("Requires a TradeStation account"), TestCaseSource(nameof(RestingContingentOrders))]
         public override void ContingentOrdersCancel(ContingentOrderTestParameters parameters)
