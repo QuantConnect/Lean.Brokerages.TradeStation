@@ -453,8 +453,9 @@ public partial class TradeStationBrokerage : Brokerage
         var leanOrders = new List<Order>();
 
         var openOrders = new List<(TradeStationOrder BrokerageOrder, List<Order> LeanOrders)>();
-        // the orders sent by another (OSO) are held until it fills
-        foreach (var order in orders.Orders.Where(o => o.Status is TradeStationOrderStatusType.Ack or TradeStationOrderStatusType.Don or TradeStationOrderStatusType.Oso))
+        // the orders sent by another (OSO) are held until it fills, and the sent ones (OPN) are not yet acknowledged
+        foreach (var order in orders.Orders.Where(o => o.Status is TradeStationOrderStatusType.Ack or TradeStationOrderStatusType.Don or TradeStationOrderStatusType.Oso
+            or TradeStationOrderStatusType.Opn))
         {
             if (TryConvertToLeanOrder(order, out var convertedOrders))
             {

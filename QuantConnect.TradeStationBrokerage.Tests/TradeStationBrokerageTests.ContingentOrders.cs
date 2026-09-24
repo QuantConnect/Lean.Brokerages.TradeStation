@@ -86,6 +86,12 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             base.ContingentOrdersUpdate(parameters);
         }
 
+        [Test, Explicit("Requires a TradeStation account"), TestCaseSource(nameof(RestingContingentOrders))]
+        public override void ContingentOrdersGetOpenOrders(ContingentOrderTestParameters parameters)
+        {
+            base.ContingentOrdersGetOpenOrders(parameters);
+        }
+
         [Test, Explicit("Requires a TradeStation account"), TestCaseSource(nameof(TriggeredContingentOrders))]
         public override void ContingentOrdersTrigger(ContingentOrderTestParameters parameters)
         {
