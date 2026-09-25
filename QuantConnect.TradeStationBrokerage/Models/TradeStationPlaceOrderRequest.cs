@@ -101,6 +101,11 @@ public class TradeStationPlaceOrderRequest
     public string Route { get; set; }
 
     /// <summary>
+    /// Order sends order (OSO): the groups of orders to be sent once this order is filled.
+    /// </summary>
+    public List<TradeStationOrderGroupRequest> OSOs { get; set; }
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="TradeStationPlaceOrderRequest"/> class for single leg orders.
     /// </summary>
     /// <param name="accountID">The TradeStation Account ID.</param>

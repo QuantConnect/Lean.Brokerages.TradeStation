@@ -361,11 +361,17 @@ public readonly struct ConditionalOrder
     /// </summary>
     public string Relationship { get; }
 
+    /// <summary>
+    /// The id of the linked order.
+    /// </summary>
+    public string OrderID { get; }
+
     [JsonConstructor]
-    public ConditionalOrder(string accountID, string relationship)
+    public ConditionalOrder(string accountID, string relationship, string orderID = null)
     {
         AccountID = accountID;
         Relationship = relationship;
+        OrderID = orderID;
     }
 }
 
