@@ -1339,12 +1339,14 @@ public partial class TradeStationBrokerage : Brokerage
                 // considers open.
                 if (!_isSubscribeOnStreamOrderUpdate)
                 {
-                    // Skip working acknowledgements (Ack/Don/Stp): they carry no terminal progress and
-                    // would otherwise re-emit a spurious UpdateSubmitted for every open order on each
-                    // reconnect. Genuine fill deltas (Fpr/Fll/...) and cancels/rejects still flow through.
+                    // Skip working acknowledgements (Ack/Don/Stp/Rjr): they carry no terminal progress and
+                    // would otherwise re-emit a spurious UpdateSubmitted, or repeat the rejected-replace
+                    // warning, for every open order on each reconnect. Genuine fill deltas (Fpr/Fll/...)
+                    // and cancels/rejects still flow through.
                     if (brokerageOrder.Status is TradeStationOrderStatusType.Ack
                         or TradeStationOrderStatusType.Don
-                        or TradeStationOrderStatusType.Stp)
+                        or TradeStationOrderStatusType.Stp
+                        or TradeStationOrderStatusType.Rjr)
                     {
                         return;
                     }

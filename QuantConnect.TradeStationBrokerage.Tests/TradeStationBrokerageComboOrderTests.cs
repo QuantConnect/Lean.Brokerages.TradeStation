@@ -62,6 +62,10 @@ public class TradeStationBrokerageComboOrderTests
         CollectionAssert.AreEquivalent(comboOrders.Select(order => order.Id),
             orderEvents.Where(orderEvent => orderEvent.Status == OrderStatus.UpdateSubmitted).Select(orderEvent => orderEvent.OrderId));
 
+        // An algorithm that updates every leg's ticket produces the same request again, which must not be re-sent
+        Assert.IsTrue(brokerage.UpdateOrder(comboOrders[1]));
+        Assert.AreEqual(1, brokerage.Replaces.Count);
+
         // A combo quantity update resizes every leg through the group order manager
         updatedLeg.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, updatedLeg.Id, new() { Quantity = 3 }));
 
@@ -83,8 +87,55 @@ public class TradeStationBrokerageComboOrderTests
         using var brokerage = new RecordingBrokerage(orderProvider);
 
         Assert.IsTrue(brokerage.CancelOrder(comboOrders[0]));
+        // Cancelling the remaining legs too must not send a second cancel for the same brokerage order
+        Assert.IsTrue(brokerage.CancelOrder(comboOrders[1]));
 
         CollectionAssert.AreEqual(new[] { BrokerageOrderId }, brokerage.Cancels);
+    }
+
+    /// <summary>
+    /// A rejected replace leaves TradeStation working the order with its previous values, so the order stays open,
+    /// the algorithm is warned and the same update can be sent again.
+    /// </summary>
+    [Test]
+    public void WarnsAndKeepsTheOrderOpenWhenTheReplaceIsRejected()
+    {
+        var orderProvider = new OrderProvider();
+        var comboOrders = CreateComboLimitOrderGroup(orderProvider, limitPrice: 1.5m);
+
+        using var brokerage = new RecordingBrokerage(orderProvider);
+
+        var orderEvents = new List<OrderEvent>();
+        brokerage.OrdersStatusChanged += (_, events) => orderEvents.AddRange(events);
+        var messages = new List<BrokerageMessageEvent>();
+        brokerage.Message += (_, message) => messages.Add(message);
+
+        // Marks the stream as live, the frames before it are the initial snapshot and are ignored
+        brokerage.HandleTradeStationMessage(@"{ ""StreamStatus"": ""EndSnapshot"" }");
+
+        var updatedLeg = comboOrders[0];
+        updatedLeg.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, updatedLeg.Id, new() { LimitPrice = 2.25m }));
+        Assert.IsTrue(brokerage.UpdateOrder(updatedLeg));
+        Assert.AreEqual(1, brokerage.Replaces.Count);
+
+        brokerage.HandleTradeStationMessage($$"""
+            {
+                "AccountID": "SIM2784990M",
+                "OrderID": "{{BrokerageOrderId}}",
+                "OrderType": "Limit",
+                "LimitPrice": "1.5",
+                "Status": "RJR",
+                "StatusDescription": "Change Request Rejected",
+                "RejectReason": "Order price is outside of the allowed range"
+            }
+            """);
+
+        Assert.IsFalse(orderEvents.Any(orderEvent => orderEvent.Status == OrderStatus.Invalid));
+        Assert.AreEqual(1, messages.Count(message => message.Type == BrokerageMessageType.Warning && message.Code == "UpdateOrderRejected"));
+
+        // The rejection cleared the last sent values, so the same request goes out again
+        Assert.IsTrue(brokerage.UpdateOrder(updatedLeg));
+        Assert.AreEqual(2, brokerage.Replaces.Count);
     }
 
     /// <summary>
