@@ -38,7 +38,7 @@ public class TradeStationReplaceOrderRequest
     public string StopPrice { get; set; }
 
     /// <summary>
-    /// The quantity of this order. Not set for multi-leg orders, whose size is kept on each leg.
+    /// The quantity of this order.
     /// </summary>
     public string Quantity { get; }
 
@@ -58,12 +58,12 @@ public class TradeStationReplaceOrderRequest
     public TradeStationAdvancedOptions? AdvancedOptions { get; set; }
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="TradeStationReplaceOrderRequest"/> class.
+    /// Initializes a new instance of the <see cref="TradeStationReplaceOrderRequest"/> class with the specified quantity.
     /// </summary>
+    /// <param name="quantity">The quantity of the order.</param>
     /// <param name="accountID">The AccountId for this order.</param>
     /// <param name="brokerageOrderId">The orderId for this order.</param>
-    /// <param name="quantity">The quantity of the order, or <c>null</c> to leave it unchanged.</param>
-    public TradeStationReplaceOrderRequest(string accountID, string brokerageOrderId, string quantity = null)
+    public TradeStationReplaceOrderRequest(string quantity, string accountID, string brokerageOrderId)
     {
         AccountID = accountID;
         Quantity = quantity;

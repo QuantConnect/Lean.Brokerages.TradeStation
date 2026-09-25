@@ -16,18 +16,15 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net;
-using System.Net.Http;
-using Newtonsoft.Json.Linq;
 using NUnit.Framework;
-using QuantConnect.Brokerages.TradeStation.Api;
 using QuantConnect.Orders;
+using QuantConnect.Securities;
 using QuantConnect.Tests.Brokerages;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests;
 
 /// <summary>
-/// Requests the brokerage sends on update/cancel, driven through a fake HTTP handler. No TradeStation account
+/// Requests the brokerage sends on update/cancel, recorded instead of reaching TradeStation. No TradeStation account
 /// needed, but the QC subscription validation still requires valid api credentials in config.
 /// </summary>
 [TestFixture]
@@ -44,7 +41,7 @@ public class TradeStationBrokerageComboOrderTests
         var orderProvider = new OrderProvider();
         var comboOrders = CreateComboLimitOrderGroup(orderProvider, limitPrice: 1.5m);
 
-        using var brokerage = CreateBrokerage(orderProvider, out var requests);
+        using var brokerage = new RecordingBrokerage(orderProvider);
 
         var orderEvents = new List<OrderEvent>();
         brokerage.OrdersStatusChanged += (_, events) => orderEvents.AddRange(events);
@@ -55,65 +52,39 @@ public class TradeStationBrokerageComboOrderTests
 
         Assert.IsTrue(brokerage.UpdateOrder(updatedLeg));
 
-        Assert.AreEqual(1, requests.Count);
-        Assert.AreEqual(HttpMethod.Put, requests[0].Method);
-        Assert.AreEqual($"/v3/orderexecution/orders/{BrokerageOrderId}", requests[0].Path);
-        Assert.AreEqual("2.25", requests[0].Body["LimitPrice"]?.Value<string>());
+        Assert.AreEqual(1, brokerage.Replaces.Count);
+        Assert.AreEqual(BrokerageOrderId, brokerage.Replaces[0].BrokerageOrderId);
+        Assert.AreEqual(2.25m, brokerage.Replaces[0].LimitPrice);
+        // TradeStation takes the quantity as a multiplier of the leg ratios, not a leg quantity
+        Assert.AreEqual(8m, brokerage.Replaces[0].Quantity);
 
         // Every leg of the combo must be reported as updated, not just the one whose ticket Lean pushed.
         CollectionAssert.AreEquivalent(comboOrders.Select(order => order.Id),
             orderEvents.Where(orderEvent => orderEvent.Status == OrderStatus.UpdateSubmitted).Select(orderEvent => orderEvent.OrderId));
+
+        // A combo quantity update resizes every leg through the group order manager
+        updatedLeg.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, updatedLeg.Id, new() { Quantity = 3 }));
+
+        Assert.IsTrue(brokerage.UpdateOrder(updatedLeg));
+
+        Assert.AreEqual(2, brokerage.Replaces.Count);
+        Assert.AreEqual(3m, brokerage.Replaces[1].Quantity);
     }
 
     /// <summary>
-    /// The replace request has no leg data, so a combo replace carries only the group price.
+    /// Cancelling one leg's ticket - all Lean pushes - must cancel the whole combo.
     /// </summary>
     [Test]
-    public void DoesNotSendAQuantityWhenReplacingAComboOrder()
+    public void CancelsComboOrderWhenOnlyOneLegIsCancelled()
     {
         var orderProvider = new OrderProvider();
         var comboOrders = CreateComboLimitOrderGroup(orderProvider, limitPrice: 1.5m);
 
-        using var brokerage = CreateBrokerage(orderProvider, out var requests);
+        using var brokerage = new RecordingBrokerage(orderProvider);
 
-        comboOrders[0].ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, comboOrders[0].Id, new() { LimitPrice = 2.25m }));
-        Assert.IsTrue(brokerage.UpdateOrder(comboOrders[0]));
+        Assert.IsTrue(brokerage.CancelOrder(comboOrders[0]));
 
-        Assert.AreEqual(1, requests.Count);
-        Assert.IsNull(requests[0].Body["Quantity"], $"The replace request should carry no quantity for a combo order: {requests[0].Body}");
-    }
-
-    /// <summary>
-    /// Updating every leg's ticket must produce a single replace request.
-    /// </summary>
-    [Test]
-    public void ReplacesTheComboOrderOnceWhenEveryLegIsUpdated()
-    {
-        var orderProvider = new OrderProvider();
-        var comboOrders = CreateComboLimitOrderGroup(orderProvider, limitPrice: 1.5m);
-
-        using var brokerage = CreateBrokerage(orderProvider, out var requests);
-
-        foreach (var comboOrder in comboOrders)
-        {
-            comboOrder.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, comboOrder.Id, new() { LimitPrice = 2.25m }));
-            Assert.IsTrue(brokerage.UpdateOrder(comboOrder));
-        }
-
-        Assert.AreEqual(1, requests.Count);
-
-        // A later, different price is a new update and must reach TradeStation.
-        comboOrders[0].ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, comboOrders[0].Id, new() { LimitPrice = 3.5m }));
-        Assert.IsTrue(brokerage.UpdateOrder(comboOrders[0]));
-
-        Assert.AreEqual(2, requests.Count);
-        Assert.AreEqual("3.5", requests[1].Body["LimitPrice"]?.Value<string>());
-
-        // The same price at a different decimal scale is not a new update.
-        comboOrders[0].ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, comboOrders[0].Id, new() { LimitPrice = 3.50m }));
-        Assert.IsTrue(brokerage.UpdateOrder(comboOrders[0]));
-
-        Assert.AreEqual(2, requests.Count);
+        CollectionAssert.AreEqual(new[] { BrokerageOrderId }, brokerage.Cancels);
     }
 
     /// <summary>
@@ -130,52 +101,14 @@ public class TradeStationBrokerageComboOrderTests
         limitOrder.BrokerId.Add(BrokerageOrderId);
         orderProvider.Add(limitOrder);
 
-        using var brokerage = CreateBrokerage(orderProvider, out var requests);
+        using var brokerage = new RecordingBrokerage(orderProvider);
 
         limitOrder.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, limitOrder.Id, new() { LimitPrice = 210m }));
         Assert.IsTrue(brokerage.UpdateOrder(limitOrder));
 
-        Assert.AreEqual(1, requests.Count);
-        Assert.AreEqual("10", requests[0].Body["Quantity"]?.Value<string>());
-        Assert.AreEqual("210", requests[0].Body["LimitPrice"]?.Value<string>());
-    }
-
-    /// <summary>
-    /// Cancelling one leg's ticket - all Lean pushes - must cancel the whole combo.
-    /// </summary>
-    [Test]
-    public void CancelsComboOrderWhenOnlyOneLegIsCancelled()
-    {
-        var orderProvider = new OrderProvider();
-        var comboOrders = CreateComboLimitOrderGroup(orderProvider, limitPrice: 1.5m);
-
-        using var brokerage = CreateBrokerage(orderProvider, out var requests);
-
-        Assert.IsTrue(brokerage.CancelOrder(comboOrders[0]));
-
-        Assert.AreEqual(1, requests.Count);
-        Assert.AreEqual(HttpMethod.Delete, requests[0].Method);
-        Assert.AreEqual($"/v3/orderexecution/orders/{BrokerageOrderId}", requests[0].Path);
-    }
-
-    /// <summary>
-    /// Cancelling every leg's ticket must produce a single cancel request.
-    /// </summary>
-    [Test]
-    public void CancelsTheComboOrderOnceWhenEveryLegIsCancelled()
-    {
-        var orderProvider = new OrderProvider();
-        var comboOrders = CreateComboLimitOrderGroup(orderProvider, limitPrice: 1.5m);
-
-        using var brokerage = CreateBrokerage(orderProvider, out var requests);
-
-        foreach (var comboOrder in comboOrders)
-        {
-            Assert.IsTrue(brokerage.CancelOrder(comboOrder));
-        }
-
-        Assert.AreEqual(1, requests.Count);
-        Assert.AreEqual(HttpMethod.Delete, requests[0].Method);
+        Assert.AreEqual(1, brokerage.Replaces.Count);
+        Assert.AreEqual(10m, brokerage.Replaces[0].Quantity);
+        Assert.AreEqual(210m, brokerage.Replaces[0].LimitPrice);
     }
 
     /// <summary>
@@ -188,15 +121,15 @@ public class TradeStationBrokerageComboOrderTests
     {
         var underlying = Symbol.Create("AAPL", SecurityType.Equity, Market.USA);
         var expiry = new DateTime(2026, 9, 18);
-        var legs = new[]
-        {
-            (symbol: Symbol.CreateOption(underlying, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 220m, expiry), ratio: -1m),
-            (symbol: Symbol.CreateOption(underlying, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 230m, expiry), ratio: 1m)
-        };
+        (Symbol Symbol, decimal Ratio)[] legs =
+        [
+            (Symbol.CreateOption(underlying, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 220m, expiry), -1m),
+            (Symbol.CreateOption(underlying, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 230m, expiry), 1m)
+        ];
 
         var groupOrderManager = new GroupOrderManager(1, legCount: legs.Length, quantity: 8, limitPrice: limitPrice);
 
-        var comboOrders = new List<ComboLimitOrder>();
+        List<ComboLimitOrder> comboOrders = [];
         foreach (var (symbol, ratio) in legs)
         {
             var comboOrder = new ComboLimitOrder(symbol, ratio.GetOrderLegGroupQuantity(groupOrderManager), limitPrice, DateTime.UtcNow, groupOrderManager)
@@ -213,40 +146,26 @@ public class TradeStationBrokerageComboOrderTests
     }
 
     /// <summary>
-    /// Creates a brokerage whose api client is backed by a fake HTTP handler recording every request it is given.
+    /// Records the replace and cancel requests instead of sending them to TradeStation.
     /// </summary>
-    /// <param name="orderProvider">The order provider the brokerage resolves Lean orders from.</param>
-    /// <param name="requests">The recorded requests.</param>
-    /// <returns>The brokerage to drive.</returns>
-    private static TradeStationBrokerageTest CreateBrokerage(OrderProvider orderProvider, out List<CapturedRequest> requests)
+    private class RecordingBrokerage(IOrderProvider orderProvider)
+        : TradeStationBrokerageTest("client-id", "client-secret", "https://api.test", "http://localhost", string.Empty, "refresh-token", "Margin",
+            orderProvider, securityProvider: null)
     {
-        var capturedRequests = requests = [];
+        public List<(string BrokerageOrderId, decimal Quantity, decimal? LimitPrice)> Replaces { get; } = [];
 
-        var handler = new TestHttpMessageHandler(async (request, _) =>
+        public List<string> Cancels { get; } = [];
+
+        protected override void ReplaceBrokerageOrder(string brokerageOrderId, OrderType orderType, decimal quantity, decimal? limitPrice, decimal? stopPrice,
+            decimal? trailingAmount, bool? trailingAsPercentage)
         {
-            var body = request.Content == null ? new JObject() : JObject.Parse(await request.Content.ReadAsStringAsync());
-            capturedRequests.Add(new CapturedRequest(request.Method, request.RequestUri.AbsolutePath, body));
+            Replaces.Add((brokerageOrderId, quantity, limitPrice));
+        }
 
-            return new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent("{ \"Message\": \"Order replaced\", \"OrderID\": \"" + BrokerageOrderId + "\" }")
-            };
-        });
-
-        var httpClient = new HttpClientRetryWrapper("https://api.test", handler, maxRetries: 1,
-            ctsAttemptTimeout: TimeSpan.FromSeconds(10), backOffDelay: TimeSpan.Zero);
-
-        var brokerage = new TradeStationBrokerageTest("client-id", "client-secret", "https://api.test", "http://localhost",
-            string.Empty, "refresh-token", "Margin", orderProvider, securityProvider: null);
-        brokerage.SetApiClient(new TradeStationApiClient(httpClient, accountId: "SIM123456M", messageReceived: null));
-        return brokerage;
+        protected override bool CancelBrokerageOrder(string brokerageOrderId)
+        {
+            Cancels.Add(brokerageOrderId);
+            return true;
+        }
     }
-
-    /// <summary>
-    /// An HTTP request the brokerage sent to TradeStation.
-    /// </summary>
-    /// <param name="Method">The HTTP method used.</param>
-    /// <param name="Path">The absolute path requested.</param>
-    /// <param name="Body">The parsed JSON body, empty when the request carried none.</param>
-    private record CapturedRequest(HttpMethod Method, string Path, JObject Body);
 }

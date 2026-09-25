@@ -63,7 +63,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// <summary>
     /// TradeStation api client implementation
     /// </summary>
-    private protected TradeStationApiClient _tradeStationApiClient;
+    private TradeStationApiClient _tradeStationApiClient;
 
     /// <summary>
     /// Provides the mapping between Lean symbols and brokerage specific symbols.
@@ -141,7 +141,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// Last replace sent per brokerage order; skips the repeats from updating every leg of a combo.
     /// Cleared when the order closes or the replace is rejected.
     /// </summary>
-    private readonly ConcurrentDictionary<string, (decimal? Quantity, decimal? LimitPrice, decimal? StopPrice, decimal? TrailingAmount, bool? TrailingAsPercentage)> _lastSubmittedUpdateByBrokerageOrderId = new();
+    private readonly ConcurrentDictionary<string, (decimal Quantity, decimal? LimitPrice, decimal? StopPrice, decimal? TrailingAmount, bool? TrailingAsPercentage)> _lastSubmittedUpdateByBrokerageOrderId = new();
 
     /// <summary>
     /// Brokerage order ids with a cancel in flight; skips the repeats from cancelling every leg of a combo.
@@ -1010,20 +1010,14 @@ public partial class TradeStationBrokerage : Brokerage
     /// <returns>True if the request was made for the order to be updated, false otherwise</returns>
     public override bool UpdateOrder(Order order)
     {
-        var orders = GetKnownGroupOrders(order);
+        // Lean pushes only the leg whose ticket changed, the rest of the combo shares its group order manager
+        order.TryGetGroupOrders(OrderProvider.GetOrderById, out var orders);
 
         // Always use the first order in the group, as combo orders determine direction based on the first order's details.
         order = orders.First();
-        var brokerageOrderId = order.BrokerId.LastOrDefault();
-        if (brokerageOrderId == null)
-        {
-            // A combo whose group placement failed partway never got a brokerage id
-            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $"{nameof(TradeStationBrokerage)}.{nameof(UpdateOrder)}: order {order.Id} has no brokerage id."));
-            return false;
-        }
+        var brokerageOrderId = order.BrokerId.Last();
 
-        // The replace request has no leg data, so a combo sends only the group price; cross-zero only applies to single legs
-        var quantity = default(decimal?);
+        decimal quantity;
         if (order.GroupOrderManager == null)
         {
             if (!TryGetUpdateCrossZeroOrderQuantity(order, out var orderQuantity))
@@ -1032,6 +1026,11 @@ public partial class TradeStationBrokerage : Brokerage
                 return false;
             }
             quantity = Math.Abs(orderQuantity);
+        }
+        else
+        {
+            // TradeStation multiplies the leg ratios by the replace quantity, the same group quantity Lean reads back in TryConvertToLeanOrder
+            quantity = GroupOrderExtensions.GetGroupQuantityByEachLegQuantity(orders.Select(groupOrder => groupOrder.Quantity), OrderDirection.Buy);
         }
 
         var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo();
@@ -1050,8 +1049,7 @@ public partial class TradeStationBrokerage : Brokerage
 
             try
             {
-                _tradeStationApiClient.ReplaceOrder(brokerageOrderId, order.Type, update.Quantity, update.LimitPrice, update.StopPrice,
-                    trailingAmount, trailingAsPercentage).SynchronouslyAwaitTaskResult();
+                ReplaceBrokerageOrder(brokerageOrderId, order.Type, quantity, update.LimitPrice, update.StopPrice, trailingAmount, trailingAsPercentage);
 
                 _lastSubmittedUpdateByBrokerageOrderId[brokerageOrderId] = update;
                 foreach (var groupOrder in orders)
@@ -1091,13 +1089,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// <returns>True if the request was made for the order to be canceled, false otherwise</returns>
     public override bool CancelOrder(Order order)
     {
-        var brokerageOrderId = order.BrokerId.LastOrDefault();
-        if (brokerageOrderId == null)
-        {
-            // A combo whose group placement failed partway never got a brokerage id
-            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $"{nameof(TradeStationBrokerage)}.{nameof(CancelOrder)}: order {order.Id} has no brokerage id."));
-            return false;
-        }
+        var brokerageOrderId = order.BrokerId.Last();
 
         var result = default(bool);
         _messageHandler.WithLockedStream(() =>
@@ -1137,7 +1129,8 @@ public partial class TradeStationBrokerage : Brokerage
 
                 // The order is no longer active at the brokerage: close the whole group so the transaction
                 // handler stops retrying the cancel (a false return would loop in CancelPending forever)
-                foreach (var groupOrder in GetKnownGroupOrders(order))
+                order.TryGetGroupOrders(OrderProvider.GetOrderById, out var groupOrders);
+                foreach (var groupOrder in groupOrders)
                 {
                     OnOrderEvent(new OrderEvent(groupOrder, DateTime.UtcNow, OrderFee.Zero, softReject.Reason)
                     {
@@ -1155,24 +1148,6 @@ public partial class TradeStationBrokerage : Brokerage
     }
 
     /// <summary>
-    /// Resolves the whole group of the given order: Lean pushes only the leg whose ticket changed.
-    /// </summary>
-    /// <param name="order">The order whose group is resolved.</param>
-    /// <returns>The group orders, or the given order alone when the group cannot be resolved.</returns>
-    private List<Order> GetKnownGroupOrders(Order order)
-    {
-        if (OrderProvider == null || !order.TryGetGroupOrders(OrderProvider.GetOrderById, out var orders))
-        {
-            if (order.GroupOrderManager != null)
-            {
-                Log.Error($"{nameof(TradeStationBrokerage)}.{nameof(GetKnownGroupOrders)}: unable to resolve every order of group {order.GroupOrderManager.Id} for order {order.Id}");
-            }
-            orders = [order];
-        }
-        return orders;
-    }
-
-    /// <summary>
     /// Sends the cancel request for the given brokerage order id to TradeStation. Extracted as a seam so the
     /// soft-reject handling in <see cref="CancelOrder"/> can be unit tested without a live API connection.
     /// </summary>
@@ -1181,6 +1156,23 @@ public partial class TradeStationBrokerage : Brokerage
     protected virtual bool CancelBrokerageOrder(string brokerageOrderId)
     {
         return _tradeStationApiClient.CancelOrder(brokerageOrderId).SynchronouslyAwaitTaskResult();
+    }
+
+    /// <summary>
+    /// Sends the replace request for the given brokerage order id to TradeStation. Extracted as a seam so the
+    /// requests <see cref="UpdateOrder"/> sends can be unit tested without a live API connection.
+    /// </summary>
+    /// <param name="brokerageOrderId">The brokerage order id to replace.</param>
+    /// <param name="orderType">The Lean order type.</param>
+    /// <param name="quantity">The new quantity, a multiplier of the leg ratios for a combo order.</param>
+    /// <param name="limitPrice">The new limit price.</param>
+    /// <param name="stopPrice">The new stop price.</param>
+    /// <param name="trailingAmount">The new trailing amount.</param>
+    /// <param name="trailingAsPercentage">Whether the <paramref name="trailingAmount"/> is a percentage.</param>
+    protected virtual void ReplaceBrokerageOrder(string brokerageOrderId, OrderType orderType, decimal quantity, decimal? limitPrice, decimal? stopPrice,
+        decimal? trailingAmount, bool? trailingAsPercentage)
+    {
+        _tradeStationApiClient.ReplaceOrder(brokerageOrderId, orderType, quantity, limitPrice, stopPrice, trailingAmount, trailingAsPercentage).SynchronouslyAwaitTaskResult();
     }
 
     /// <summary>
@@ -1395,11 +1387,15 @@ public partial class TradeStationBrokerage : Brokerage
                     case TradeStationOrderStatusType.Fpr:
                         globalLeanOrderStatus = OrderStatus.PartiallyFilled;
                         break;
-                    // A rejected replace leaves the original order working, so don't invalidate: warn and allow retrying the same values
-                    case TradeStationOrderStatusType.Rjr when _updateSubmittedResponseResultByBrokerageID.TryRemove(new(brokerageOrder.OrderID, true)):
+                    // A rejected replace leaves the original order working, so don't invalidate: warn and allow retrying the same values.
+                    // Not keyed on the update flag, an Ack of the replace request consumes it before the rejection arrives
+                    case TradeStationOrderStatusType.Rjr when OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID) is { Count: > 0 } rejectedOrders
+                        && rejectedOrders.Any(rejectedOrder => !rejectedOrder.Status.IsClosed()):
+                        _updateSubmittedResponseResultByBrokerageID.TryRemove(brokerageOrder.OrderID, out _);
                         _lastSubmittedUpdateByBrokerageOrderId.TryRemove(brokerageOrder.OrderID, out _);
                         OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "UpdateOrderRejected",
-                            $"TradeStation rejected the update of the order (BrokerId: {brokerageOrder.OrderID}): {brokerageOrder.RejectReason}. The order keeps working with its previous parameters."));
+                            $"TradeStation rejected the update (BrokerId: {brokerageOrder.OrderID}): {brokerageOrder.RejectReason}. " +
+                            "TradeStation still works the order with the values before the update; Lean's order shows the new ones."));
                         return;
                     case TradeStationOrderStatusType.Rej:
                     case TradeStationOrderStatusType.Tsc:
