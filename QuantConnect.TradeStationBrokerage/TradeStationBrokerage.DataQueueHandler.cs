@@ -234,9 +234,15 @@ public partial class TradeStationBrokerage : IDataQueueHandler
 
         if (!_enableDelayedStreamingData && quote.MarketFlags.IsDelayed != null && quote.MarketFlags.IsDelayed.Value && _symbolsDelayChecked.TryAdd(leanSymbol, true))
         {
-            var messageType = IsTradedOverTheCounter(quote.Symbol) ? BrokerageMessageType.Warning : BrokerageMessageType.Error;
+            var messageType = BrokerageMessageType.Error;
+            var symbolName = leanSymbol.ToString();
+            if (IsTradedOverTheCounter(quote.Symbol))
+            {
+                messageType = BrokerageMessageType.Warning;
+                symbolName = $"OTC symbol {leanSymbol}";
+            }
             OnMessage(new BrokerageMessageEvent(messageType, "DelayStreamingData",
-                $"Detected delay streaming data for {leanSymbol}. Expected delayed streaming data to be '{_enableDelayedStreamingData}', but received '{quote.MarketFlags.IsDelayed}'."));
+                $"Detected delay streaming data for {symbolName}. Expected delayed streaming data to be '{_enableDelayedStreamingData}', but received '{quote.MarketFlags.IsDelayed}'."));
         }
 
         var utcNow = DateTime.UtcNow;
