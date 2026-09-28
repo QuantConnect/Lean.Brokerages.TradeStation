@@ -19,12 +19,14 @@ using System.Linq;
 using Newtonsoft.Json;
 using NUnit.Framework;
 using System.Threading;
+using QuantConnect.Data;
 using QuantConnect.Tests;
 using QuantConnect.Orders;
 using QuantConnect.Logging;
 using System.Globalization;
 using QuantConnect.Securities;
 using System.Threading.Tasks;
+using QuantConnect.Data.Market;
 using System.Collections.Generic;
 using QuantConnect.Configuration;
 using QuantConnect.Tests.Brokerages;
@@ -119,6 +121,73 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.That(messages.Count, Is.EqualTo(1));
             Assert.That(messages[0].Type, Is.EqualTo(expectedMessageType));
             Assert.That(messages[0].Message, Is.EqualTo($"{error} for this symbol: {symbol}"));
+        }
+
+        // VENG is a delisted OTC stock: logs the raw quote frames TradeStation streams for it
+        [TestCase("VENG")]
+        public async Task StreamQuotesRawJson(string ticker)
+        {
+            using var httpClient = new HttpClientRetryWrapper(Config.Get("trade-station-api-url"), Config.Get("trade-station-client-id"),
+                Config.Get("trade-station-client-secret"), Config.Get("trade-station-authorization-code"), Config.Get("trade-station-redirect-url"),
+                Config.Get("trade-station-refresh-token"));
+            using var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+            var frames = new List<string>();
+            try
+            {
+                using var response = await httpClient.GetStreamAsync($"/v3/marketdata/stream/quotes/{ticker}", cancellationTokenSource.Token);
+                using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(cancellationTokenSource.Token));
+                string frame;
+                while ((frame = await reader.ReadLineAsync(cancellationTokenSource.Token)) != null)
+                {
+                    Log.Trace($"{nameof(StreamQuotesRawJson)}: {frame}");
+                    frames.Add(frame);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // the quote stream stays open until it is canceled
+            }
+
+            Assert.IsNotEmpty(frames);
+        }
+
+        [TestCase("FORA")]
+        public void GetSymbolExchangesThrowsOnUnknownSymbol(string symbol)
+        {
+            var exception = Assert.Throws<Exception>(() => CreateTradeStationApiClient().GetSymbolExchanges(symbol));
+            Log.Trace($"{nameof(GetSymbolExchangesThrowsOnUnknownSymbol)}: {exception.Message}");
+        }
+
+        // The SIM account streams every symbol delayed: VENG is a delisted OTC stock, AAPL is listed on NASDAQ
+        [TestCase("VENG", BrokerageMessageType.Warning)]
+        [TestCase("AAPL", BrokerageMessageType.Error)]
+        public void DelayedStreamingDataRaisesWarningOnlyForOtcSymbol(string ticker, BrokerageMessageType expectedMessageType)
+        {
+            using var brokerage = TestSetup.CreateBrokerage(null, null);
+
+            using var delayDetected = new ManualResetEventSlim();
+            var messages = new List<BrokerageMessageEvent>();
+            brokerage.Message += (_, message) =>
+            {
+                Log.Trace($"{nameof(DelayedStreamingDataRaisesWarningOnlyForOtcSymbol)}: {message}");
+                messages.Add(message);
+                if (message.Code == "DelayStreamingData")
+                {
+                    delayDetected.Set();
+                }
+            };
+
+            var symbol = Symbol.Create(ticker, SecurityType.Equity, Market.USA);
+            var config = new SubscriptionDataConfig(typeof(Tick), symbol, Resolution.Tick, TimeZones.NewYork, TimeZones.NewYork,
+                fillForward: false, extendedHours: true, isInternalFeed: false, tickType: TickType.Quote);
+
+            brokerage.Subscribe(config, (_, _) => { });
+            // the stream opens after a short batching delay, its first quote carries the delayed flag
+            Assert.IsTrue(delayDetected.Wait(TimeSpan.FromSeconds(30)));
+            brokerage.Unsubscribe(config);
+
+            Assert.That(messages.Single(message => message.Code == "DelayStreamingData").Type, Is.EqualTo(expectedMessageType));
         }
 
         [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""BuyOrSell"": ""BUY"" } ] } ],""Errors"":[] }", TradeStationTradeActionType.Buy)]

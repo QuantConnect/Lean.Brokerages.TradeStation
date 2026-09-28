@@ -234,9 +234,15 @@ public partial class TradeStationBrokerage : IDataQueueHandler
 
         if (!_enableDelayedStreamingData && quote.MarketFlags.IsDelayed != null && quote.MarketFlags.IsDelayed.Value && _symbolsDelayChecked.TryAdd(leanSymbol, true))
         {
-
-            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, "DelayStreamingData",
-                $"Detected delay streaming data for {leanSymbol}. Expected delayed streaming data to be '{_enableDelayedStreamingData}', but received '{quote.MarketFlags.IsDelayed}'."));
+            var messageType = BrokerageMessageType.Error;
+            var symbolName = leanSymbol.ToString();
+            if (IsTradedOverTheCounter(quote.Symbol))
+            {
+                messageType = BrokerageMessageType.Warning;
+                symbolName = $"OTC symbol {leanSymbol}";
+            }
+            OnMessage(new BrokerageMessageEvent(messageType, "DelayStreamingData",
+                $"Detected delay streaming data for {symbolName}. Expected delayed streaming data to be '{_enableDelayedStreamingData}', but received '{quote.MarketFlags.IsDelayed}'."));
         }
 
         var utcNow = DateTime.UtcNow;
@@ -249,6 +255,32 @@ public partial class TradeStationBrokerage : IDataQueueHandler
             _levelOneServiceManager.HandleLastTrade(leanSymbol, utcNow, quote.LastSize, _priceMapper.GetLeanPrice(leanSymbol, quote.Last));
         }
         _levelOneServiceManager.HandleOpenInterest(leanSymbol, utcNow, quote.DailyOpenInterest);
+    }
+
+    /// <summary>
+    /// Whether the symbol trades over the counter (OTC), where TradeStation often streams delayed data.
+    /// </summary>
+    /// <param name="brokerageSymbol">The TradeStation symbol.</param>
+    /// <returns><c>true</c> if the symbol trades over the counter; otherwise, <c>false</c>, also when its exchanges can not be retrieved.</returns>
+    private bool IsTradedOverTheCounter(string brokerageSymbol)
+    {
+        try
+        {
+            foreach (var exchange in _tradeStationApiClient.GetSymbolExchanges(brokerageSymbol))
+            {
+                if (exchange.Equals("OTC", StringComparison.InvariantCultureIgnoreCase))
+                {
+                    return true;
+                }
+                Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(IsTradedOverTheCounter)}: '{brokerageSymbol}' exchange: {exchange}");
+            }
+            return false;
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, $"{nameof(TradeStationBrokerage)}.{nameof(IsTradedOverTheCounter)}: failed to get the exchanges of '{brokerageSymbol}'");
+            return false;
+        }
     }
 
     /// <summary>

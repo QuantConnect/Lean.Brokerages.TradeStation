@@ -456,6 +456,17 @@ public class TradeStationApiClient : IDisposable
     }
 
     /// <summary>
+    /// Retrieves the exchanges TradeStation lists the symbol on, like NASDAQ or OTC.
+    /// </summary>
+    /// <param name="symbol">The TradeStation symbol.</param>
+    /// <returns>The exchanges of the symbol, empty when TradeStation returns no details for it.</returns>
+    public List<string> GetSymbolExchanges(string symbol)
+    {
+        var symbolDetails = RequestAsync<SymbolDetailsResponse>($"/v3/marketdata/symbols/{symbol}", HttpMethod.Get).SynchronouslyAwaitTaskResult();
+        return symbolDetails.Symbols.ToList(x => x.Exchange) ?? [];
+    }
+
+    /// <summary>
     /// Retrieves the account type for the specified TradeStation account.
     /// </summary>
     /// <returns>
