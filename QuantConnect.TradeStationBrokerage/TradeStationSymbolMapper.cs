@@ -15,8 +15,13 @@
 
 using System;
 using System.Linq;
+using QuantConnect.Util;
+using QuantConnect.Logging;
 using QuantConnect.Securities;
+using QuantConnect.Interfaces;
 using System.Collections.Generic;
+using QuantConnect.Configuration;
+using QuantConnect.Data.Auxiliary;
 using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using QuantConnect.Securities.IndexOption;
@@ -43,6 +48,11 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// keys were stored in uppercase by <see cref="GetBrokerageSymbol"/>.
     /// </remarks>
     private readonly ConcurrentDictionary<string, Symbol> _leanSymbolByBrokerageSymbol = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Provides the map files, used to find the equities that are not in the QuantConnect database.
+    /// </summary>
+    private readonly IMapFileProvider _mapFileProvider;
 
     /// <summary>
     /// Represents a set of supported security types.
@@ -85,6 +95,23 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// </summary>
     private static readonly Dictionary<string, string> BrokerageRootToLeanFutureRoot =
         LeanRootToBrokerageFutureRoot.ToDictionary(kvp => kvp.Value, kvp => kvp.Key);
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TradeStationSymbolMapper"/> class.
+    /// Resolves the <see cref="IMapFileProvider"/> via the Lean <see cref="Composer"/>, falling
+    /// back to the <c>map-file-provider</c> config value when no instance is registered.
+    /// </summary>
+    public TradeStationSymbolMapper()
+    {
+        _mapFileProvider = Composer.Instance.GetPart<IMapFileProvider>();
+        if (_mapFileProvider == null)
+        {
+            var mapFileProviderName = Config.Get("map-file-provider", "QuantConnect.Data.Auxiliary.LocalDiskMapFileProvider");
+            Log.Trace($"{nameof(TradeStationSymbolMapper)}: found no map file provider instance, creating {mapFileProviderName}");
+            _mapFileProvider = Composer.Instance.GetExportedValueByTypeName<IMapFileProvider>(mapFileProviderName);
+            _mapFileProvider.Initialize(Composer.Instance.GetExportedValueByTypeName<IDataProvider>(Config.Get("data-provider", "DefaultDataProvider")));
+        }
+    }
 
     /// <summary>
     /// Converts a Lean symbol instance to a brokerage symbol
@@ -236,6 +263,17 @@ public class TradeStationSymbolMapper : ISymbolMapper
                 throw new NotImplementedException($"{nameof(TradeStationSymbolMapper)}.{nameof(GetLeanSymbol)}: " +
                     $"The security type '{securityType}' with brokerage symbol '{ticker}' is not supported.");
         }
+    }
+
+    /// <summary>
+    /// Whether the symbol is an equity without a map file, so it is not in the QuantConnect database,
+    /// like a delisted OTC stock that is still held at TradeStation.
+    /// </summary>
+    /// <param name="symbol">The symbol to check.</param>
+    /// <returns><c>true</c> if the symbol is an equity without a map file; otherwise, <c>false</c>.</returns>
+    public bool IsMissingFromMapFiles(Symbol symbol)
+    {
+        return symbol.SecurityType == SecurityType.Equity && !_mapFileProvider.Get(AuxiliaryDataKey.Create(symbol)).ResolveMapFile(symbol).Any();
     }
 
     /// <summary>
