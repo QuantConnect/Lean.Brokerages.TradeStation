@@ -234,8 +234,8 @@ public partial class TradeStationBrokerage : IDataQueueHandler
 
         if (!_enableDelayedStreamingData && quote.MarketFlags.IsDelayed != null && quote.MarketFlags.IsDelayed.Value && _symbolsDelayChecked.TryAdd(leanSymbol, true))
         {
-
-            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, "DelayStreamingData",
+            var messageType = IsTradedOverTheCounter(quote.Symbol) ? BrokerageMessageType.Warning : BrokerageMessageType.Error;
+            OnMessage(new BrokerageMessageEvent(messageType, "DelayStreamingData",
                 $"Detected delay streaming data for {leanSymbol}. Expected delayed streaming data to be '{_enableDelayedStreamingData}', but received '{quote.MarketFlags.IsDelayed}'."));
         }
 
@@ -249,6 +249,24 @@ public partial class TradeStationBrokerage : IDataQueueHandler
             _levelOneServiceManager.HandleLastTrade(leanSymbol, utcNow, quote.LastSize, _priceMapper.GetLeanPrice(leanSymbol, quote.Last));
         }
         _levelOneServiceManager.HandleOpenInterest(leanSymbol, utcNow, quote.DailyOpenInterest);
+    }
+
+    /// <summary>
+    /// Whether the symbol trades over the counter (OTC), where TradeStation often streams delayed data.
+    /// </summary>
+    /// <param name="brokerageSymbol">The TradeStation symbol.</param>
+    /// <returns><c>true</c> if the symbol trades over the counter; otherwise, <c>false</c>, also when its exchange can not be retrieved.</returns>
+    private bool IsTradedOverTheCounter(string brokerageSymbol)
+    {
+        try
+        {
+            return _tradeStationApiClient.GetSymbolExchange(brokerageSymbol).Equals("OTC", StringComparison.InvariantCultureIgnoreCase);
+        }
+        catch (Exception exception)
+        {
+            Log.Error(exception, $"{nameof(TradeStationBrokerage)}.{nameof(IsTradedOverTheCounter)}: failed to get the exchange of '{brokerageSymbol}'");
+            return false;
+        }
     }
 
     /// <summary>

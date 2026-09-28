@@ -529,12 +529,6 @@ public partial class TradeStationBrokerage : Brokerage
                 continue;
             }
 
-            if (_symbolMapper.IsMissingFromMapFiles(leanSymbol))
-            {
-                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "SymbolNotInDatabase", $"The symbol '{position.Symbol}' is not in the QuantConnect database. This position has been skipped."));
-                continue;
-            }
-
             if (leanSymbol.SecurityType is SecurityType.Future or SecurityType.Option && leanSymbol.ID.Date.Date < DateTime.UtcNow.ConvertFromUtc(leanSymbol.GetSymbolExchangeTimeZone()).Date)
             {
                 Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(GetAccountHoldings)}: The {leanSymbol} was expired and skipped.");
@@ -1181,7 +1175,6 @@ public partial class TradeStationBrokerage : Brokerage
     /// <remarks>
     /// This method checks if the provided symbol is eligible for subscription based on certain criteria.
     /// Symbols containing the substring "universe" or those identified as canonical are not eligible for subscription.
-    /// Equities without a map file are not eligible either, because they are not in the QuantConnect database.
     /// </remarks>
     private bool CanSubscribe(Symbol symbol)
     {
@@ -1190,7 +1183,7 @@ public partial class TradeStationBrokerage : Brokerage
             return false;
         }
 
-        return _symbolMapper.SupportedSecurityType.Contains(symbol.SecurityType) && !_symbolMapper.IsMissingFromMapFiles(symbol);
+        return _symbolMapper.SupportedSecurityType.Contains(symbol.SecurityType);
     }
 
     /// <summary>

@@ -152,35 +152,35 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.IsNotEmpty(frames);
         }
 
-        // VENG is a delisted OTC stock: QuantConnect has no map file for it and TradeStation streams it delayed
-        [TestCase("VENG")]
-        public void SubscribeSkipsEquityMissingFromMapFiles(string ticker)
+        // The SIM account streams every symbol delayed: VENG is a delisted OTC stock, AAPL is listed on NASDAQ
+        [TestCase("VENG", BrokerageMessageType.Warning)]
+        [TestCase("AAPL", BrokerageMessageType.Error)]
+        public void DelayedStreamingDataRaisesWarningOnlyForOtcSymbol(string ticker, BrokerageMessageType expectedMessageType)
         {
             using var brokerage = TestSetup.CreateBrokerage(null, null);
 
+            using var delayDetected = new ManualResetEventSlim();
             var messages = new List<BrokerageMessageEvent>();
             brokerage.Message += (_, message) =>
             {
-                Log.Trace($"{nameof(SubscribeSkipsEquityMissingFromMapFiles)}: {message}");
+                Log.Trace($"{nameof(DelayedStreamingDataRaisesWarningOnlyForOtcSymbol)}: {message}");
                 messages.Add(message);
+                if (message.Code == "DelayStreamingData")
+                {
+                    delayDetected.Set();
+                }
             };
 
             var symbol = Symbol.Create(ticker, SecurityType.Equity, Market.USA);
             var config = new SubscriptionDataConfig(typeof(Tick), symbol, Resolution.Tick, TimeZones.NewYork, TimeZones.NewYork,
                 fillForward: false, extendedHours: true, isInternalFeed: false, tickType: TickType.Quote);
 
-            using var dataReceived = new ManualResetEventSlim();
-            var enumerator = brokerage.Subscribe(config, (_, _) => dataReceived.Set());
-            if (enumerator != null)
-            {
-                // the stream opens after a short batching delay, its first quote carries the delayed flag
-                dataReceived.Wait(TimeSpan.FromSeconds(30));
-                brokerage.Unsubscribe(config);
-            }
-            Log.Trace($"{nameof(SubscribeSkipsEquityMissingFromMapFiles)}: subscribed: {enumerator != null}, data received: {dataReceived.IsSet}");
+            brokerage.Subscribe(config, (_, _) => { });
+            // the stream opens after a short batching delay, its first quote carries the delayed flag
+            Assert.IsTrue(delayDetected.Wait(TimeSpan.FromSeconds(30)));
+            brokerage.Unsubscribe(config);
 
-            Assert.IsNull(enumerator);
-            Assert.IsFalse(messages.Any(message => message.Type == BrokerageMessageType.Error));
+            Assert.That(messages.Single(message => message.Code == "DelayStreamingData").Type, Is.EqualTo(expectedMessageType));
         }
 
         [TestCase(@"{ ""Orders"":[ { ""Legs"": [ { ""BuyOrSell"": ""BUY"" } ] } ],""Errors"":[] }", TradeStationTradeActionType.Buy)]
