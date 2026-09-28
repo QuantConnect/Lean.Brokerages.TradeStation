@@ -62,10 +62,6 @@ public class TradeStationBrokerageComboOrderTests
         CollectionAssert.AreEquivalent(comboOrders.Select(order => order.Id),
             orderEvents.Where(orderEvent => orderEvent.Status == OrderStatus.UpdateSubmitted).Select(orderEvent => orderEvent.OrderId));
 
-        // An algorithm that updates every leg's ticket produces the same request again, which must not be re-sent
-        Assert.IsTrue(brokerage.UpdateOrder(comboOrders[1]));
-        Assert.AreEqual(1, brokerage.Replaces.Count);
-
         // A combo quantity update resizes every leg through the group order manager
         updatedLeg.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, updatedLeg.Id, new() { Quantity = 3 }));
 
@@ -73,6 +69,25 @@ public class TradeStationBrokerageComboOrderTests
 
         Assert.AreEqual(2, brokerage.Replaces.Count);
         Assert.AreEqual(3m, brokerage.Replaces[1].Quantity);
+    }
+
+    /// <summary>
+    /// TradeStation reduces the leg ratios by their gcd, so the replace quantity is the gcd of the leg quantities,
+    /// not the group quantity: legs 6/-3 with a group quantity of 1 are "3 x (2/-1)" at TradeStation.
+    /// </summary>
+    [Test]
+    public void SendsTheGcdOfTheLegQuantitiesWhenTheRatiosAreNotCoprime()
+    {
+        var orderProvider = new OrderProvider();
+        var comboOrders = CreateComboLimitOrderGroup(orderProvider, limitPrice: 1.5m, groupQuantity: 1, firstRatio: -3m, secondRatio: 6m);
+
+        using var brokerage = new RecordingBrokerage(orderProvider);
+
+        var updatedLeg = comboOrders[0];
+        updatedLeg.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, updatedLeg.Id, new() { LimitPrice = 2.25m }));
+        Assert.IsTrue(brokerage.UpdateOrder(updatedLeg));
+
+        Assert.AreEqual(3m, brokerage.Replaces.Single().Quantity);
     }
 
     /// <summary>
@@ -87,15 +102,13 @@ public class TradeStationBrokerageComboOrderTests
         using var brokerage = new RecordingBrokerage(orderProvider);
 
         Assert.IsTrue(brokerage.CancelOrder(comboOrders[0]));
-        // Cancelling the remaining legs too must not send a second cancel for the same brokerage order
-        Assert.IsTrue(brokerage.CancelOrder(comboOrders[1]));
 
         CollectionAssert.AreEqual(new[] { BrokerageOrderId }, brokerage.Cancels);
     }
 
     /// <summary>
-    /// A rejected replace leaves TradeStation working the order with its previous values, so the order stays open,
-    /// the algorithm is warned and the same update can be sent again.
+    /// A rejected replace leaves TradeStation working the order with its previous values, so the order stays open
+    /// and the algorithm is warned.
     /// </summary>
     [Test]
     public void WarnsAndKeepsTheOrderOpenWhenTheReplaceIsRejected()
@@ -132,10 +145,6 @@ public class TradeStationBrokerageComboOrderTests
 
         Assert.IsFalse(orderEvents.Any(orderEvent => orderEvent.Status == OrderStatus.Invalid));
         Assert.AreEqual(1, messages.Count(message => message.Type == BrokerageMessageType.Warning && message.Code == "UpdateOrderRejected"));
-
-        // The rejection cleared the last sent values, so the same request goes out again
-        Assert.IsTrue(brokerage.UpdateOrder(updatedLeg));
-        Assert.AreEqual(2, brokerage.Replaces.Count);
     }
 
     /// <summary>
@@ -167,18 +176,22 @@ public class TradeStationBrokerageComboOrderTests
     /// </summary>
     /// <param name="orderProvider">The order provider the legs are registered with.</param>
     /// <param name="limitPrice">The initial limit price of the group.</param>
+    /// <param name="groupQuantity">The quantity of the group.</param>
+    /// <param name="firstRatio">The ratio of the first leg.</param>
+    /// <param name="secondRatio">The ratio of the second leg.</param>
     /// <returns>The legs of the group.</returns>
-    private static List<ComboLimitOrder> CreateComboLimitOrderGroup(OrderProvider orderProvider, decimal limitPrice)
+    private static List<ComboLimitOrder> CreateComboLimitOrderGroup(OrderProvider orderProvider, decimal limitPrice, decimal groupQuantity = 8,
+        decimal firstRatio = -1m, decimal secondRatio = 1m)
     {
         var underlying = Symbol.Create("AAPL", SecurityType.Equity, Market.USA);
         var expiry = new DateTime(2026, 9, 18);
         (Symbol Symbol, decimal Ratio)[] legs =
         [
-            (Symbol.CreateOption(underlying, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 220m, expiry), -1m),
-            (Symbol.CreateOption(underlying, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 230m, expiry), 1m)
+            (Symbol.CreateOption(underlying, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 220m, expiry), firstRatio),
+            (Symbol.CreateOption(underlying, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 230m, expiry), secondRatio)
         ];
 
-        var groupOrderManager = new GroupOrderManager(1, legCount: legs.Length, quantity: 8, limitPrice: limitPrice);
+        var groupOrderManager = new GroupOrderManager(1, legCount: legs.Length, quantity: groupQuantity, limitPrice: limitPrice);
 
         List<ComboLimitOrder> comboOrders = [];
         foreach (var (symbol, ratio) in legs)
