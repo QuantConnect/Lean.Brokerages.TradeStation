@@ -14,16 +14,22 @@
 */
 
 using System.Collections.Generic;
+using QuantConnect.Brokerages.TradeStation.Models.Interfaces;
 
 namespace QuantConnect.Brokerages.TradeStation.Models;
 
 /// <summary>
 /// The answer to a TradeStation symbol details request.
 /// </summary>
-public class SymbolDetailsResponse
+public class SymbolDetailsResponse : ITradeStationError
 {
     /// <summary>
     /// The details of each requested symbol.
     /// </summary>
     public List<SymbolDetails> Symbols { get; set; }
+
+    /// <summary>
+    /// The errors of the requested symbols, like an unknown symbol.
+    /// </summary>
+    public List<TradeStationError> Errors { get; set; }
 }

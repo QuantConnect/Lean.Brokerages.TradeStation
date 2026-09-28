@@ -152,6 +152,13 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.IsNotEmpty(frames);
         }
 
+        [TestCase("FORA")]
+        public void GetSymbolExchangesThrowsOnUnknownSymbol(string symbol)
+        {
+            var exception = Assert.Throws<Exception>(() => CreateTradeStationApiClient().GetSymbolExchanges(symbol));
+            Log.Trace($"{nameof(GetSymbolExchangesThrowsOnUnknownSymbol)}: {exception.Message}");
+        }
+
         // The SIM account streams every symbol delayed: VENG is a delisted OTC stock, AAPL is listed on NASDAQ
         [TestCase("VENG", BrokerageMessageType.Warning)]
         [TestCase("AAPL", BrokerageMessageType.Error)]

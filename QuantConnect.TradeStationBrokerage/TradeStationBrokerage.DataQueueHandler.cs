@@ -261,16 +261,24 @@ public partial class TradeStationBrokerage : IDataQueueHandler
     /// Whether the symbol trades over the counter (OTC), where TradeStation often streams delayed data.
     /// </summary>
     /// <param name="brokerageSymbol">The TradeStation symbol.</param>
-    /// <returns><c>true</c> if the symbol trades over the counter; otherwise, <c>false</c>, also when its exchange can not be retrieved.</returns>
+    /// <returns><c>true</c> if the symbol trades over the counter; otherwise, <c>false</c>, also when its exchanges can not be retrieved.</returns>
     private bool IsTradedOverTheCounter(string brokerageSymbol)
     {
         try
         {
-            return _tradeStationApiClient.GetSymbolExchange(brokerageSymbol).Equals("OTC", StringComparison.InvariantCultureIgnoreCase);
+            foreach (var exchange in _tradeStationApiClient.GetSymbolExchanges(brokerageSymbol))
+            {
+                if (exchange.Equals("OTC", StringComparison.InvariantCultureIgnoreCase))
+                {
+                    return true;
+                }
+                Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(IsTradedOverTheCounter)}: '{brokerageSymbol}' exchange: {exchange}");
+            }
+            return false;
         }
         catch (Exception exception)
         {
-            Log.Error(exception, $"{nameof(TradeStationBrokerage)}.{nameof(IsTradedOverTheCounter)}: failed to get the exchange of '{brokerageSymbol}'");
+            Log.Error(exception, $"{nameof(TradeStationBrokerage)}.{nameof(IsTradedOverTheCounter)}: failed to get the exchanges of '{brokerageSymbol}'");
             return false;
         }
     }
