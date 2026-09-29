@@ -72,25 +72,6 @@ public class TradeStationBrokerageComboOrderTests
     }
 
     /// <summary>
-    /// TradeStation reduces the leg ratios by their gcd, so the replace quantity is the gcd of the leg quantities,
-    /// not the group quantity: legs 6/-3 with a group quantity of 1 are "3 x (2/-1)" at TradeStation.
-    /// </summary>
-    [Test]
-    public void SendsTheGcdOfTheLegQuantitiesWhenTheRatiosAreNotCoprime()
-    {
-        var orderProvider = new OrderProvider();
-        var comboOrders = CreateComboLimitOrderGroup(orderProvider, limitPrice: 1.5m, groupQuantity: 1, firstRatio: -3m, secondRatio: 6m);
-
-        using var brokerage = new RecordingBrokerage(orderProvider);
-
-        var updatedLeg = comboOrders[0];
-        updatedLeg.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, updatedLeg.Id, new() { LimitPrice = 2.25m }));
-        Assert.IsTrue(brokerage.UpdateOrder(updatedLeg));
-
-        Assert.AreEqual(3m, brokerage.Replaces.Single().Quantity);
-    }
-
-    /// <summary>
     /// Cancelling one leg's ticket - all Lean pushes - must cancel the whole combo.
     /// </summary>
     [Test]
@@ -176,22 +157,18 @@ public class TradeStationBrokerageComboOrderTests
     /// </summary>
     /// <param name="orderProvider">The order provider the legs are registered with.</param>
     /// <param name="limitPrice">The initial limit price of the group.</param>
-    /// <param name="groupQuantity">The quantity of the group.</param>
-    /// <param name="firstRatio">The ratio of the first leg.</param>
-    /// <param name="secondRatio">The ratio of the second leg.</param>
     /// <returns>The legs of the group.</returns>
-    private static List<ComboLimitOrder> CreateComboLimitOrderGroup(OrderProvider orderProvider, decimal limitPrice, decimal groupQuantity = 8,
-        decimal firstRatio = -1m, decimal secondRatio = 1m)
+    private static List<ComboLimitOrder> CreateComboLimitOrderGroup(OrderProvider orderProvider, decimal limitPrice)
     {
         var underlying = Symbol.Create("AAPL", SecurityType.Equity, Market.USA);
         var expiry = new DateTime(2026, 9, 18);
         (Symbol Symbol, decimal Ratio)[] legs =
         [
-            (Symbol.CreateOption(underlying, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 220m, expiry), firstRatio),
-            (Symbol.CreateOption(underlying, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 230m, expiry), secondRatio)
+            (Symbol.CreateOption(underlying, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 220m, expiry), -1m),
+            (Symbol.CreateOption(underlying, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 230m, expiry), 1m)
         ];
 
-        var groupOrderManager = new GroupOrderManager(1, legCount: legs.Length, quantity: groupQuantity, limitPrice: limitPrice);
+        var groupOrderManager = new GroupOrderManager(1, legCount: legs.Length, quantity: 8, limitPrice: limitPrice);
 
         List<ComboLimitOrder> comboOrders = [];
         foreach (var (symbol, ratio) in legs)

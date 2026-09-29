@@ -1015,9 +1015,8 @@ public partial class TradeStationBrokerage : Brokerage
         }
         else
         {
-            // TradeStation multiplies its gcd-reduced leg ratios by the replace quantity, which differs from
-            // GroupOrderManager.Quantity when Lean's ratios aren't coprime, e.g. legs 6/-3 with a group quantity of 1
-            quantity = GroupOrderExtensions.GetGroupQuantityByEachLegQuantity(orders.Select(groupOrder => groupOrder.Quantity), OrderDirection.Buy);
+            // TradeStation multiplies the leg ratios by the replace quantity
+            quantity = order.GroupOrderManager.AbsoluteQuantity;
         }
 
         var response = default(bool);
