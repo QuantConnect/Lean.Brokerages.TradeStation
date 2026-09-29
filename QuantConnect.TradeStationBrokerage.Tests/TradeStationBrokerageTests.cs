@@ -620,14 +620,15 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             CancelComboOpenOrders(comboOrders);
         }
 
-        [TestCase(70, 80)]
+        [TestCase(0.05, 0.06)]
         public void PlaceComboLimitOrderAndUpdateLimitPrice(decimal comboLimitPrice, decimal newComboLimitPrice)
         {
             var underlyingSymbol = Symbols.AAPL;
+            // A long-dated call vertical priced far below its value rests
             var optionContracts = new List<(Symbol symbol, decimal quantity)>
             {
-                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 100m, new DateTime(2024, 9, 6)), -1),
-                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 125m, new DateTime(2024, 9, 6)), 1)
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 330m, new DateTime(2029, 1, 19)), 1),
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 340m, new DateTime(2029, 1, 19)), -1)
             };
 
             var groupOrderManager = new GroupOrderManager(1, legCount: optionContracts.Count, quantity: 8);
@@ -636,7 +637,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 optionContracts,
                 comboLimitPrice,
                 (optionContract, quantity, price, groupOrderManager) =>
-                    new ComboLimitOrder(optionContract, quantity, price.Value, DateTime.UtcNow, groupOrderManager, properties: new TradeStationOrderProperties() { AllOrNone = true }),
+                    new ComboLimitOrder(optionContract, quantity, price.Value, DateTime.UtcNow, groupOrderManager, properties: new TradeStationOrderProperties()),
                 groupOrderManager);
 
             AssertComboOrderPlacedSuccessfully(comboOrders);
@@ -666,14 +667,15 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             CancelComboOpenOrders(comboOrders);
         }
 
-        [TestCase(70)]
+        [TestCase(0.05)]
         public void PlaceComboLimitOrderAndCancelOneLeg(decimal comboLimitPrice)
         {
             var underlyingSymbol = Symbols.AAPL;
+            // A long-dated call vertical priced far below its value rests
             var optionContracts = new List<(Symbol symbol, decimal quantity)>
             {
-                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 100m, new DateTime(2024, 9, 6)), -1),
-                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 125m, new DateTime(2024, 9, 6)), 1)
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 330m, new DateTime(2029, 1, 19)), 1),
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 340m, new DateTime(2029, 1, 19)), -1)
             };
 
             var groupOrderManager = new GroupOrderManager(1, legCount: optionContracts.Count, quantity: 8);
@@ -682,7 +684,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 optionContracts,
                 comboLimitPrice,
                 (optionContract, quantity, price, groupOrderManager) =>
-                    new ComboLimitOrder(optionContract, quantity, price.Value, DateTime.UtcNow, groupOrderManager, properties: new TradeStationOrderProperties() { AllOrNone = true }),
+                    new ComboLimitOrder(optionContract, quantity, price.Value, DateTime.UtcNow, groupOrderManager, properties: new TradeStationOrderProperties()),
                 groupOrderManager);
 
             AssertComboOrderPlacedSuccessfully(comboOrders);
