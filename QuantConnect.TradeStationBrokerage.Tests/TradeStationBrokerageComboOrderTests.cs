@@ -24,52 +24,13 @@ using QuantConnect.Tests.Brokerages;
 namespace QuantConnect.Brokerages.TradeStation.Tests;
 
 /// <summary>
-/// Requests the brokerage sends on update/cancel, recorded instead of reaching TradeStation. No TradeStation account
+/// Cancels the brokerage sends, recorded instead of reaching TradeStation. No TradeStation account
 /// needed, but the QC subscription validation still requires valid api credentials in config.
 /// </summary>
 [TestFixture]
 public class TradeStationBrokerageComboOrderTests
 {
     private const string BrokerageOrderId = "123456789";
-
-    /// <summary>
-    /// Issue #106: Lean pushes only the updated leg; waiting for the remaining legs meant the replace was never sent.
-    /// </summary>
-    [Test]
-    public void UpdatesComboOrderWhenOnlyOneLegIsUpdated()
-    {
-        var orderProvider = new OrderProvider();
-        var comboOrders = CreateComboLimitOrderGroup(orderProvider, limitPrice: 1.5m);
-
-        using var brokerage = new RecordingBrokerage(orderProvider);
-
-        var orderEvents = new List<OrderEvent>();
-        brokerage.OrdersStatusChanged += (_, events) => orderEvents.AddRange(events);
-
-        // The new price reaches every leg through the shared group order manager
-        var updatedLeg = comboOrders[0];
-        updatedLeg.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, updatedLeg.Id, new() { LimitPrice = 2.25m }));
-
-        Assert.IsTrue(brokerage.UpdateOrder(updatedLeg));
-
-        Assert.AreEqual(1, brokerage.Replaces.Count);
-        Assert.AreEqual(BrokerageOrderId, brokerage.Replaces[0].BrokerageOrderId);
-        Assert.AreEqual(2.25m, brokerage.Replaces[0].LimitPrice);
-        // TradeStation takes the quantity as a multiplier of the leg ratios, not a leg quantity
-        Assert.AreEqual(8m, brokerage.Replaces[0].Quantity);
-
-        // Every leg of the combo must be reported as updated, not just the one whose ticket Lean pushed.
-        CollectionAssert.AreEquivalent(comboOrders.Select(order => order.Id),
-            orderEvents.Where(orderEvent => orderEvent.Status == OrderStatus.UpdateSubmitted).Select(orderEvent => orderEvent.OrderId));
-
-        // A combo quantity update resizes every leg through the group order manager
-        updatedLeg.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, updatedLeg.Id, new() { Quantity = 3 }));
-
-        Assert.IsTrue(brokerage.UpdateOrder(updatedLeg));
-
-        Assert.AreEqual(2, brokerage.Replaces.Count);
-        Assert.AreEqual(3m, brokerage.Replaces[1].Quantity);
-    }
 
     /// <summary>
     /// Cancelling one leg's ticket - all Lean pushes - must cancel the whole combo.
@@ -85,71 +46,6 @@ public class TradeStationBrokerageComboOrderTests
         Assert.IsTrue(brokerage.CancelOrder(comboOrders[0]));
 
         CollectionAssert.AreEqual(new[] { BrokerageOrderId }, brokerage.Cancels);
-    }
-
-    /// <summary>
-    /// A rejected replace leaves TradeStation working the order with its previous values, so the order stays open
-    /// and the algorithm is warned.
-    /// </summary>
-    [Test]
-    public void WarnsAndKeepsTheOrderOpenWhenTheReplaceIsRejected()
-    {
-        var orderProvider = new OrderProvider();
-        var comboOrders = CreateComboLimitOrderGroup(orderProvider, limitPrice: 1.5m);
-
-        using var brokerage = new RecordingBrokerage(orderProvider);
-
-        var orderEvents = new List<OrderEvent>();
-        brokerage.OrdersStatusChanged += (_, events) => orderEvents.AddRange(events);
-        var messages = new List<BrokerageMessageEvent>();
-        brokerage.Message += (_, message) => messages.Add(message);
-
-        // Marks the stream as live, the frames before it are the initial snapshot and are ignored
-        brokerage.HandleTradeStationMessage(@"{ ""StreamStatus"": ""EndSnapshot"" }");
-
-        var updatedLeg = comboOrders[0];
-        updatedLeg.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, updatedLeg.Id, new() { LimitPrice = 2.25m }));
-        Assert.IsTrue(brokerage.UpdateOrder(updatedLeg));
-        Assert.AreEqual(1, brokerage.Replaces.Count);
-
-        brokerage.HandleTradeStationMessage($$"""
-            {
-                "AccountID": "SIM2784990M",
-                "OrderID": "{{BrokerageOrderId}}",
-                "OrderType": "Limit",
-                "LimitPrice": "1.5",
-                "Status": "RJR",
-                "StatusDescription": "Change Request Rejected",
-                "RejectReason": "Order price is outside of the allowed range"
-            }
-            """);
-
-        Assert.IsFalse(orderEvents.Any(orderEvent => orderEvent.Status == OrderStatus.Invalid));
-        Assert.AreEqual(1, messages.Count(message => message.Type == BrokerageMessageType.Warning && message.Code == "UpdateOrderRejected"));
-    }
-
-    /// <summary>
-    /// Single leg orders keep replacing both their quantity and their price.
-    /// </summary>
-    [Test]
-    public void SendsQuantityAndPriceWhenReplacingASingleLegOrder()
-    {
-        var orderProvider = new OrderProvider();
-        var limitOrder = new LimitOrder(Symbol.Create("AAPL", SecurityType.Equity, Market.USA), 10, 200m, DateTime.UtcNow)
-        {
-            Status = OrderStatus.Submitted
-        };
-        limitOrder.BrokerId.Add(BrokerageOrderId);
-        orderProvider.Add(limitOrder);
-
-        using var brokerage = new RecordingBrokerage(orderProvider);
-
-        limitOrder.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, limitOrder.Id, new() { LimitPrice = 210m }));
-        Assert.IsTrue(brokerage.UpdateOrder(limitOrder));
-
-        Assert.AreEqual(1, brokerage.Replaces.Count);
-        Assert.AreEqual(10m, brokerage.Replaces[0].Quantity);
-        Assert.AreEqual(210m, brokerage.Replaces[0].LimitPrice);
     }
 
     /// <summary>
@@ -172,8 +68,8 @@ public class TradeStationBrokerageComboOrderTests
         brokerage.OrdersStatusChanged += (_, events) => orderEvents.AddRange(events);
         brokerage.HandleTradeStationMessage(@"{ ""StreamStatus"": ""EndSnapshot"" }");
 
-        limitOrder.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, limitOrder.Id, new() { LimitPrice = 100m }));
-        Assert.IsTrue(brokerage.UpdateOrder(limitOrder));
+        // What UpdateOrder leaves behind after a PUT with unchanged values, which gets no stream frame to clear it
+        brokerage.MarkUpdateSubmitted(BrokerageOrderId);
         Assert.IsTrue(brokerage.CancelOrder(limitOrder));
 
         brokerage.HandleTradeStationMessage($$"""
@@ -227,21 +123,15 @@ public class TradeStationBrokerageComboOrderTests
     }
 
     /// <summary>
-    /// Records the replace and cancel requests instead of sending them to TradeStation.
+    /// Records the cancel requests instead of sending them to TradeStation.
     /// </summary>
     private class RecordingBrokerage(IOrderProvider orderProvider)
         : TradeStationBrokerageTest("client-id", "client-secret", "https://api.test", "http://localhost", string.Empty, "refresh-token", "Margin",
             orderProvider, securityProvider: null)
     {
-        public List<(string BrokerageOrderId, decimal Quantity, decimal? LimitPrice)> Replaces { get; } = [];
-
         public List<string> Cancels { get; } = [];
 
-        protected override void ReplaceBrokerageOrder(string brokerageOrderId, OrderType orderType, decimal quantity, decimal? limitPrice, decimal? stopPrice,
-            decimal? trailingAmount, bool? trailingAsPercentage)
-        {
-            Replaces.Add((brokerageOrderId, quantity, limitPrice));
-        }
+        public void MarkUpdateSubmitted(string brokerageOrderId) => _updateSubmittedResponseResultByBrokerageID[brokerageOrderId] = true;
 
         protected override bool CancelBrokerageOrder(string brokerageOrderId)
         {

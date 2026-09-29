@@ -1003,12 +1003,13 @@ public partial class TradeStationBrokerage : Brokerage
         order = orders.First();
         var brokerageOrderId = order.BrokerId.Last();
 
-        decimal quantity;
+        var quantity = default(decimal);
         if (order.GroupOrderManager == null)
         {
             if (!TryGetUpdateCrossZeroOrderQuantity(order, out var orderQuantity))
             {
-                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $"{nameof(TradeStationBrokerage)}.{nameof(UpdateOrder)}: Unable to modify order quantities."));
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "UpdateCrossZeroOrderQuantity",
+                    $"Unable to update the quantity of order {order.Id}: it crosses zero holdings, so TradeStation holds it as two orders."));
                 return false;
             }
             quantity = Math.Abs(orderQuantity);
@@ -1025,7 +1026,8 @@ public partial class TradeStationBrokerage : Brokerage
             try
             {
                 var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo();
-                ReplaceBrokerageOrder(brokerageOrderId, order.Type, quantity, order.GetLimitPrice(_priceMapper), order.GetStopPrice(_priceMapper), trailingAmount, trailingAsPercentage);
+                _tradeStationApiClient.ReplaceOrder(brokerageOrderId, order.Type, quantity, order.GetLimitPrice(_priceMapper), order.GetStopPrice(_priceMapper),
+                    trailingAmount, trailingAsPercentage).SynchronouslyAwaitTaskResult();
 
                 foreach (var groupOrder in orders)
                 {
@@ -1118,23 +1120,6 @@ public partial class TradeStationBrokerage : Brokerage
     protected virtual bool CancelBrokerageOrder(string brokerageOrderId)
     {
         return _tradeStationApiClient.CancelOrder(brokerageOrderId).SynchronouslyAwaitTaskResult();
-    }
-
-    /// <summary>
-    /// Sends the replace request for the given brokerage order id to TradeStation. Extracted as a seam so the
-    /// requests <see cref="UpdateOrder"/> sends can be unit tested without a live API connection.
-    /// </summary>
-    /// <param name="brokerageOrderId">The brokerage order id to replace.</param>
-    /// <param name="orderType">The Lean order type.</param>
-    /// <param name="quantity">The new quantity, a multiplier of the leg ratios for a combo order.</param>
-    /// <param name="limitPrice">The new limit price.</param>
-    /// <param name="stopPrice">The new stop price.</param>
-    /// <param name="trailingAmount">The new trailing amount.</param>
-    /// <param name="trailingAsPercentage">Whether the <paramref name="trailingAmount"/> is a percentage.</param>
-    protected virtual void ReplaceBrokerageOrder(string brokerageOrderId, OrderType orderType, decimal quantity, decimal? limitPrice, decimal? stopPrice,
-        decimal? trailingAmount, bool? trailingAsPercentage)
-    {
-        _tradeStationApiClient.ReplaceOrder(brokerageOrderId, orderType, quantity, limitPrice, stopPrice, trailingAmount, trailingAsPercentage).SynchronouslyAwaitTaskResult();
     }
 
     /// <summary>
@@ -1301,14 +1286,12 @@ public partial class TradeStationBrokerage : Brokerage
                 // considers open.
                 if (!_isSubscribeOnStreamOrderUpdate)
                 {
-                    // Skip working acknowledgements (Ack/Don/Stp/Rjr): they carry no terminal progress and
-                    // would otherwise re-emit a spurious UpdateSubmitted, or repeat the rejected-replace
-                    // warning, for every open order on each reconnect. Genuine fill deltas (Fpr/Fll/...)
-                    // and cancels/rejects still flow through.
+                    // Skip working acknowledgements (Ack/Don/Stp): they carry no terminal progress and
+                    // would otherwise re-emit a spurious UpdateSubmitted for every open order on each
+                    // reconnect. Genuine fill deltas (Fpr/Fll/...) and cancels/rejects still flow through.
                     if (brokerageOrder.Status is TradeStationOrderStatusType.Ack
                         or TradeStationOrderStatusType.Don
-                        or TradeStationOrderStatusType.Stp
-                        or TradeStationOrderStatusType.Rjr)
+                        or TradeStationOrderStatusType.Stp)
                     {
                         return;
                     }
@@ -1348,17 +1331,9 @@ public partial class TradeStationBrokerage : Brokerage
                     case TradeStationOrderStatusType.Fpr:
                         globalLeanOrderStatus = OrderStatus.PartiallyFilled;
                         break;
-                    // A rejected replace leaves the original order working, so warn instead of invalidating it
-                    // Not keyed on the update flag, an Ack of the replace request consumes it before the rejection arrives
-                    case TradeStationOrderStatusType.Rjr when OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID) is { Count: > 0 } rejectedOrders
-                        && rejectedOrders.Any(rejectedOrder => !rejectedOrder.Status.IsClosed()):
-                        _updateSubmittedResponseResultByBrokerageID.TryRemove(brokerageOrder.OrderID, out _);
-                        OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "UpdateOrderRejected",
-                            $"TradeStation rejected the update (BrokerId: {brokerageOrder.OrderID}): {brokerageOrder.RejectReason}. " +
-                            "TradeStation still works the order with the values before the update; Lean's order shows the new ones."));
-                        return;
                     case TradeStationOrderStatusType.Rej:
                     case TradeStationOrderStatusType.Tsc:
+                    case TradeStationOrderStatusType.Rjr:
                     case TradeStationOrderStatusType.Bro:
                         eventMessage = brokerageOrder.RejectReason;
                         globalLeanOrderStatus = OrderStatus.Invalid;
