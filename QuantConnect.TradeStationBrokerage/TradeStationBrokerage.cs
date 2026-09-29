@@ -1069,6 +1069,8 @@ public partial class TradeStationBrokerage : Brokerage
         var result = default(bool);
         _messageHandler.WithLockedStream(() =>
         {
+            // A replace with unchanged values gets no stream frame, its flag would swallow this cancel's Out
+            _updateSubmittedResponseResultByBrokerageID.TryRemove(brokerageOrderId, out _);
             try
             {
                 if (CancelBrokerageOrder(brokerageOrderId))

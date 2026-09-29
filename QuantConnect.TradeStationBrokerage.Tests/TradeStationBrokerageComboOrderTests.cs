@@ -153,6 +153,46 @@ public class TradeStationBrokerageComboOrderTests
     }
 
     /// <summary>
+    /// A replace with unchanged values gets no stream frame, so its pending update flag must not swallow a later cancel.
+    /// </summary>
+    [Test]
+    public void CancelsAfterARepeatedUpdateWithoutStreamFrame()
+    {
+        var orderProvider = new OrderProvider();
+        var limitOrder = new LimitOrder(Symbol.Create("AAPL", SecurityType.Equity, Market.USA), 1, 100m, DateTime.UtcNow)
+        {
+            Status = OrderStatus.Submitted
+        };
+        limitOrder.BrokerId.Add(BrokerageOrderId);
+        orderProvider.Add(limitOrder);
+
+        using var brokerage = new RecordingBrokerage(orderProvider);
+
+        var orderEvents = new List<OrderEvent>();
+        brokerage.OrdersStatusChanged += (_, events) => orderEvents.AddRange(events);
+        brokerage.HandleTradeStationMessage(@"{ ""StreamStatus"": ""EndSnapshot"" }");
+
+        limitOrder.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, limitOrder.Id, new() { LimitPrice = 100m }));
+        Assert.IsTrue(brokerage.UpdateOrder(limitOrder));
+        Assert.IsTrue(brokerage.CancelOrder(limitOrder));
+
+        brokerage.HandleTradeStationMessage($$"""
+            {
+                "AccountID": "SIM2784990M",
+                "OrderID": "{{BrokerageOrderId}}",
+                "OrderType": "Limit",
+                "LimitPrice": "100",
+                "Status": "OUT",
+                "StatusDescription": "UROut",
+                "ClosedDateTime": "2026-09-29T14:16:58Z",
+                "Legs": [{ "BuyOrSell": "Buy", "QuantityOrdered": "1", "ExecQuantity": "0", "Symbol": "AAPL", "AssetType": "STOCK" }]
+            }
+            """);
+
+        Assert.IsTrue(orderEvents.Any(orderEvent => orderEvent.OrderId == limitOrder.Id && orderEvent.Status == OrderStatus.Canceled));
+    }
+
+    /// <summary>
     /// Builds a two leg combo limit order group, registering every leg with the order provider the way Lean does.
     /// </summary>
     /// <param name="orderProvider">The order provider the legs are registered with.</param>
