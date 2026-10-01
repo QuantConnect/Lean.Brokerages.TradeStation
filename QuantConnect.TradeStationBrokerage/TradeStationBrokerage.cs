@@ -138,9 +138,6 @@ public partial class TradeStationBrokerage : Brokerage
     private ConcurrentDictionary<int, decimal> _orderIdToFillQuantity = new();
 
     /// <summary>
-    /// Provides a thread-safe service for caching and managing original orders when they are part of a group.
-    /// </summary>
-    /// <summary>
     /// Specifies the type of account on TradeStation in current session.
     /// </summary>
     private TradeStationAccountType _tradeStationAccountType;
@@ -999,22 +996,29 @@ public partial class TradeStationBrokerage : Brokerage
     /// <returns>True if the request was made for the order to be updated, false otherwise</returns>
     public override bool UpdateOrder(Order order)
     {
-        var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol);
-
-        if (!TryGetUpdateCrossZeroOrderQuantity(order, out var orderQuantity))
-        {
-            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, -1, $"{nameof(TradeStationBrokerage)}.{nameof(UpdateOrder)}: Unable to modify order quantities."));
-            return false;
-        }
-
-        if (!GroupOrderCacheManager.TryGetGroupCachedOrders(order, out var orders))
-        {
-            return true;
-        }
+        // Lean pushes only the leg whose ticket changed, the rest of the combo shares its group order manager
+        order.TryGetGroupOrders(OrderProvider.GetOrderById, out var orders);
 
         // Always use the first order in the group, as combo orders determine direction based on the first order's details.
         order = orders.First();
         var brokerageOrderId = order.BrokerId.Last();
+
+        var quantity = default(decimal);
+        if (order.GroupOrderManager == null)
+        {
+            if (!TryGetUpdateCrossZeroOrderQuantity(order, out var orderQuantity))
+            {
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "UpdateCrossZeroOrderQuantity",
+                    $"Unable to update the quantity of order {order.Id}: it crosses zero holdings, so TradeStation holds it as two orders."));
+                return false;
+            }
+            quantity = Math.Abs(orderQuantity);
+        }
+        else
+        {
+            // TradeStation multiplies the leg ratios by the replace quantity
+            quantity = order.GroupOrderManager.AbsoluteQuantity;
+        }
 
         var response = default(bool);
         _messageHandler.WithLockedStream(() =>
@@ -1022,12 +1026,12 @@ public partial class TradeStationBrokerage : Brokerage
             try
             {
                 var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo();
-                var result = _tradeStationApiClient.ReplaceOrder(brokerageOrderId, order.Type, Math.Abs(orderQuantity),
-                    order.GetLimitPrice(_priceMapper), order.GetStopPrice(_priceMapper), trailingAmount, trailingAsPercentage).SynchronouslyAwaitTaskResult();
+                _tradeStationApiClient.ReplaceOrder(brokerageOrderId, order.Type, quantity, order.GetLimitPrice(_priceMapper), order.GetStopPrice(_priceMapper),
+                    trailingAmount, trailingAsPercentage).SynchronouslyAwaitTaskResult();
 
-                foreach (var order in orders)
+                foreach (var groupOrder in orders)
                 {
-                    OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)}.{nameof(UpdateOrder)} Order Event")
+                    OnOrderEvent(new OrderEvent(groupOrder, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)}.{nameof(UpdateOrder)} Order Event")
                     {
                         Status = OrderStatus.UpdateSubmitted
                     });
@@ -1062,16 +1066,13 @@ public partial class TradeStationBrokerage : Brokerage
     /// <returns>True if the request was made for the order to be canceled, false otherwise</returns>
     public override bool CancelOrder(Order order)
     {
-        if (!GroupOrderCacheManager.TryGetGroupCachedOrders(order, out var orders))
-        {
-            return true;
-        }
-
         var brokerageOrderId = order.BrokerId.Last();
 
         var result = default(bool);
         _messageHandler.WithLockedStream(() =>
         {
+            // A replace with unchanged values gets no stream frame, its flag would swallow this cancel's Out
+            _updateSubmittedResponseResultByBrokerageID.TryRemove(brokerageOrderId, out _);
             try
             {
                 if (CancelBrokerageOrder(brokerageOrderId))
@@ -1090,10 +1091,10 @@ public partial class TradeStationBrokerage : Brokerage
             {
                 OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, softReject.Code, $"Failed to cancel Order: OrderId: {order.Id} (BrokerId: {brokerageOrderId}) for {order.Symbol}, {softReject.Reason}"));
 
-                // The order is no longer active at the brokerage, so the cancel can never complete. Transition the
-                // Lean order to a terminal state so the transaction handler stops retrying the cancel on every bar
-                // (it treats a false return as a transient failure and would otherwise loop in CancelPending forever).
-                foreach (var groupOrder in orders)
+                // The order is no longer active at the brokerage: close the whole group so the transaction
+                // handler stops retrying the cancel (a false return would loop in CancelPending forever)
+                order.TryGetGroupOrders(OrderProvider.GetOrderById, out var groupOrders);
+                foreach (var groupOrder in groupOrders)
                 {
                     OnOrderEvent(new OrderEvent(groupOrder, DateTime.UtcNow, OrderFee.Zero, softReject.Reason)
                     {
@@ -1475,6 +1476,11 @@ public partial class TradeStationBrokerage : Brokerage
                     // If the order status is 'Filled', skip processing this message to avoid handling the same event multiple times.
                     if (leanOrder.Status == OrderStatus.Filled)
                     {
+                        // The closing message of a leg that filled ahead of the combo is skipped here, so drop its entry now
+                        if (globalLeanOrderStatus.IsClosed())
+                        {
+                            _orderIdToFillQuantity.TryRemove(leanOrder.Id, out _);
+                        }
                         continue;
                     }
 

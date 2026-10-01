@@ -620,14 +620,15 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             CancelComboOpenOrders(comboOrders);
         }
 
-        [TestCase(70, 80)]
+        [TestCase(0.05, 0.06)]
         public void PlaceComboLimitOrderAndUpdateLimitPrice(decimal comboLimitPrice, decimal newComboLimitPrice)
         {
             var underlyingSymbol = Symbols.AAPL;
+            // A long-dated call vertical priced far below its value rests
             var optionContracts = new List<(Symbol symbol, decimal quantity)>
             {
-                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 100m, new DateTime(2024, 9, 6)), -1),
-                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 125m, new DateTime(2024, 9, 6)), 1)
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 330m, new DateTime(2029, 1, 19)), 1),
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 340m, new DateTime(2029, 1, 19)), -1)
             };
 
             var groupOrderManager = new GroupOrderManager(1, legCount: optionContracts.Count, quantity: 8);
@@ -636,7 +637,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 optionContracts,
                 comboLimitPrice,
                 (optionContract, quantity, price, groupOrderManager) =>
-                    new ComboLimitOrder(optionContract, quantity, price.Value, DateTime.UtcNow, groupOrderManager, properties: new TradeStationOrderProperties() { AllOrNone = true }),
+                    new ComboLimitOrder(optionContract, quantity, price.Value, DateTime.UtcNow, groupOrderManager, properties: new TradeStationOrderProperties()),
                 groupOrderManager);
 
             AssertComboOrderPlacedSuccessfully(comboOrders);
@@ -646,17 +647,59 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
             Brokerage.OrdersStatusChanged += orderStatusCallback;
 
-            foreach (var comboOrder in comboOrders)
-            {
-                comboOrder.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, comboOrder.Id, new() { LimitPrice = newComboLimitPrice }));
-                Assert.IsTrue(Brokerage.UpdateOrder(comboOrder));
-            }
+            // Lean updates a combo through a single leg's ticket, the price reaching the others through the group order manager
+            var updatedLeg = comboOrders.First();
+            updatedLeg.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, updatedLeg.Id, new() { LimitPrice = newComboLimitPrice }));
+            Assert.IsTrue(Brokerage.UpdateOrder(updatedLeg));
 
             Assert.IsTrue(manualResetEvent.WaitOne(TimeSpan.FromSeconds(60)));
 
             Brokerage.OrdersStatusChanged -= orderStatusCallback;
 
+            // Issue #106: the replace used to be silently dropped, leaving the order at its original limit price
+            var brokerageOrderId = comboOrders.First().BrokerId.Last();
+            var brokerageComboOrders = Brokerage.GetOpenOrders().OfType<ComboLimitOrder>()
+                .Where(brokerageOrder => brokerageOrder.BrokerId.Contains(brokerageOrderId)).ToList();
+
+            Assert.IsNotEmpty(brokerageComboOrders);
+            Assert.IsTrue(brokerageComboOrders.TrueForAll(brokerageOrder => brokerageOrder.GroupOrderManager.LimitPrice == newComboLimitPrice));
+
             CancelComboOpenOrders(comboOrders);
+        }
+
+        [TestCase(0.05)]
+        public void PlaceComboLimitOrderAndCancelOneLeg(decimal comboLimitPrice)
+        {
+            var underlyingSymbol = Symbols.AAPL;
+            // A long-dated call vertical priced far below its value rests
+            var optionContracts = new List<(Symbol symbol, decimal quantity)>
+            {
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 330m, new DateTime(2029, 1, 19)), 1),
+                (Symbol.CreateOption(underlyingSymbol, Market.USA, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 340m, new DateTime(2029, 1, 19)), -1)
+            };
+
+            var groupOrderManager = new GroupOrderManager(1, legCount: optionContracts.Count, quantity: 8);
+
+            var comboOrders = PlaceComboOrder(
+                optionContracts,
+                comboLimitPrice,
+                (optionContract, quantity, price, groupOrderManager) =>
+                    new ComboLimitOrder(optionContract, quantity, price.Value, DateTime.UtcNow, groupOrderManager, properties: new TradeStationOrderProperties()),
+                groupOrderManager);
+
+            AssertComboOrderPlacedSuccessfully(comboOrders);
+
+            using var manualResetEvent = new ManualResetEvent(false);
+            var orderStatusCallback = HandleComboOrderStatusChange(comboOrders, manualResetEvent, OrderStatus.Canceled);
+
+            Brokerage.OrdersStatusChanged += orderStatusCallback;
+
+            // Cancelling a single leg's ticket cancels the whole combo
+            Assert.IsTrue(Brokerage.CancelOrder(comboOrders.First()));
+
+            Assert.IsTrue(manualResetEvent.WaitOne(TimeSpan.FromSeconds(60)));
+
+            Brokerage.OrdersStatusChanged -= orderStatusCallback;
         }
 
         [TestCase(70, 10)]

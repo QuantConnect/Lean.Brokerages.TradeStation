@@ -143,7 +143,11 @@ public class TradeStationSymbolMapper : ISymbolMapper
     /// <example>{AAPL 240510C167.5}</example>
     private string GenerateBrokerageOption(Symbol symbol)
     {
-        return $"{symbol.Canonical.Value.Replace("?", string.Empty)} {symbol.ID.Date:yyMMdd}{symbol.ID.OptionRight.ToString()[0]}{symbol.ID.StrikePrice}";
+        var ticker = symbol.ID.SecurityType == SecurityType.IndexOption
+            ? symbol.Canonical.Value.Replace("?", string.Empty)
+            : SecurityIdentifier.Ticker(symbol.Underlying, DateTime.UtcNow);
+        // TradeStation rejects strikes with trailing zeros (327.500 -> 327.5); keep the separator culture-invariant
+        return $"{ticker} {symbol.ID.Date:yyMMdd}{symbol.ID.OptionRight.ToString()[0]}{symbol.ID.StrikePrice.NormalizeToStr()}";
     }
 
     /// <summary>
