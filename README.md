@@ -37,7 +37,105 @@ For more information about the TradeStation brokerage, see the [QuantConnect-Tra
   
 ### Deploying TradeStation with LEAN CLI
 
-To deploy live algorithms with TradeStation through the LEAN CLI, see [TradeStation](https://www.quantconnect.com/docs/v2/lean-cli/live-trading/brokerages/tradestation) in the LEAN CLI documentation.
+Follow these steps to start local live trading with the TradeStation brokerage:
+
+1.  [Log in](https://www.quantconnect.com/docs/v2/lean-cli/initialization/authentication#02-Log-In) to the CLI if you haven't done so already.
+
+2.  Open a terminal in the [organization workspace](https://www.quantconnect.com/docs/v2/lean-cli/initialization/organization-workspaces) that contains the project.
+
+3.  If your algorithm trades US Equities, Options, or Futures, [purchase and download](https://www.quantconnect.com/docs/v2/lean-cli/datasets/quantconnect) the QuantConnect datasets that LEAN uses for the asset class.
+
+4.  Run `lean live deploy "<projectName>"` to start a live deployment wizard for the project in `./<projectName>` and then enter the brokerage number, 15.
+
+    ```
+    $ lean live deploy "My Project"
+    Select a brokerage:
+    1) Paper Trading
+    2) Interactive Brokers
+    3) Tradier
+    4) Oanda
+    5) Bitfinex
+    6) Coinbase Advanced Trade
+    7) Binance
+    8) Zerodha
+    9) Samco
+    10) Quant Bridge
+    11) Trading Technologies
+    12) Kraken
+    13) CharlesSchwab
+    14) Bybit
+    15) TradeStation
+    16) Alpaca
+    17) Tastytrade
+    18) Eze
+    19) dYdX
+    20) Webull
+    21) Public
+    22) ClearStreet
+    Enter an option: 15
+    ```
+
+5.  In the browser window that automatically opens, log in to TradeStation and then click Allow.
+
+    ```
+    $ lean live deploy "My Project"
+    Please open the following URL in your browser to authorize the LEAN CLI.
+    https://www.quantconnect.com/api/v2/live/auth0/authorize?brokerage=tradestation&projectId=<projectId>
+    ```
+
+6.  Enter the TradeStation account ID and environment.
+
+    ```
+    $ lean live deploy "My Project"
+    The TradeStation account Id (11810357, SIM2829935F): SIM2829935F
+    Live or Paper environment? (live, paper): paper
+    ```
+
+7.  Enter the number of the live data provider(s) to use and then follow the steps required for the data connection.
+
+    ```
+    $ lean live deploy "My Project"
+    Select a live data feed:
+    1) Interactive Brokers
+    2) Tradier
+    3) Oanda
+    4) Bitfinex
+    5) Coinbase Advanced Trade
+    6) Binance
+    7) Zerodha
+    8) Samco
+    9) Quant Bridge
+    10) Trading Technologies
+    11) Kraken
+    12) CharlesSchwab
+    13) IQFeed
+    14) Polygon
+    15) CoinApi
+    16) ThetaData
+    17) Custom data only
+    18) Bybit
+    19) TradeStation
+    20) Alpaca
+    21) Tastytrade
+    22) Eze
+    23) dYdX
+    24) Databento
+    To enter multiple options, separate them with comma: 19
+    ```
+
+    If you select IQFeed, Polygon, or ThetaData, see [IQFeed](https://www.quantconnect.com/docs/v2/lean-cli/live-trading/data-providers/iqfeed), [Polygon](https://www.quantconnect.com/docs/v2/lean-cli/live-trading/data-providers/polygon), or [Theta Data](https://www.quantconnect.com/docs/v2/lean-cli/live-trading/data-providers/theta-data) for set up instructions.
+
+8.  If you select the TradeStation data provider, enter whether to enable delayed market data.
+
+    ```
+    $ lean live deploy "My Project"
+    Delayed market data is used when you subscribe to data for which you don't have a market data subscription on TradeStation. If delayed market data is disabled, live trading will stop and LEAN will shut down when this happens.
+    Enable delayed market data (true/false)? [False]: false
+    ```
+
+9.  View the result in the `<projectName>/live/<timestamp>` directory. Results are stored in real-time in JSON format. You can save results to a different directory by providing the `--output <path>` option in step 4.
+
+If you already have a live environment configured in your [Lean configuration file](https://www.quantconnect.com/docs/v2/lean-cli/initialization/configuration#03-Lean-Configuration), you can skip the interactive wizard by providing the `--environment <value>` option in step 4. The value of this option must be the name of an environment which has `live-mode` set to `true`.
 
 ## Account Types
 
