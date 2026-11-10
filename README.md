@@ -83,12 +83,12 @@ Follow these steps to start local live trading with the TradeStation brokerage:
     https://www.quantconnect.com/api/v2/live/auth0/authorize?brokerage=tradestation&projectId=<projectId>
     ```
 
-6.  Enter the TradeStation account ID and environment.
+6.  Enter the environment and TradeStation account ID.
 
     ```
     $ lean live deploy "My Project"
-    The TradeStation account Id (11810357, SIM2829935F): SIM2829935F
     Live or Paper environment? (live, paper): paper
+    The TradeStation account Id (11810357, SIM2829935F): SIM2829935F
     ```
 
 7.  Enter the number of the live data provider(s) to use and then follow the steps required for the data connection.
