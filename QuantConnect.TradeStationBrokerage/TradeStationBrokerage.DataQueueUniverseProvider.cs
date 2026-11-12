@@ -77,15 +77,8 @@ public partial class TradeStationBrokerage : IDataQueueUniverseProvider
             }
         }).ContinueWith(_ => blockingOptionCollection.CompleteAdding());
 
-        var options = blockingOptionCollection.GetConsumingEnumerable();
-
-        // Validate if the collection contains at least one successful response from history.
-        if (!options.Any())
-        {
-            return null;
-        }
-
-        return options;
+        // Null when no option contract was found, otherwise every contract, the first one included.
+        return blockingOptionCollection.GetConsumingEnumerableOrNull();
     }
 
     /// <summary>
