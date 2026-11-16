@@ -28,54 +28,15 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
     {
         private const string BrokerageOrderId = "1337909273";
 
-        // TradeStation purged the order id (e.g. a DAY order on a later trading session): the update must not stop the
-        // algorithm, and the Lean order must be closed, since no stream event will ever close it
-        [Test]
-        public void InvalidOrderIdMarksOrderCanceled()
+        // TradeStation no longer holds the order id (e.g. a DAY order on a later trading session) or no longer holds it
+        // open: the update must not stop the algorithm, and must leave the order's state to the stream's own events
+        [TestCase("Failed to Cancel/Replace order: Invalid order ID.", "UpdateOrderInvalid", "the order no longer exists at the brokerage")]
+        [TestCase("Failed to Cancel/Replace order: Not an open order.", "UpdateNotOpenOrder", "the order is already closed")]
+        public void SoftRejectOnlyWarns(string brokerMessage, string expectedCode, string expectedReason)
         {
             var orderProvider = new OrderProvider();
-            var brokerage = new ReplaceRejectingBrokerage(orderProvider, "Failed to Cancel/Replace order: Invalid order ID.");
-            var order = CreateSubmittedLimitOrder(orderProvider, Symbol.Create("SAZ", SecurityType.Equity, Market.USA));
-
-            var (orderEvents, messages) = Record(brokerage);
-
-            Assert.IsTrue(brokerage.UpdateOrder(order));
-
-            Assert.That(messages, Has.Count.EqualTo(1));
-            Assert.That(messages[0].Type, Is.EqualTo(BrokerageMessageType.Warning));
-            Assert.That(messages[0].Code, Is.EqualTo("UpdateOrderInvalid"));
-            Assert.That(messages[0].Message, Is.EqualTo(
-                $"Failed to update Order: OrderId: {order.Id} (BrokerId: {BrokerageOrderId}) for {order.Symbol}, the order no longer exists at the brokerage"));
-
-            Assert.That(orderEvents, Has.Count.EqualTo(1));
-            Assert.That(orderEvents[0].OrderId, Is.EqualTo(order.Id));
-            Assert.That(orderEvents[0].Status, Is.EqualTo(OrderStatus.Canceled));
-            Assert.That(orderEvents[0].Message, Is.EqualTo("the order no longer exists at the brokerage"));
-        }
-
-        [Test]
-        public void InvalidOrderIdMarksEveryComboLegCanceled()
-        {
-            var orderProvider = new OrderProvider();
-            var brokerage = new ReplaceRejectingBrokerage(orderProvider, "Failed to Cancel/Replace order: Invalid order ID.");
-            var comboOrders = TradeStationBrokerageComboOrderTests.CreateComboLimitOrderGroup(orderProvider, limitPrice: 1.5m);
-
-            var (orderEvents, _) = Record(brokerage);
-
-            // Lean pushes only the leg whose ticket changed
-            Assert.IsTrue(brokerage.UpdateOrder(comboOrders[1]));
-
-            CollectionAssert.AreEquivalent(comboOrders.Select(order => order.Id), orderEvents.Select(orderEvent => orderEvent.OrderId));
-            Assert.That(orderEvents.All(orderEvent => orderEvent.Status == OrderStatus.Canceled));
-        }
-
-        // The order still exists at TradeStation and its own stream events close it, so the update only warns
-        [Test]
-        public void NotAnOpenOrderOnlyWarns()
-        {
-            var orderProvider = new OrderProvider();
-            var brokerage = new ReplaceRejectingBrokerage(orderProvider, "Failed to Cancel/Replace order: Not an open order.");
-            var order = CreateSubmittedLimitOrder(orderProvider, Symbol.Create("AAPL", SecurityType.Equity, Market.USA));
+            using var brokerage = new ReplaceRejectingBrokerage(orderProvider, brokerMessage);
+            var order = CreateSubmittedLimitOrder(orderProvider);
 
             var (orderEvents, messages) = Record(brokerage);
 
@@ -83,16 +44,72 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
             Assert.That(messages, Has.Count.EqualTo(1));
             Assert.That(messages[0].Type, Is.EqualTo(BrokerageMessageType.Warning));
-            Assert.That(messages[0].Code, Is.EqualTo("UpdateNotOpenOrder"));
+            Assert.That(messages[0].Code, Is.EqualTo(expectedCode));
+            Assert.That(messages[0].Message, Is.EqualTo(
+                $"Failed to update Order: OrderId: {order.Id} (BrokerId: {BrokerageOrderId}) for {order.Symbol}, {expectedReason}"));
             Assert.That(orderEvents, Is.Empty);
+            Assert.That(orderProvider.GetOrderById(order.Id).Status, Is.EqualTo(OrderStatus.Submitted));
+        }
+
+        // The rejection closes nothing, so a fill TradeStation reports for the order afterwards still reaches Lean
+        [Test]
+        public void FillAfterInvalidOrderIdIsStillApplied()
+        {
+            var orderProvider = new OrderProvider();
+            using var brokerage = new ReplaceRejectingBrokerage(orderProvider, "Failed to Cancel/Replace order: Invalid order ID.");
+            var order = CreateSubmittedLimitOrder(orderProvider);
+
+            var (orderEvents, _) = Record(brokerage);
+            brokerage.HandleTradeStationMessage(@"{ ""StreamStatus"": ""EndSnapshot"" }");
+
+            Assert.IsFalse(brokerage.UpdateOrder(order));
+
+            brokerage.HandleTradeStationMessage($$"""
+                {
+                    "AccountID": "SIM2784990M",
+                    "OrderID": "{{BrokerageOrderId}}",
+                    "OrderType": "Limit",
+                    "LimitPrice": "24.99",
+                    "FilledPrice": "24.99",
+                    "CommissionFee": "0",
+                    "Status": "FLL",
+                    "StatusDescription": "Filled",
+                    "ClosedDateTime": "2026-11-10T00:59:01Z",
+                    "Legs": [{ "BuyOrSell": "Buy", "QuantityOrdered": "4", "ExecQuantity": "4", "ExecutionPrice": "24.99", "Symbol": "SAZ", "AssetType": "STOCK" }]
+                }
+                """);
+
+            Assert.That(orderEvents, Has.Count.EqualTo(1));
+            Assert.That(orderEvents[0].OrderId, Is.EqualTo(order.Id));
+            Assert.That(orderEvents[0].Status, Is.EqualTo(OrderStatus.Filled));
+            Assert.That(orderEvents[0].FillQuantity, Is.EqualTo(4m));
+        }
+
+        // Lean pushes only the leg whose ticket changed: a leg that already filled must keep its state
+        [Test]
+        public void InvalidOrderIdLeavesComboLegsUntouched()
+        {
+            var orderProvider = new OrderProvider();
+            using var brokerage = new ReplaceRejectingBrokerage(orderProvider, "Failed to Cancel/Replace order: Invalid order ID.");
+            var comboOrders = TradeStationBrokerageComboOrderTests.CreateComboLimitOrderGroup(orderProvider, limitPrice: 1.5m);
+            comboOrders[0].Status = OrderStatus.Filled;
+
+            var (orderEvents, messages) = Record(brokerage);
+
+            Assert.IsFalse(brokerage.UpdateOrder(comboOrders[1]));
+
+            Assert.That(messages.Single().Type, Is.EqualTo(BrokerageMessageType.Warning));
+            Assert.That(orderEvents, Is.Empty);
+            Assert.That(orderProvider.GetOrderById(comboOrders[0].Id).Status, Is.EqualTo(OrderStatus.Filled));
+            Assert.That(orderProvider.GetOrderById(comboOrders[1].Id).Status, Is.EqualTo(OrderStatus.Submitted));
         }
 
         [Test]
         public void UnexpectedUpdateErrorIsReportedAsError()
         {
             var orderProvider = new OrderProvider();
-            var brokerage = new ReplaceRejectingBrokerage(orderProvider, "Some other failure.");
-            var order = CreateSubmittedLimitOrder(orderProvider, Symbol.Create("AAPL", SecurityType.Equity, Market.USA));
+            using var brokerage = new ReplaceRejectingBrokerage(orderProvider, "Some other failure.");
+            var order = CreateSubmittedLimitOrder(orderProvider);
 
             var (orderEvents, messages) = Record(brokerage);
 
@@ -114,9 +131,9 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             return (orderEvents, messages);
         }
 
-        private static LimitOrder CreateSubmittedLimitOrder(OrderProvider orderProvider, Symbol symbol)
+        private static LimitOrder CreateSubmittedLimitOrder(OrderProvider orderProvider)
         {
-            var order = new LimitOrder(symbol, 4, 24.99m, DateTime.UtcNow) { Status = OrderStatus.Submitted };
+            var order = new LimitOrder(Symbol.Create("SAZ", SecurityType.Equity, Market.USA), 4, 24.99m, DateTime.UtcNow) { Status = OrderStatus.Submitted };
             order.BrokerId.Add(BrokerageOrderId);
             orderProvider.Add(order);
             return order;
