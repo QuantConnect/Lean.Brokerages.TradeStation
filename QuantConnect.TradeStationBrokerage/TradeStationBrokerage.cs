@@ -179,6 +179,11 @@ public partial class TradeStationBrokerage : Brokerage
     private readonly Dictionary<string, Exchange> _tradeStationRouteToLeanExchange = new();
 
     /// <summary>
+    /// Why an order TradeStation reports as an invalid order id is closed in Lean.
+    /// </summary>
+    private const string OrderNoLongerExistsReason = "the order no longer exists at the brokerage";
+
+    /// <summary>
     /// Maps TradeStation update-order rejection substrings that should be treated as non-fatal warnings
     /// (because the order is no longer modifiable) to the warning code and reason emitted to Lean.
     /// </summary>
@@ -198,7 +203,7 @@ public partial class TradeStationBrokerage : Brokerage
         // The order exists in TradeStation but is already in a terminal state (e.g. filled/expired).
         ["Not an open order."] = ("CancelNotOpenOrder", "the order is already closed"),
         // The order id has been purged from TradeStation entirely (e.g. a DAY order on a later trading session).
-        ["Invalid order ID."] = ("CancelOrderInvalid", "the order no longer exists at the brokerage"),
+        ["Invalid order ID."] = ("CancelOrderInvalid", OrderNoLongerExistsReason),
     };
 
     /// <summary>
@@ -1025,9 +1030,7 @@ public partial class TradeStationBrokerage : Brokerage
         {
             try
             {
-                var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo();
-                _tradeStationApiClient.ReplaceOrder(brokerageOrderId, order.Type, quantity, order.GetLimitPrice(_priceMapper), order.GetStopPrice(_priceMapper),
-                    trailingAmount, trailingAsPercentage).SynchronouslyAwaitTaskResult();
+                ReplaceBrokerageOrder(brokerageOrderId, order, quantity);
 
                 foreach (var groupOrder in orders)
                 {
@@ -1042,6 +1045,15 @@ public partial class TradeStationBrokerage : Brokerage
             catch (Exception exception) when (_updateOrderSoftRejects.TryGetValue(exception.Message, out var softReject))
             {
                 OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, softReject.Code, $"Failed to update Order: OrderId: {order.Id} (BrokerId: {brokerageOrderId}) for {order.Symbol}, {softReject.Reason}"));
+            }
+            catch (Exception exception) when (exception.Message.Equals("Failed to Cancel/Replace order: Invalid order ID.", StringComparison.InvariantCultureIgnoreCase))
+            {
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "UpdateOrderInvalid", $"Failed to update Order: OrderId: {order.Id} (BrokerId: {brokerageOrderId}) for {order.Symbol}, {OrderNoLongerExistsReason}"));
+
+                // The order id has been purged from TradeStation, so no stream event will ever close the order: close the whole
+                // group, the way CancelOrder does, instead of leaving an open order in Lean that every later update fails on
+                EmitCanceledOrderEvents(orders, OrderNoLongerExistsReason);
+                response = true;
             }
             catch (Exception exception) when (exception.Message.Contains("prior stop already triggered", StringComparison.InvariantCultureIgnoreCase))
             {
@@ -1094,13 +1106,7 @@ public partial class TradeStationBrokerage : Brokerage
                 // The order is no longer active at the brokerage: close the whole group so the transaction
                 // handler stops retrying the cancel (a false return would loop in CancelPending forever)
                 order.TryGetGroupOrders(OrderProvider.GetOrderById, out var groupOrders);
-                foreach (var groupOrder in groupOrders)
-                {
-                    OnOrderEvent(new OrderEvent(groupOrder, DateTime.UtcNow, OrderFee.Zero, softReject.Reason)
-                    {
-                        Status = OrderStatus.Canceled
-                    });
-                }
+                EmitCanceledOrderEvents(groupOrders, softReject.Reason);
                 result = true;
             }
             catch (Exception ex)
@@ -1109,6 +1115,36 @@ public partial class TradeStationBrokerage : Brokerage
             }
         });
         return result;
+    }
+
+    /// <summary>
+    /// Emits a <see cref="OrderStatus.Canceled"/> event for each of the orders, which are no longer active at the brokerage.
+    /// </summary>
+    /// <param name="orders">The orders to close.</param>
+    /// <param name="reason">Why the orders are no longer active at the brokerage.</param>
+    private void EmitCanceledOrderEvents(IEnumerable<Order> orders, string reason)
+    {
+        foreach (var order in orders)
+        {
+            OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, reason)
+            {
+                Status = OrderStatus.Canceled
+            });
+        }
+    }
+
+    /// <summary>
+    /// Sends the replace request for the given brokerage order id to TradeStation. Extracted as a seam so the
+    /// rejection handling in <see cref="UpdateOrder"/> can be unit tested without a live API connection.
+    /// </summary>
+    /// <param name="brokerageOrderId">The brokerage order id to replace.</param>
+    /// <param name="order">The Lean order holding the new values.</param>
+    /// <param name="quantity">The absolute quantity to replace the order with.</param>
+    protected virtual void ReplaceBrokerageOrder(string brokerageOrderId, Order order, decimal quantity)
+    {
+        var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo();
+        _tradeStationApiClient.ReplaceOrder(brokerageOrderId, order.Type, quantity, order.GetLimitPrice(_priceMapper), order.GetStopPrice(_priceMapper),
+            trailingAmount, trailingAsPercentage).SynchronouslyAwaitTaskResult();
     }
 
     /// <summary>
