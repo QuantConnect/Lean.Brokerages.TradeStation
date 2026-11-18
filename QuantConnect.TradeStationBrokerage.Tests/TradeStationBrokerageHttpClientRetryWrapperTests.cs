@@ -84,7 +84,8 @@ public class TradeStationBrokerageHttpClientRetryWrapperTests
         // Regression test for issue #94: a silently-dropped SSE connection used to leave ReadLineAsync
         // blocked indefinitely with no exception, so the reconnect logic never fired and all subsequent
         // order fills were lost. The stream must now surface a TimeoutException after a period of silence.
-        var previousTimeout = Config.Get("trade-station-stream-read-timeout-seconds");
+        // Restoring an unset key as "" would fail every later TradeStationApiClient construction, so restore its effective value
+        var previousTimeout = Config.GetInt("trade-station-stream-read-timeout-seconds", 30);
         Config.Set("trade-station-stream-read-timeout-seconds", "1");
         try
         {
