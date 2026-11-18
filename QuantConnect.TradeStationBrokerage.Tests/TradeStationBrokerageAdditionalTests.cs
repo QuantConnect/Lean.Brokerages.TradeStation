@@ -832,6 +832,49 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.AreEqual(expectedLimitPrice, actualLimitPrice);
         }
 
+        private static IEnumerable<TestCaseData> GetTrailingStopInfoTestCases()
+        {
+            var zc = Symbol.CreateFuture(Futures.Grains.Corn, Market.CBOT, new DateTime(2026, 07, 14));
+            var e7 = Symbol.CreateFuture(Futures.Currencies.EuroFXEmini, Market.CME, new DateTime(2026, 06, 15));
+
+            // Future with PriceMagnifier = 100: absolute amount is scaled, percentage is not
+            yield return new TestCaseData(zc, 0.05m, false, 5.00m);
+            yield return new TestCaseData(zc, 0.5m, true, 0.5m);
+            // Future with PriceMagnifier = 1
+            yield return new TestCaseData(e7, 0.0010m, false, 0.0010m);
+            yield return new TestCaseData(e7, 0.5m, true, 0.5m);
+            // Equity
+            yield return new TestCaseData(Symbols.AAPL, 1.25m, false, 1.25m);
+            yield return new TestCaseData(Symbols.AAPL, 0.5m, true, 0.5m);
+        }
+
+        [TestCaseSource(nameof(GetTrailingStopInfoTestCases))]
+        public void GetTrailingStopInfoRoundTripsTrailingAmount(Symbol symbol, decimal trailingAmount, bool trailingAsPercentage, decimal expectedBrokerageAmount)
+        {
+            var priceMapper = new PriceMapper();
+            var order = new TrailingStopOrder(symbol, -1, 100m, trailingAmount, trailingAsPercentage, DateTime.UtcNow);
+
+            var (brokerageAmount, brokerageAsPercentage) = order.GetTrailingStopInfo(priceMapper);
+
+            Assert.AreEqual(expectedBrokerageAmount, brokerageAmount);
+            Assert.AreEqual(trailingAsPercentage, brokerageAsPercentage);
+
+            // Same conversion applied when an existing brokerage order is turned into a Lean order
+            var leanAmount = brokerageAsPercentage.Value ? brokerageAmount.Value : priceMapper.GetLeanPrice(symbol, brokerageAmount.Value);
+            Assert.AreEqual(trailingAmount, leanAmount);
+        }
+
+        [Test]
+        public void GetTrailingStopInfoReturnsNullForNonTrailingStopOrder()
+        {
+            var order = new StopMarketOrder(Symbols.AAPL, 1, 100m, DateTime.UtcNow);
+
+            var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo(new PriceMapper());
+
+            Assert.IsNull(trailingAmount);
+            Assert.IsNull(trailingAsPercentage);
+        }
+
         [Test]
         public void DeserializePositionWithError()
         {
