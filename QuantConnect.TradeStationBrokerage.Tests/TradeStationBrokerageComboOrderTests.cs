@@ -94,7 +94,7 @@ public class TradeStationBrokerageComboOrderTests
     /// <param name="orderProvider">The order provider the legs are registered with.</param>
     /// <param name="limitPrice">The initial limit price of the group.</param>
     /// <returns>The legs of the group.</returns>
-    internal static List<ComboLimitOrder> CreateComboLimitOrderGroup(OrderProvider orderProvider, decimal limitPrice)
+    private static List<ComboLimitOrder> CreateComboLimitOrderGroup(OrderProvider orderProvider, decimal limitPrice)
     {
         var underlying = Symbol.Create("AAPL", SecurityType.Equity, Market.USA);
         var expiry = new DateTime(2026, 9, 18);

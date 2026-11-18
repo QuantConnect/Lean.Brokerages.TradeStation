@@ -186,8 +186,6 @@ public partial class TradeStationBrokerage : Brokerage
     {
         ["Failed to Cancel/Replace order: Not an open order."] = ("UpdateNotOpenOrder", "the order is already closed"),
         ["Cancel/Replace not allowed after cancel has been attempted"] = ("UpdateAfterCancelAttempted", "a cancel has already been attempted on the order"),
-        // The order id has been purged from TradeStation entirely (e.g. a DAY order on a later trading session).
-        ["Failed to Cancel/Replace order: Invalid order ID."] = ("UpdateOrderInvalid", "the order no longer exists at the brokerage"),
     };
 
     /// <summary>
@@ -713,7 +711,7 @@ public partial class TradeStationBrokerage : Brokerage
         // the trade action is determined based on the holdings once the parent orders have filled
         var holdingQuantity = SecurityProvider.GetHoldingsQuantity(order.Symbol) + triggeredQuantity.GetValueOrDefault(order.Symbol);
         var tradeAction = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity);
-        var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo();
+        var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo(_priceMapper);
         var request = _tradeStationApiClient.CreatePlaceOrderRequest(order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, _symbolMapper.GetBrokerageSymbol(order.Symbol),
             limitPrice: order.GetLimitPrice(_priceMapper), stopPrice: order.GetStopPrice(_priceMapper), trailingAmount: trailingAmount, trailingAsPercentage: trailingAsPercentage,
             routeId: routeId, tradeStationOrderProperties: tradeStationOrderProperties as TradeStationOrderProperties);
@@ -835,7 +833,7 @@ public partial class TradeStationBrokerage : Brokerage
                 {
                     var symbol = _symbolMapper.GetBrokerageSymbol(order.Symbol);
                     var tradeAction = ConvertDirection(order.SecurityType, order.Direction, holdingQuantity);
-                    var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo();
+                    var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo(_priceMapper);
                     response = PlaceOrderCommon(orders, order.Type, order.TimeInForce, order.AbsoluteQuantity, tradeAction, symbol,
                         order.GetLimitPrice(_priceMapper), order.GetStopPrice(_priceMapper), trailingAmount, trailingAsPercentage, isSubmittedEvent);
                 }
@@ -885,7 +883,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// </remarks>
     private CrossZeroOrderResponse PlaceCrossZeroOrderInternal(CrossZeroFirstOrderRequest crossZeroOrderRequest, string symbol, string tradeAction, bool isPlaceOrderWithLeanEvent)
     {
-        var (trailingAmount, trailingAsPercentage) = crossZeroOrderRequest.LeanOrder.GetTrailingStopInfo();
+        var (trailingAmount, trailingAsPercentage) = crossZeroOrderRequest.LeanOrder.GetTrailingStopInfo(_priceMapper);
         var response = PlaceOrderCommon(new List<Order> { crossZeroOrderRequest.LeanOrder }, crossZeroOrderRequest.OrderType, crossZeroOrderRequest.LeanOrder.TimeInForce,
             crossZeroOrderRequest.AbsoluteOrderQuantity, tradeAction, symbol, crossZeroOrderRequest.LeanOrder.GetLimitPrice(_priceMapper), crossZeroOrderRequest.LeanOrder.GetStopPrice(_priceMapper),
             trailingAmount, trailingAsPercentage, isPlaceOrderWithLeanEvent);
@@ -1027,7 +1025,9 @@ public partial class TradeStationBrokerage : Brokerage
         {
             try
             {
-                ReplaceBrokerageOrder(brokerageOrderId, order, quantity);
+                var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo(_priceMapper);
+                _tradeStationApiClient.ReplaceOrder(brokerageOrderId, order.Type, quantity, order.GetLimitPrice(_priceMapper), order.GetStopPrice(_priceMapper),
+                    trailingAmount, trailingAsPercentage).SynchronouslyAwaitTaskResult();
 
                 foreach (var groupOrder in orders)
                 {
@@ -1109,20 +1109,6 @@ public partial class TradeStationBrokerage : Brokerage
             }
         });
         return result;
-    }
-
-    /// <summary>
-    /// Sends the replace request for the given brokerage order id to TradeStation. Extracted as a seam so the
-    /// rejection handling in <see cref="UpdateOrder"/> can be unit tested without a live API connection.
-    /// </summary>
-    /// <param name="brokerageOrderId">The brokerage order id to replace.</param>
-    /// <param name="order">The Lean order holding the new values.</param>
-    /// <param name="quantity">The absolute quantity to replace the order with.</param>
-    protected virtual void ReplaceBrokerageOrder(string brokerageOrderId, Order order, decimal quantity)
-    {
-        var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo();
-        _tradeStationApiClient.ReplaceOrder(brokerageOrderId, order.Type, quantity, order.GetLimitPrice(_priceMapper), order.GetStopPrice(_priceMapper),
-            trailingAmount, trailingAsPercentage).SynchronouslyAwaitTaskResult();
     }
 
     /// <summary>
