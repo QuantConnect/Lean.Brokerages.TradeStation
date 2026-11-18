@@ -291,12 +291,18 @@ public static class TradeStationExtensions
     /// <param name="priceMapper">The price mapper used to convert an absolute trailing amount to the brokerage format.</param>
     /// <returns>The trailing stop information (trailing amount and whether its a percentage)
     /// if the order is a TrailingStopOrder; otherwise, null.</returns>
-    public static (decimal?, bool?) GetTrailingStopInfo(this Order order, PriceMapper priceMapper) => order switch
+    public static (decimal?, bool?) GetTrailingStopInfo(this Order order, PriceMapper priceMapper)
     {
-        TrailingStopOrder { TrailingAsPercentage: true } tso => (tso.TrailingAmount, true),
-        TrailingStopOrder tso => (priceMapper.GetBrokeragePrice(tso.Symbol, tso.TrailingAmount), false),
-        _ => (null, null)
-    };
+        switch (order)
+        {
+            case TrailingStopOrder { TrailingAsPercentage: true } tso:
+                return (tso.TrailingAmount, true);
+            case TrailingStopOrder tso:
+                return (priceMapper.GetBrokeragePrice(tso.Symbol, tso.TrailingAmount), false);
+            default:
+                return (null, null);
+        }
+    }
 
     /// <summary>
     /// Parses the provided account type string into a <see cref="TradeStationAccountType"/> enum value.
