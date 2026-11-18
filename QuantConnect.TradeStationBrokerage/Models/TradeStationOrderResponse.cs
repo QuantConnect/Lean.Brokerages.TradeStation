@@ -15,6 +15,7 @@
 
 using System;
 using Newtonsoft.Json;
+using System.Globalization;
 using System.Collections.Generic;
 using Newtonsoft.Json.Converters;
 using QuantConnect.Brokerages.TradeStation.Models.Enums;
@@ -491,14 +492,14 @@ public readonly struct TrailingStop
     {
         if (!string.IsNullOrEmpty(Amount))
         {
-            amount = Parse.Decimal(Amount);
+            amount = decimal.Parse(Amount, CultureInfo.InvariantCulture);
             amountAsPercentage = false;
             return true;
         }
 
         if (!string.IsNullOrEmpty(Percent))
         {
-            amount = Parse.Decimal(Percent) / 100m;
+            amount = decimal.Parse(Percent, CultureInfo.InvariantCulture) / 100m;
             amountAsPercentage = true;
             return true;
         }

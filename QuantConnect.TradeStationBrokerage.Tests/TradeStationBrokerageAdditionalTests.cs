@@ -203,26 +203,46 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.That(actualActionType, Is.EqualTo(expectedActionType));
         }
 
-        [SetCulture("de-DE")]
-        [TestCase(1.25, false, @"{""Amount"":""1.25"",""Percent"":null}")]
-        [TestCase(0.0125, true, @"{""Amount"":null,""Percent"":""1.2500""}")]
-        public void SerializeTrailingStopUsesInvariantCulture(decimal amount, bool asPercentage, string expectedJson)
+        [TestCase("de-DE", 1.25, false, @"{""Amount"":""1.25"",""Percent"":null}")]
+        [TestCase("de-DE", 0.0125, true, @"{""Amount"":null,""Percent"":""1.2500""}")]
+        [TestCase("uk-UA", 1.25, false, @"{""Amount"":""1.25"",""Percent"":null}")]
+        [TestCase("uk-UA", 0.0125, true, @"{""Amount"":null,""Percent"":""1.2500""}")]
+        public void SerializeTrailingStopUsesInvariantCulture(string cultureName, decimal amount, bool asPercentage, string expectedJson)
         {
-            var json = JsonConvert.SerializeObject(new TrailingStop(amount, asPercentage));
+            var previousCulture = Thread.CurrentThread.CurrentCulture;
+            Thread.CurrentThread.CurrentCulture = new CultureInfo(cultureName);
+            try
+            {
+                var json = JsonConvert.SerializeObject(new TrailingStop(amount, asPercentage));
 
-            Assert.That(json, Is.EqualTo(expectedJson));
+                Assert.That(json, Is.EqualTo(expectedJson));
+            }
+            finally
+            {
+                Thread.CurrentThread.CurrentCulture = previousCulture;
+            }
         }
 
-        [SetCulture("de-DE")]
-        [TestCase(@"{""Amount"":""1.25"",""Percent"":null}", 1.25, false)]
-        [TestCase(@"{""Amount"":null,""Percent"":""1.25""}", 0.0125, true)]
-        public void DeserializeTrailingStopUsesInvariantCulture(string json, decimal expectedAmount, bool expectedAsPercentage)
+        [TestCase("de-DE", @"{""Amount"":""1.25"",""Percent"":null}", 1.25, false)]
+        [TestCase("de-DE", @"{""Amount"":null,""Percent"":""1.25""}", 0.0125, true)]
+        [TestCase("uk-UA", @"{""Amount"":""1.25"",""Percent"":null}", 1.25, false)]
+        [TestCase("uk-UA", @"{""Amount"":null,""Percent"":""1.25""}", 0.0125, true)]
+        public void DeserializeTrailingStopUsesInvariantCulture(string cultureName, string json, decimal expectedAmount, bool expectedAsPercentage)
         {
-            var trailingStop = JsonConvert.DeserializeObject<TrailingStop>(json);
+            var previousCulture = Thread.CurrentThread.CurrentCulture;
+            Thread.CurrentThread.CurrentCulture = new CultureInfo(cultureName);
+            try
+            {
+                var trailingStop = JsonConvert.DeserializeObject<TrailingStop>(json);
 
-            Assert.That(trailingStop.TryGetValue(out var amount, out var asPercentage), Is.True);
-            Assert.That(amount, Is.EqualTo(expectedAmount));
-            Assert.That(asPercentage, Is.EqualTo(expectedAsPercentage));
+                Assert.That(trailingStop.TryGetValue(out var amount, out var asPercentage), Is.True);
+                Assert.That(amount, Is.EqualTo(expectedAmount));
+                Assert.That(asPercentage, Is.EqualTo(expectedAsPercentage));
+            }
+            finally
+            {
+                Thread.CurrentThread.CurrentCulture = previousCulture;
+            }
         }
 
         private static IEnumerable<TestCaseData> GetBrokeragePriceTestCases()
