@@ -929,6 +929,24 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             }
         }
 
+        [Test]
+        public void UpdateOrderWithInvalidOrderId()
+        {
+            var limitOrder = new LimitOrder(Symbols.AAPL, 1, 100m, DateTime.UtcNow);
+            limitOrder.BrokerId.Add("123456789");
+            OrderProvider.Add(limitOrder);
+
+            var messages = new List<BrokerageMessageEvent>();
+            Brokerage.Message += (_, brokerageMessage) => messages.Add(brokerageMessage);
+
+            limitOrder.ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, limitOrder.Id, new() { LimitPrice = 99m }));
+
+            Assert.IsFalse(Brokerage.UpdateOrder(limitOrder));
+            Assert.AreEqual(1, messages.Count);
+            Assert.AreEqual(BrokerageMessageType.Warning, messages[0].Type, messages[0].Message);
+            Assert.AreEqual("UpdateOrderInvalid", messages[0].Code);
+        }
+
         [TestCase("Day")]
         [TestCase("GoodTilDate")]
         [TestCase("GoodTilCanceled")]

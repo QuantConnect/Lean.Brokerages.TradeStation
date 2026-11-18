@@ -186,6 +186,7 @@ public partial class TradeStationBrokerage : Brokerage
     {
         ["Failed to Cancel/Replace order: Not an open order."] = ("UpdateNotOpenOrder", "the order is already closed"),
         ["Cancel/Replace not allowed after cancel has been attempted"] = ("UpdateAfterCancelAttempted", "a cancel has already been attempted on the order"),
+        ["Failed to Cancel/Replace order: Invalid order ID."] = ("UpdateOrderInvalid", "the order no longer exists at the brokerage"),
     };
 
     /// <summary>
