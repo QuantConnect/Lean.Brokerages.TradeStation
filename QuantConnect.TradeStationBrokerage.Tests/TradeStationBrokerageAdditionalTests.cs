@@ -203,6 +203,28 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.That(actualActionType, Is.EqualTo(expectedActionType));
         }
 
+        [SetCulture("de-DE")]
+        [TestCase(1.25, false, @"{""Amount"":""1.25"",""Percent"":null}")]
+        [TestCase(0.0125, true, @"{""Amount"":null,""Percent"":""1.2500""}")]
+        public void SerializeTrailingStopUsesInvariantCulture(decimal amount, bool asPercentage, string expectedJson)
+        {
+            var json = JsonConvert.SerializeObject(new TrailingStop(amount, asPercentage));
+
+            Assert.That(json, Is.EqualTo(expectedJson));
+        }
+
+        [SetCulture("de-DE")]
+        [TestCase(@"{""Amount"":""1.25"",""Percent"":null}", 1.25, false)]
+        [TestCase(@"{""Amount"":null,""Percent"":""1.25""}", 0.0125, true)]
+        public void DeserializeTrailingStopUsesInvariantCulture(string json, decimal expectedAmount, bool expectedAsPercentage)
+        {
+            var trailingStop = JsonConvert.DeserializeObject<TrailingStop>(json);
+
+            Assert.That(trailingStop.TryGetValue(out var amount, out var asPercentage), Is.True);
+            Assert.That(amount, Is.EqualTo(expectedAmount));
+            Assert.That(asPercentage, Is.EqualTo(expectedAsPercentage));
+        }
+
         private static IEnumerable<TestCaseData> GetBrokeragePriceTestCases()
         {
             // Equity: pass-through (magnifier = 1, no API call)

@@ -474,11 +474,11 @@ public readonly struct TrailingStop
         if (asPercentage)
         {
             Amount = null;
-            Percent = (amount * 100m).ToString();
+            Percent = (amount * 100m).ToStringInvariant();
         }
         else
         {
-            Amount = amount.ToString();
+            Amount = amount.ToStringInvariant();
             Percent = null;
         }
     }
@@ -491,14 +491,14 @@ public readonly struct TrailingStop
     {
         if (!string.IsNullOrEmpty(Amount))
         {
-            amount = decimal.Parse(Amount);
+            amount = Parse.Decimal(Amount);
             amountAsPercentage = false;
             return true;
         }
 
         if (!string.IsNullOrEmpty(Percent))
         {
-            amount = decimal.Parse(Percent) / 100m;
+            amount = Parse.Decimal(Percent) / 100m;
             amountAsPercentage = true;
             return true;
         }
