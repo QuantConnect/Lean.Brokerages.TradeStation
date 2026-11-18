@@ -295,9 +295,11 @@ public static class TradeStationExtensions
     {
         switch (order)
         {
-            case TrailingStopOrder { TrailingAsPercentage: true } tso:
-                return (tso.TrailingAmount, true);
             case TrailingStopOrder tso:
+                if (tso.TrailingAsPercentage)
+                {
+                    return (tso.TrailingAmount, true);
+                }
                 return (priceMapper.GetBrokeragePrice(tso.Symbol, tso.TrailingAmount), false);
             default:
                 return (null, null);
