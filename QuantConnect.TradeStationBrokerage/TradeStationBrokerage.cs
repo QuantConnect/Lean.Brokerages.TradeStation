@@ -1097,13 +1097,20 @@ public partial class TradeStationBrokerage : Brokerage
             catch (Exception ex) when (_cancelOrderSoftRejects.TryGetValue(ex.Message, out var softReject))
             {
                 OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, softReject.Code, $"Failed to cancel Order: OrderId: {order.Id} (BrokerId: {brokerageOrderId}) for {order.Symbol}, {softReject.Reason}"));
-                _cancelSoftRejectedBrokerageIds[brokerageOrderId] = true;
 
                 // The order is no longer active at the brokerage: close the whole group so the transaction
                 // handler stops retrying the cancel (a false return would loop in CancelPending forever)
                 order.TryGetGroupOrders(OrderProvider.GetOrderById, out var groupOrders);
                 foreach (var groupOrder in groupOrders)
                 {
+                    // A fill the stream delivered before this cancel took the stream lock already closed the order
+                    if ((OrderProvider.GetOrderById(groupOrder.Id) ?? groupOrder).Status.IsClosed())
+                    {
+                        continue;
+                    }
+                    // Closed as canceled without knowing its executions: a reconnect snapshot may still report its fill
+                    _cancelSoftRejectedBrokerageIds[brokerageOrderId] = true;
+
                     var cancelEvent = new OrderEvent(groupOrder, DateTime.UtcNow, OrderFee.Zero, softReject.Reason)
                     {
                         Status = OrderStatus.Canceled
@@ -1313,7 +1320,13 @@ public partial class TradeStationBrokerage : Brokerage
                     // fill quantity is deduplicated downstream via _orderIdToFillQuantity (a re-sent partial
                     // yields FillQuantity 0). The exception is the fill of an order a soft-rejected cancel closed
                     // as canceled: the order was no longer open because it had filled.
-                    if ((OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID)?.All(o => o.Status.IsClosed()) ?? true)
+                    var knownLeanOrders = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID);
+                    if (knownLeanOrders == null || knownLeanOrders.Count == 0)
+                    {
+                        _cancelSoftRejectedBrokerageIds.TryRemove(brokerageOrder.OrderID, out _);
+                        return;
+                    }
+                    if (knownLeanOrders.All(o => o.Status.IsClosed())
                         && (brokerageOrder.Status is not (TradeStationOrderStatusType.Fll or TradeStationOrderStatusType.Brf)
                             || !_cancelSoftRejectedBrokerageIds.TryRemove(brokerageOrder.OrderID, out _)))
                     {
@@ -1380,6 +1393,12 @@ public partial class TradeStationBrokerage : Brokerage
                     default:
                         Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}.TradeStationStreamStatus: {json}");
                         return;
+                }
+
+                // A terminal frame resolves the executions of an order a soft-rejected cancel closed
+                if (globalLeanOrderStatus.IsClosed())
+                {
+                    _cancelSoftRejectedBrokerageIds.TryRemove(brokerageOrder.OrderID, out _);
                 }
 
                 var leanOrders = new List<Order>();
