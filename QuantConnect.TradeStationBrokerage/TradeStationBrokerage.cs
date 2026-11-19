@@ -1104,10 +1104,13 @@ public partial class TradeStationBrokerage : Brokerage
                 order.TryGetGroupOrders(OrderProvider.GetOrderById, out var groupOrders);
                 foreach (var groupOrder in groupOrders)
                 {
-                    OnOrderEvent(new OrderEvent(groupOrder, DateTime.UtcNow, OrderFee.Zero, softReject.Reason)
+                    var cancelEvent = new OrderEvent(groupOrder, DateTime.UtcNow, OrderFee.Zero, softReject.Reason)
                     {
                         Status = OrderStatus.Canceled
-                    });
+                    };
+                    // Drops the pending second half of a cross-zero order, so a fill recovered later doesn't place it
+                    TryHandleRemainingCrossZeroOrder(groupOrder, cancelEvent);
+                    OnOrderEvent(cancelEvent);
                 }
                 result = true;
             }
