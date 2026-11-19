@@ -128,6 +128,12 @@ public partial class TradeStationBrokerage : Brokerage
     private protected ConcurrentDictionary<string, bool> _skipWebSocketUpdatesForLeanOrders = [];
 
     /// <summary>
+    /// Brokerage order IDs whose cancel TradeStation soft-rejected, closing the Lean orders as canceled without
+    /// knowing their executions. A reconnect snapshot still reports the fill of these orders.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, bool> _cancelSoftRejectedBrokerageIds = new();
+
+    /// <summary>
     /// Whether the warning about canceling a member of an order group was already sent
     /// </summary>
     private bool _contingentOrderCancelWarningSent;
@@ -1091,6 +1097,7 @@ public partial class TradeStationBrokerage : Brokerage
             catch (Exception ex) when (_cancelOrderSoftRejects.TryGetValue(ex.Message, out var softReject))
             {
                 OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, softReject.Code, $"Failed to cancel Order: OrderId: {order.Id} (BrokerId: {brokerageOrderId}) for {order.Symbol}, {softReject.Reason}"));
+                _cancelSoftRejectedBrokerageIds[brokerageOrderId] = true;
 
                 // The order is no longer active at the brokerage: close the whole group so the transaction
                 // handler stops retrying the cancel (a false return would loop in CancelPending forever)
@@ -1301,8 +1308,11 @@ public partial class TradeStationBrokerage : Brokerage
                     // them. Skip everything else (no matching order, or all already terminal) so we don't
                     // re-notify external orders or re-emit events for orders already in sync. Already-counted
                     // fill quantity is deduplicated downstream via _orderIdToFillQuantity (a re-sent partial
-                    // yields FillQuantity 0).
-                    if (OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID)?.All(o => o.Status.IsClosed()) ?? true)
+                    // yields FillQuantity 0). The exception is the fill of an order a soft-rejected cancel closed
+                    // as canceled: the order was no longer open because it had filled.
+                    if ((OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID)?.All(o => o.Status.IsClosed()) ?? true)
+                        && (brokerageOrder.Status is not (TradeStationOrderStatusType.Fll or TradeStationOrderStatusType.Brf)
+                            || !_cancelSoftRejectedBrokerageIds.TryRemove(brokerageOrder.OrderID, out _)))
                     {
                         return;
                     }

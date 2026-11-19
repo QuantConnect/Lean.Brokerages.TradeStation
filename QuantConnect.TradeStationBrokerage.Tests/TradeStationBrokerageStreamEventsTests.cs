@@ -1423,7 +1423,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         /// completed its initial snapshot is reconnecting and about to re-read the snapshot. Mirrors
         /// the flag reset the SubscribeOnOrderUpdate loop performs at the start of each connection.
         /// </summary>
-        private static void EnterReconnectSnapshotWindow(TradeStationBrokerage ts)
+        internal static void EnterReconnectSnapshotWindow(TradeStationBrokerage ts)
         {
             typeof(TradeStationBrokerage)
                 .GetField("_isSubscribeOnStreamOrderUpdate", BindingFlags.NonPublic | BindingFlags.Instance)
