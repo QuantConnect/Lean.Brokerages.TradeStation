@@ -1030,7 +1030,7 @@ public partial class TradeStationBrokerage : Brokerage
                 _tradeStationApiClient.ReplaceOrder(brokerageOrderId, order.Type, quantity, order.GetLimitPrice(_priceMapper), order.GetStopPrice(_priceMapper),
                     trailingAmount, trailingAsPercentage).SynchronouslyAwaitTaskResult();
 
-                foreach (var groupOrder in orders)
+                foreach (var groupOrder in orders.Where(o => !o.Status.IsClosed()))
                 {
                     OnOrderEvent(new OrderEvent(groupOrder, DateTime.UtcNow, OrderFee.Zero, $"{nameof(TradeStationBrokerage)}.{nameof(UpdateOrder)} Order Event")
                     {
@@ -1093,9 +1093,10 @@ public partial class TradeStationBrokerage : Brokerage
                 OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, softReject.Code, $"Failed to cancel Order: OrderId: {order.Id} (BrokerId: {brokerageOrderId}) for {order.Symbol}, {softReject.Reason}"));
 
                 // The order is no longer active at the brokerage: close the whole group so the transaction
-                // handler stops retrying the cancel (a false return would loop in CancelPending forever)
+                // handler stops retrying the cancel (a false return would loop in CancelPending forever). Legs
+                // already closed, such as a filled one, keep their status
                 order.TryGetGroupOrders(OrderProvider.GetOrderById, out var groupOrders);
-                foreach (var groupOrder in groupOrders)
+                foreach (var groupOrder in groupOrders.Where(o => !o.Status.IsClosed()))
                 {
                     OnOrderEvent(new OrderEvent(groupOrder, DateTime.UtcNow, OrderFee.Zero, softReject.Reason)
                     {
