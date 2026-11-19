@@ -204,33 +204,7 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.IsTrue(brokerage.CancelOrder(order));
             Assert.AreEqual(OrderStatus.Canceled, order.Status);
 
-            brokerage.HandleTradeStationMessage(@"{
-                ""AccountID"": ""SIM2784990M"",
-                ""ClosedDateTime"": ""2026-06-23T16:06:00Z"",
-                ""CommissionFee"": ""1"",
-                ""Currency"": ""USD"",
-                ""Duration"": ""DAY"",
-                ""FilledPrice"": ""100"",
-                ""Legs"": [
-                    {
-                        ""AssetType"": ""STOCK"",
-                        ""BuyOrSell"": ""Sell"",
-                        ""ExecQuantity"": ""5"",
-                        ""ExecutionPrice"": ""100"",
-                        ""OpenOrClose"": ""Close"",
-                        ""QuantityOrdered"": ""5"",
-                        ""QuantityRemaining"": ""0"",
-                        ""Symbol"": ""AAPL""
-                    }
-                ],
-                ""OpenedDateTime"": ""2026-06-23T16:06:00Z"",
-                ""OrderID"": ""957819089"",
-                ""OrderType"": ""Market"",
-                ""Routing"": ""Intelligent"",
-                ""Status"": ""FLL"",
-                ""StatusDescription"": ""Filled"",
-                ""UnbundledRouteFee"": ""0""
-            }");
+            brokerage.HandleTradeStationMessage(FilledSellOf5Json);
 
             // The second half would be placed on a background task
             Thread.Sleep(500);
@@ -308,6 +282,49 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.AreEqual(10m, orderEvents.Sum(e => e.FillQuantity));
         }
 
+        // A cross-zero order whose first half filled live is still open for its second half: a cancel of the first
+        // half's brokerage order soft-rejected before the second half is placed leaves no fill to recover, so a
+        // reconnect snapshot doesn't report the first half's fill again
+        [Test]
+        public void ReconnectSnapshotSkipsCrossZeroFirstHalfFillAppliedBeforeCancelSoftReject()
+        {
+            var orderProvider = new OrderProvider();
+            var brokerage = CreateBrokerage(orderProvider, _ => throw new Exception("Not an open order."));
+            using var secondHalfGate = new ManualResetEventSlim(false);
+            brokerage.SecondHalfGate = secondHalfGate;
+
+            var order = new MarketOrder(Symbols.AAPL, -10, DateTime.UtcNow) { Status = OrderStatus.Submitted };
+            orderProvider.Add(order);
+            // Holding +5: the sell of 10 places a sell of 5 and keeps the short 5 for when it fills
+            Assert.IsTrue(brokerage.PlaceCrossZeroOrder(order, 5m));
+
+            var orderEvents = new List<OrderEvent>();
+            brokerage.OrdersStatusChanged += (_, events) =>
+            {
+                orderEvents.AddRange(events);
+                events.ForEach(orderProvider.HandleOrderEvent);
+            };
+
+            brokerage.HandleTradeStationMessage(@"{""StreamStatus"": ""EndSnapshot""}");
+            brokerage.HandleTradeStationMessage(FilledSellOf5Json);
+            Assert.AreEqual(OrderStatus.PartiallyFilled, order.Status);
+            Assert.AreEqual(-5m, orderEvents.Sum(e => e.FillQuantity));
+
+            // The second half is not placed yet: the cancel still targets the first half's brokerage order
+            order.Status = OrderStatus.CancelPending;
+            Assert.IsTrue(brokerage.CancelOrder(order));
+            Assert.AreEqual(OrderStatus.Canceled, order.Status);
+
+            secondHalfGate.Set();
+            Assert.IsTrue(SpinWait.SpinUntil(() => brokerage.CrossZeroPlacements.Count == 2, TimeSpan.FromSeconds(5)));
+
+            TradeStationBrokerageStreamEventsTests.EnterReconnectSnapshotWindow(brokerage);
+            brokerage.HandleTradeStationMessage(FilledSellOf5Json);
+
+            Assert.AreEqual(-5m, orderEvents.Sum(e => e.FillQuantity));
+            Assert.AreEqual(OrderStatus.Canceled, order.Status);
+        }
+
         [Test]
         public void UnexpectedCancelErrorIsReportedAsError()
         {
@@ -360,6 +377,34 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             ""UnbundledRouteFee"": ""0""
         }";
 
+        private const string FilledSellOf5Json = @"{
+            ""AccountID"": ""SIM2784990M"",
+            ""ClosedDateTime"": ""2026-06-23T16:06:00Z"",
+            ""CommissionFee"": ""1"",
+            ""Currency"": ""USD"",
+            ""Duration"": ""DAY"",
+            ""FilledPrice"": ""100"",
+            ""Legs"": [
+                {
+                    ""AssetType"": ""STOCK"",
+                    ""BuyOrSell"": ""Sell"",
+                    ""ExecQuantity"": ""5"",
+                    ""ExecutionPrice"": ""100"",
+                    ""OpenOrClose"": ""Close"",
+                    ""QuantityOrdered"": ""5"",
+                    ""QuantityRemaining"": ""0"",
+                    ""Symbol"": ""AAPL""
+                }
+            ],
+            ""OpenedDateTime"": ""2026-06-23T16:06:00Z"",
+            ""OrderID"": ""957819089"",
+            ""OrderType"": ""Market"",
+            ""Routing"": ""Intelligent"",
+            ""Status"": ""FLL"",
+            ""StatusDescription"": ""Filled"",
+            ""UnbundledRouteFee"": ""0""
+        }";
+
         private static StopMarketOrder CreateCancelPendingOrder(OrderProvider orderProvider, string brokerageOrderId)
         {
             var order = new StopMarketOrder(Symbols.AAPL, 10, 100m, DateTime.UtcNow) { Status = OrderStatus.CancelPending };
@@ -399,6 +444,11 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
             public List<CrossZeroFirstOrderRequest> CrossZeroPlacements { get; } = new();
 
+            /// <summary>
+            /// Holds the placement of a cross-zero second half until set
+            /// </summary>
+            public ManualResetEventSlim SecondHalfGate { get; set; }
+
             public bool? PlaceCrossZeroOrder(Order order, decimal holdingQuantity)
             {
                 return TryCrossZeroPositionOrder(order, holdingQuantity);
@@ -406,6 +456,10 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
             protected override CrossZeroOrderResponse PlaceCrossZeroOrder(CrossZeroFirstOrderRequest crossZeroOrderRequest, bool isPlaceOrderWithLeanEvent)
             {
+                if (!isPlaceOrderWithLeanEvent)
+                {
+                    SecondHalfGate?.Wait();
+                }
                 CrossZeroPlacements.Add(crossZeroOrderRequest);
                 return new CrossZeroOrderResponse(CrossZeroPlacements.Count == 1 ? "957819089" : "957819090", true);
             }
