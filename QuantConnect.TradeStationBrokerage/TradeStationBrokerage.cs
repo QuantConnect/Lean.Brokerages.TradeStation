@@ -128,6 +128,18 @@ public partial class TradeStationBrokerage : Brokerage
     private protected ConcurrentDictionary<string, bool> _skipWebSocketUpdatesForLeanOrders = [];
 
     /// <summary>
+    /// Brokerage order IDs whose cancel TradeStation soft-rejected, closing the Lean orders as canceled without
+    /// knowing their executions. A reconnect snapshot still reports the fill of these orders.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, bool> _cancelSoftRejectedBrokerageIds = new();
+
+    /// <summary>
+    /// Brokerage order IDs of cross-zero first halves whose fill Lean already applied while the Lean order stays
+    /// open for the second half. A soft-rejected cancel of these IDs has no executions left to recover.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, bool> _filledCrossZeroFirstHalfBrokerageIds = new();
+
+    /// <summary>
     /// Whether the warning about canceling a member of an order group was already sent
     /// </summary>
     private bool _contingentOrderCancelWarningSent;
@@ -1097,10 +1109,30 @@ public partial class TradeStationBrokerage : Brokerage
                 order.TryGetGroupOrders(OrderProvider.GetOrderById, out var groupOrders);
                 foreach (var groupOrder in groupOrders)
                 {
-                    OnOrderEvent(new OrderEvent(groupOrder, DateTime.UtcNow, OrderFee.Zero, softReject.Reason)
+                    // A fill the stream delivered before this cancel took the stream lock already closed the order
+                    if ((OrderProvider.GetOrderById(groupOrder.Id) ?? groupOrder).Status.IsClosed())
+                    {
+                        continue;
+                    }
+                    // Closed as canceled without knowing its executions: a reconnect snapshot may still report its fill,
+                    // unless the brokerage order is a cross-zero first half whose fill Lean already applied
+                    var executionsApplied = _filledCrossZeroFirstHalfBrokerageIds.TryRemove(brokerageOrderId, out _);
+                    foreach (var brokerId in groupOrder.BrokerId)
+                    {
+                        _filledCrossZeroFirstHalfBrokerageIds.TryRemove(brokerId, out _);
+                    }
+                    if (!executionsApplied)
+                    {
+                        _cancelSoftRejectedBrokerageIds[brokerageOrderId] = true;
+                    }
+
+                    var cancelEvent = new OrderEvent(groupOrder, DateTime.UtcNow, OrderFee.Zero, softReject.Reason)
                     {
                         Status = OrderStatus.Canceled
-                    });
+                    };
+                    // Drops the pending second half of a cross-zero order, so a fill recovered later doesn't place it
+                    TryHandleRemainingCrossZeroOrder(groupOrder, cancelEvent);
+                    OnOrderEvent(cancelEvent);
                 }
                 result = true;
             }
@@ -1301,8 +1333,17 @@ public partial class TradeStationBrokerage : Brokerage
                     // them. Skip everything else (no matching order, or all already terminal) so we don't
                     // re-notify external orders or re-emit events for orders already in sync. Already-counted
                     // fill quantity is deduplicated downstream via _orderIdToFillQuantity (a re-sent partial
-                    // yields FillQuantity 0).
-                    if (OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID)?.All(o => o.Status.IsClosed()) ?? true)
+                    // yields FillQuantity 0). The exception is the fill of an order a soft-rejected cancel closed
+                    // as canceled: the order was no longer open because it had filled.
+                    var knownLeanOrders = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID);
+                    if (knownLeanOrders == null || knownLeanOrders.Count == 0)
+                    {
+                        _cancelSoftRejectedBrokerageIds.TryRemove(brokerageOrder.OrderID, out _);
+                        return;
+                    }
+                    if (knownLeanOrders.All(o => o.Status.IsClosed())
+                        && (brokerageOrder.Status is not (TradeStationOrderStatusType.Fll or TradeStationOrderStatusType.Brf)
+                            || !_cancelSoftRejectedBrokerageIds.TryRemove(brokerageOrder.OrderID, out _)))
                     {
                         return;
                     }
@@ -1367,6 +1408,12 @@ public partial class TradeStationBrokerage : Brokerage
                     default:
                         Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}.TradeStationStreamStatus: {json}");
                         return;
+                }
+
+                // A terminal frame resolves the executions of an order a soft-rejected cancel closed
+                if (globalLeanOrderStatus.IsClosed())
+                {
+                    _cancelSoftRejectedBrokerageIds.TryRemove(brokerageOrder.OrderID, out _);
                 }
 
                 var leanOrders = new List<Order>();
@@ -1525,9 +1572,21 @@ public partial class TradeStationBrokerage : Brokerage
                     }
 
                     // if we filled the order and have another contingent order waiting, submit it
-                    if (!TryHandleRemainingCrossZeroOrder(leanOrder, orderEvent))
+                    if (TryHandleRemainingCrossZeroOrder(leanOrder, orderEvent))
+                    {
+                        // The first half filled, the Lean order stays open for the second half
+                        _filledCrossZeroFirstHalfBrokerageIds[brokerageOrder.OrderID] = true;
+                    }
+                    else
                     {
                         OnOrderEvent(orderEvent);
+                        if (orderEvent.Status.IsClosed())
+                        {
+                            foreach (var brokerId in leanOrder.BrokerId)
+                            {
+                                _filledCrossZeroFirstHalfBrokerageIds.TryRemove(brokerId, out _);
+                            }
+                        }
 
                         // contingent orders: the orders sent by the one which filled are no longer held
                         OnContingentOrdersTriggered([orderEvent], OrderProvider);

@@ -14,12 +14,15 @@
 */
 
 using System;
+using System.Linq;
+using System.Threading;
 using NUnit.Framework;
 using QuantConnect.Tests;
 using QuantConnect.Orders;
 using QuantConnect.Securities;
 using System.Collections.Generic;
 using QuantConnect.Tests.Brokerages;
+using QuantConnect.Brokerages.CrossZero;
 
 namespace QuantConnect.Brokerages.TradeStation.Tests
 {
@@ -60,6 +63,268 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.That(orderEvents[0].Message, Is.EqualTo(expectedReason));
         }
 
+        // A cancel rejected because the order already filled closes it as canceled: the fill a reconnect snapshot
+        // reports for it must still reach Lean, once.
+        [Test]
+        public void ReconnectSnapshotRecoversFillOfOrderClosedByCancelSoftReject()
+        {
+            var orderProvider = new OrderProvider();
+            var brokerage = CreateBrokerage(orderProvider, _ => throw new Exception("Not an open order."));
+            var order = CreateCancelPendingOrder(orderProvider, "957819089");
+
+            var orderEvents = new List<OrderEvent>();
+            brokerage.OrdersStatusChanged += (_, events) =>
+            {
+                orderEvents.AddRange(events);
+                events.ForEach(orderProvider.HandleOrderEvent);
+            };
+
+            brokerage.HandleTradeStationMessage(@"{""StreamStatus"": ""EndSnapshot""}");
+            TradeStationBrokerageStreamEventsTests.EnterReconnectSnapshotWindow(brokerage);
+
+            Assert.IsTrue(brokerage.CancelOrder(order));
+            Assert.AreEqual(OrderStatus.Canceled, order.Status);
+
+            var filledSnapshotJson = @"{
+                ""AccountID"": ""SIM2784990M"",
+                ""ClosedDateTime"": ""2026-06-23T16:06:00Z"",
+                ""CommissionFee"": ""1"",
+                ""Currency"": ""USD"",
+                ""Duration"": ""DAY"",
+                ""FilledPrice"": ""100"",
+                ""Legs"": [
+                    {
+                        ""AssetType"": ""STOCK"",
+                        ""BuyOrSell"": ""Buy"",
+                        ""ExecQuantity"": ""10"",
+                        ""ExecutionPrice"": ""100"",
+                        ""OpenOrClose"": ""Open"",
+                        ""QuantityOrdered"": ""10"",
+                        ""QuantityRemaining"": ""0"",
+                        ""Symbol"": ""AAPL""
+                    }
+                ],
+                ""OpenedDateTime"": ""2026-06-23T16:06:00Z"",
+                ""OrderID"": ""957819089"",
+                ""OrderType"": ""StopMarket"",
+                ""Routing"": ""Intelligent"",
+                ""Status"": ""FLL"",
+                ""StatusDescription"": ""Filled"",
+                ""UnbundledRouteFee"": ""0""
+            }";
+            brokerage.HandleTradeStationMessage(filledSnapshotJson);
+
+            Assert.AreEqual(10m, orderEvents.Sum(e => e.FillQuantity));
+            Assert.AreEqual(OrderStatus.Filled, order.Status);
+
+            // A later reconnect snapshot must not report the same fill again
+            TradeStationBrokerageStreamEventsTests.EnterReconnectSnapshotWindow(brokerage);
+            brokerage.HandleTradeStationMessage(filledSnapshotJson);
+
+            Assert.AreEqual(10m, orderEvents.Sum(e => e.FillQuantity));
+        }
+
+        // An order a soft-rejected cancel closed, which the brokerage reports as canceled, emits no second cancel
+        [Test]
+        public void ReconnectSnapshotSkipsCancelOfOrderClosedByCancelSoftReject()
+        {
+            var orderProvider = new OrderProvider();
+            var brokerage = CreateBrokerage(orderProvider, _ => throw new Exception("Not an open order."));
+            var order = CreateCancelPendingOrder(orderProvider, "957819089");
+
+            var orderEvents = new List<OrderEvent>();
+            brokerage.OrdersStatusChanged += (_, events) =>
+            {
+                orderEvents.AddRange(events);
+                events.ForEach(orderProvider.HandleOrderEvent);
+            };
+
+            brokerage.HandleTradeStationMessage(@"{""StreamStatus"": ""EndSnapshot""}");
+            Assert.IsTrue(brokerage.CancelOrder(order));
+            orderEvents.Clear();
+
+            TradeStationBrokerageStreamEventsTests.EnterReconnectSnapshotWindow(brokerage);
+            brokerage.HandleTradeStationMessage(@"{
+                ""AccountID"": ""SIM2784990M"",
+                ""ClosedDateTime"": ""2026-06-23T16:06:00Z"",
+                ""CommissionFee"": ""0"",
+                ""Currency"": ""USD"",
+                ""Duration"": ""DAY"",
+                ""Legs"": [
+                    {
+                        ""AssetType"": ""STOCK"",
+                        ""BuyOrSell"": ""Buy"",
+                        ""ExecQuantity"": ""0"",
+                        ""OpenOrClose"": ""Open"",
+                        ""QuantityOrdered"": ""10"",
+                        ""QuantityRemaining"": ""10"",
+                        ""Symbol"": ""AAPL""
+                    }
+                ],
+                ""OpenedDateTime"": ""2026-06-23T16:06:00Z"",
+                ""OrderID"": ""957819089"",
+                ""OrderType"": ""StopMarket"",
+                ""Routing"": ""Intelligent"",
+                ""Status"": ""OUT"",
+                ""StatusDescription"": ""UROut"",
+                ""UnbundledRouteFee"": ""0""
+            }");
+
+            Assert.IsEmpty(orderEvents);
+            Assert.AreEqual(OrderStatus.Canceled, order.Status);
+        }
+
+        // A cross-zero order whose first half filled before the cancel: the soft-rejected cancel drops the pending
+        // second half, so the fill a reconnect snapshot recovers closes the order instead of placing the second half
+        [Test]
+        public void ReconnectSnapshotFillOfCrossZeroOrderClosedByCancelSoftRejectDoesNotPlaceSecondHalf()
+        {
+            var orderProvider = new OrderProvider();
+            var brokerage = CreateBrokerage(orderProvider, _ => throw new Exception("Not an open order."));
+
+            var order = new MarketOrder(Symbols.AAPL, -10, DateTime.UtcNow) { Status = OrderStatus.Submitted };
+            orderProvider.Add(order);
+
+            // Holding +5: the sell of 10 places a sell of 5 and keeps the short 5 for when it fills
+            Assert.IsTrue(brokerage.PlaceCrossZeroOrder(order, 5m));
+            Assert.AreEqual(1, brokerage.CrossZeroPlacements.Count);
+            Assert.AreEqual(-5m, brokerage.CrossZeroPlacements[0].OrderQuantity);
+            order.Status = OrderStatus.CancelPending;
+
+            var orderEvents = new List<OrderEvent>();
+            brokerage.OrdersStatusChanged += (_, events) =>
+            {
+                orderEvents.AddRange(events);
+                events.ForEach(orderProvider.HandleOrderEvent);
+            };
+
+            brokerage.HandleTradeStationMessage(@"{""StreamStatus"": ""EndSnapshot""}");
+            TradeStationBrokerageStreamEventsTests.EnterReconnectSnapshotWindow(brokerage);
+
+            Assert.IsTrue(brokerage.CancelOrder(order));
+            Assert.AreEqual(OrderStatus.Canceled, order.Status);
+
+            brokerage.HandleTradeStationMessage(FilledSellOf5Json);
+
+            // The second half would be placed on a background task
+            Thread.Sleep(500);
+            Assert.AreEqual(1, brokerage.CrossZeroPlacements.Count, "The second half must not be placed after the cancel");
+            Assert.AreEqual(-5m, orderEvents.Sum(e => e.FillQuantity));
+            Assert.AreEqual(OrderStatus.Filled, orderEvents.Last().Status);
+            Assert.AreEqual(OrderStatus.Filled, order.Status);
+        }
+
+        // A fill the stream delivers before the cancel takes the stream lock closes the order: the soft-rejected
+        // cancel keeps it filled, and a reconnect snapshot doesn't report the fill again
+        [Test]
+        public void ReconnectSnapshotSkipsFillAppliedBeforeCancelSoftReject()
+        {
+            var orderProvider = new OrderProvider();
+            var brokerage = CreateBrokerage(orderProvider, _ => throw new Exception("Not an open order."));
+            var order = CreateCancelPendingOrder(orderProvider, "957819089");
+
+            var orderEvents = new List<OrderEvent>();
+            brokerage.OrdersStatusChanged += (_, events) =>
+            {
+                orderEvents.AddRange(events);
+                events.ForEach(orderProvider.HandleOrderEvent);
+            };
+
+            brokerage.HandleTradeStationMessage(@"{""StreamStatus"": ""EndSnapshot""}");
+            brokerage.HandleTradeStationMessage(FilledBuyOf10Json);
+            Assert.AreEqual(OrderStatus.Filled, order.Status);
+
+            Assert.IsTrue(brokerage.CancelOrder(order));
+            Assert.AreEqual(OrderStatus.Filled, order.Status);
+            Assert.That(orderEvents.Select(e => e.Status), Is.EqualTo(new[] { OrderStatus.Filled }));
+
+            TradeStationBrokerageStreamEventsTests.EnterReconnectSnapshotWindow(brokerage);
+            brokerage.HandleTradeStationMessage(FilledBuyOf10Json);
+
+            Assert.AreEqual(10m, orderEvents.Sum(e => e.FillQuantity));
+            Assert.AreEqual(OrderStatus.Filled, order.Status);
+        }
+
+        // A fill the live stream delivers after a soft-rejected cancel resolves the order: once Lean no longer keeps
+        // the order, a reconnect snapshot's fill of it is not imported as a new order
+        [Test]
+        public void ReconnectSnapshotSkipsFillOfEvictedOrderAfterLiveRecovery()
+        {
+            var orders = new List<Order>();
+            var orderProvider = new OrderProvider(orders);
+            var brokerage = CreateBrokerage(orderProvider, _ => throw new Exception("Not an open order."));
+            var order = CreateCancelPendingOrder(orderProvider, "957819089");
+
+            var orderEvents = new List<OrderEvent>();
+            var newBrokerageOrders = 0;
+            brokerage.OrdersStatusChanged += (_, events) =>
+            {
+                orderEvents.AddRange(events);
+                events.ForEach(orderProvider.HandleOrderEvent);
+            };
+            brokerage.NewBrokerageOrderNotification += (_, _) => newBrokerageOrders++;
+
+            brokerage.HandleTradeStationMessage(@"{""StreamStatus"": ""EndSnapshot""}");
+            Assert.IsTrue(brokerage.CancelOrder(order));
+            Assert.AreEqual(OrderStatus.Canceled, order.Status);
+
+            brokerage.HandleTradeStationMessage(FilledBuyOf10Json);
+            Assert.AreEqual(10m, orderEvents.Sum(e => e.FillQuantity));
+            Assert.AreEqual(OrderStatus.Filled, order.Status);
+
+            // Lean drops the order from its history
+            orders.Clear();
+
+            TradeStationBrokerageStreamEventsTests.EnterReconnectSnapshotWindow(brokerage);
+            brokerage.HandleTradeStationMessage(FilledBuyOf10Json);
+
+            Assert.AreEqual(0, newBrokerageOrders);
+            Assert.AreEqual(10m, orderEvents.Sum(e => e.FillQuantity));
+        }
+
+        // A cross-zero order whose first half filled live is still open for its second half: a cancel of the first
+        // half's brokerage order soft-rejected before the second half is placed leaves no fill to recover, so a
+        // reconnect snapshot doesn't report the first half's fill again
+        [Test]
+        public void ReconnectSnapshotSkipsCrossZeroFirstHalfFillAppliedBeforeCancelSoftReject()
+        {
+            var orderProvider = new OrderProvider();
+            var brokerage = CreateBrokerage(orderProvider, _ => throw new Exception("Not an open order."));
+            using var secondHalfGate = new ManualResetEventSlim(false);
+            brokerage.SecondHalfGate = secondHalfGate;
+
+            var order = new MarketOrder(Symbols.AAPL, -10, DateTime.UtcNow) { Status = OrderStatus.Submitted };
+            orderProvider.Add(order);
+            // Holding +5: the sell of 10 places a sell of 5 and keeps the short 5 for when it fills
+            Assert.IsTrue(brokerage.PlaceCrossZeroOrder(order, 5m));
+
+            var orderEvents = new List<OrderEvent>();
+            brokerage.OrdersStatusChanged += (_, events) =>
+            {
+                orderEvents.AddRange(events);
+                events.ForEach(orderProvider.HandleOrderEvent);
+            };
+
+            brokerage.HandleTradeStationMessage(@"{""StreamStatus"": ""EndSnapshot""}");
+            brokerage.HandleTradeStationMessage(FilledSellOf5Json);
+            Assert.AreEqual(OrderStatus.PartiallyFilled, order.Status);
+            Assert.AreEqual(-5m, orderEvents.Sum(e => e.FillQuantity));
+
+            // The second half is not placed yet: the cancel still targets the first half's brokerage order
+            order.Status = OrderStatus.CancelPending;
+            Assert.IsTrue(brokerage.CancelOrder(order));
+            Assert.AreEqual(OrderStatus.Canceled, order.Status);
+
+            secondHalfGate.Set();
+            Assert.IsTrue(SpinWait.SpinUntil(() => brokerage.CrossZeroPlacements.Count == 2, TimeSpan.FromSeconds(5)));
+
+            TradeStationBrokerageStreamEventsTests.EnterReconnectSnapshotWindow(brokerage);
+            brokerage.HandleTradeStationMessage(FilledSellOf5Json);
+
+            Assert.AreEqual(-5m, orderEvents.Sum(e => e.FillQuantity));
+            Assert.AreEqual(OrderStatus.Canceled, order.Status);
+        }
+
         [Test]
         public void UnexpectedCancelErrorIsReportedAsError()
         {
@@ -83,6 +348,62 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.That(message.Message, Is.EqualTo("Some other failure."));
             Assert.That(orderEvents, Is.Empty);
         }
+
+        private const string FilledBuyOf10Json = @"{
+            ""AccountID"": ""SIM2784990M"",
+            ""ClosedDateTime"": ""2026-06-23T16:06:00Z"",
+            ""CommissionFee"": ""1"",
+            ""Currency"": ""USD"",
+            ""Duration"": ""DAY"",
+            ""FilledPrice"": ""100"",
+            ""Legs"": [
+                {
+                    ""AssetType"": ""STOCK"",
+                    ""BuyOrSell"": ""Buy"",
+                    ""ExecQuantity"": ""10"",
+                    ""ExecutionPrice"": ""100"",
+                    ""OpenOrClose"": ""Open"",
+                    ""QuantityOrdered"": ""10"",
+                    ""QuantityRemaining"": ""0"",
+                    ""Symbol"": ""AAPL""
+                }
+            ],
+            ""OpenedDateTime"": ""2026-06-23T16:06:00Z"",
+            ""OrderID"": ""957819089"",
+            ""OrderType"": ""StopMarket"",
+            ""Routing"": ""Intelligent"",
+            ""Status"": ""FLL"",
+            ""StatusDescription"": ""Filled"",
+            ""UnbundledRouteFee"": ""0""
+        }";
+
+        private const string FilledSellOf5Json = @"{
+            ""AccountID"": ""SIM2784990M"",
+            ""ClosedDateTime"": ""2026-06-23T16:06:00Z"",
+            ""CommissionFee"": ""1"",
+            ""Currency"": ""USD"",
+            ""Duration"": ""DAY"",
+            ""FilledPrice"": ""100"",
+            ""Legs"": [
+                {
+                    ""AssetType"": ""STOCK"",
+                    ""BuyOrSell"": ""Sell"",
+                    ""ExecQuantity"": ""5"",
+                    ""ExecutionPrice"": ""100"",
+                    ""OpenOrClose"": ""Close"",
+                    ""QuantityOrdered"": ""5"",
+                    ""QuantityRemaining"": ""0"",
+                    ""Symbol"": ""AAPL""
+                }
+            ],
+            ""OpenedDateTime"": ""2026-06-23T16:06:00Z"",
+            ""OrderID"": ""957819089"",
+            ""OrderType"": ""Market"",
+            ""Routing"": ""Intelligent"",
+            ""Status"": ""FLL"",
+            ""StatusDescription"": ""Filled"",
+            ""UnbundledRouteFee"": ""0""
+        }";
 
         private static StopMarketOrder CreateCancelPendingOrder(OrderProvider orderProvider, string brokerageOrderId)
         {
@@ -119,6 +440,28 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             protected override bool CancelBrokerageOrder(string brokerageOrderId)
             {
                 return CancelOrderHandler != null ? CancelOrderHandler(brokerageOrderId) : base.CancelBrokerageOrder(brokerageOrderId);
+            }
+
+            public List<CrossZeroFirstOrderRequest> CrossZeroPlacements { get; } = new();
+
+            /// <summary>
+            /// Holds the placement of a cross-zero second half until set
+            /// </summary>
+            public ManualResetEventSlim SecondHalfGate { get; set; }
+
+            public bool? PlaceCrossZeroOrder(Order order, decimal holdingQuantity)
+            {
+                return TryCrossZeroPositionOrder(order, holdingQuantity);
+            }
+
+            protected override CrossZeroOrderResponse PlaceCrossZeroOrder(CrossZeroFirstOrderRequest crossZeroOrderRequest, bool isPlaceOrderWithLeanEvent)
+            {
+                if (!isPlaceOrderWithLeanEvent)
+                {
+                    SecondHalfGate?.Wait();
+                }
+                CrossZeroPlacements.Add(crossZeroOrderRequest);
+                return new CrossZeroOrderResponse(CrossZeroPlacements.Count == 1 ? "957819089" : "957819090", true);
             }
         }
     }
