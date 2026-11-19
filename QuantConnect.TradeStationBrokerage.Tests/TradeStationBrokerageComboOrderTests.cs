@@ -134,6 +134,67 @@ public class TradeStationBrokerageComboOrderTests
     }
 
     /// <summary>
+    /// A filled leg reopens when an accepted replace increases the combo quantity, so its further fills still reach Lean.
+    /// </summary>
+    [Test]
+    public void UpdateReopensFilledComboLegWhenQuantityIncreases()
+    {
+        var orderProvider = new OrderProvider();
+        var comboOrders = CreateComboLimitOrderGroup(orderProvider, limitPrice: 1.5m);
+
+        using var brokerage = new RecordingBrokerage(orderProvider);
+        brokerage.AnswerRequestsWith($@"{{ ""OrderID"": ""{BrokerageOrderId}"", ""Message"": ""Cancel/Replace order sent."" }}");
+        var fillQuantities = new Dictionary<int, decimal>();
+        brokerage.OrdersStatusChanged += (_, events) => events.ForEach(orderEvent =>
+        {
+            fillQuantities[orderEvent.OrderId] = fillQuantities.GetValueOrDefault(orderEvent.OrderId) + orderEvent.FillQuantity;
+            orderProvider.HandleOrderEvent(orderEvent);
+        });
+        brokerage.HandleTradeStationMessage(@"{ ""StreamStatus"": ""EndSnapshot"" }");
+
+        // The sold leg fills all 8 while the bought leg waits
+        brokerage.HandleTradeStationMessage(CreateComboMessage("FPR", "Partial Fill (Alive)", soldExecuted: 8, boughtExecuted: 0, quantity: 8));
+        Assert.AreEqual(OrderStatus.Filled, comboOrders[0].Status);
+
+        comboOrders[1].ApplyUpdateOrderRequest(new UpdateOrderRequest(DateTime.UtcNow, comboOrders[1].Id, new UpdateOrderFields { Quantity = 10 }));
+        Assert.IsTrue(brokerage.UpdateOrder(comboOrders[1]));
+        Assert.AreEqual(OrderStatus.UpdateSubmitted, comboOrders[0].Status);
+
+        brokerage.HandleTradeStationMessage(CreateComboMessage("FLL", "Filled", soldExecuted: 10, boughtExecuted: 10, quantity: 10));
+
+        Assert.AreEqual(-10m, fillQuantities[comboOrders[0].Id]);
+        Assert.AreEqual(10m, fillQuantities[comboOrders[1].Id]);
+        Assert.AreEqual(OrderStatus.Filled, comboOrders[0].Status);
+        Assert.AreEqual(OrderStatus.Filled, comboOrders[1].Status);
+    }
+
+    /// <summary>
+    /// Builds a stream message for the combo of <see cref="CreateComboLimitOrderGroup"/> with the cumulative executions of its legs.
+    /// </summary>
+    private static string CreateComboMessage(string status, string statusDescription, decimal soldExecuted, decimal boughtExecuted, decimal quantity)
+    {
+        return $$"""
+            {
+                "AccountID": "SIM2784990M",
+                "OrderID": "{{BrokerageOrderId}}",
+                "OrderType": "Limit",
+                "LimitPrice": "1.5",
+                "Status": "{{status}}",
+                "StatusDescription": "{{statusDescription}}",
+                "CommissionFee": "0",
+                "Legs": [
+                    { "AssetType": "STOCKOPTION", "BuyOrSell": "SellToOpen", "ExecQuantity": "{{soldExecuted}}", "ExecutionPrice": "3",
+                      "ExpirationDate": "2026-09-18T00:00:00Z", "QuantityOrdered": "{{quantity}}", "QuantityRemaining": "{{quantity - soldExecuted}}",
+                      "Symbol": "AAPL 260918C220" },
+                    { "AssetType": "STOCKOPTION", "BuyOrSell": "BuyToOpen", "ExecQuantity": "{{boughtExecuted}}", "ExecutionPrice": "1.5",
+                      "ExpirationDate": "2026-09-18T00:00:00Z", "QuantityOrdered": "{{quantity}}", "QuantityRemaining": "{{quantity - boughtExecuted}}",
+                      "Symbol": "AAPL 260918C230" }
+                ]
+            }
+            """;
+    }
+
+    /// <summary>
     /// Builds a two leg combo limit order group, registering every leg with the order provider the way Lean does.
     /// </summary>
     /// <param name="orderProvider">The order provider the legs are registered with.</param>
