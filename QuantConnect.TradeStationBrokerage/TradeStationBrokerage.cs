@@ -1026,9 +1026,7 @@ public partial class TradeStationBrokerage : Brokerage
         {
             try
             {
-                var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo(_priceMapper);
-                _tradeStationApiClient.ReplaceOrder(brokerageOrderId, order.Type, quantity, order.GetLimitPrice(_priceMapper), order.GetStopPrice(_priceMapper),
-                    trailingAmount, trailingAsPercentage).SynchronouslyAwaitTaskResult();
+                ReplaceBrokerageOrder(brokerageOrderId, order, quantity);
 
                 foreach (var groupOrder in orders)
                 {
@@ -1042,6 +1040,9 @@ public partial class TradeStationBrokerage : Brokerage
             }
             catch (Exception exception) when (_updateOrderSoftRejects.TryGetValue(exception.Message, out var softReject))
             {
+                // The order can no longer be replaced, so no replace frame is pending: a flag left by a replace with
+                // unchanged values, which gets no stream frame, would swallow the Out that closes the order
+                _updateSubmittedResponseResultByBrokerageID.TryRemove(brokerageOrderId, out _);
                 OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, softReject.Code, $"Failed to update Order: OrderId: {order.Id} (BrokerId: {brokerageOrderId}) for {order.Symbol}, {softReject.Reason}"));
             }
             catch (Exception exception) when (exception.Message.Contains("prior stop already triggered", StringComparison.InvariantCultureIgnoreCase))
@@ -1110,6 +1111,20 @@ public partial class TradeStationBrokerage : Brokerage
             }
         });
         return result;
+    }
+
+    /// <summary>
+    /// Sends the replace request for the given brokerage order id to TradeStation. Extracted as a seam so the
+    /// rejection handling in <see cref="UpdateOrder"/> can be unit tested without a live API connection.
+    /// </summary>
+    /// <param name="brokerageOrderId">The brokerage order id to replace.</param>
+    /// <param name="order">The Lean order holding the new prices.</param>
+    /// <param name="quantity">The new absolute quantity of the order.</param>
+    protected virtual void ReplaceBrokerageOrder(string brokerageOrderId, Order order, decimal quantity)
+    {
+        var (trailingAmount, trailingAsPercentage) = order.GetTrailingStopInfo(_priceMapper);
+        _tradeStationApiClient.ReplaceOrder(brokerageOrderId, order.Type, quantity, order.GetLimitPrice(_priceMapper), order.GetStopPrice(_priceMapper),
+            trailingAmount, trailingAsPercentage).SynchronouslyAwaitTaskResult();
     }
 
     /// <summary>
