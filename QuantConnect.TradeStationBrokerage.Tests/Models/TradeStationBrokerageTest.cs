@@ -65,6 +65,25 @@ public class TradeStationBrokerageTest : TradeStationBrokerage
     /// <param name="Last">Last traded price.</param>
     public record QuoteActualPrices(decimal Ask, decimal Bid, decimal Last);
 
+    /// <summary>
+    /// Whether the stream has delivered TradeStation's acknowledgement of a placed order.
+    /// </summary>
+    /// <param name="brokerageOrderId">The brokerage order id of the placed order.</param>
+    public bool IsOrderAcknowledged(string brokerageOrderId)
+    {
+        return !_skipWebSocketUpdatesForLeanOrders.ContainsKey(brokerageOrderId);
+    }
+
+    /// <summary>
+    /// Cancels the order at TradeStation directly, without going through <see cref="TradeStationBrokerage.CancelOrder"/>,
+    /// as a cancel made outside Lean would.
+    /// </summary>
+    /// <param name="brokerageOrderId">The brokerage order id to cancel.</param>
+    public void CancelOrderAtBrokerage(string brokerageOrderId)
+    {
+        _tradeStationApiClient.CancelOrder(brokerageOrderId).SynchronouslyAwaitTaskResult();
+    }
+
     public bool GetTradeStationOrderRouteIdByOrder(TradeStationOrderProperties tradeStationOrderProperties, IReadOnlyCollection<SecurityType> securityTypes, out string routeId)
     {
         routeId = default;

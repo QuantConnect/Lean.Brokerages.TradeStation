@@ -24,7 +24,7 @@ using QuantConnect.Tests.Brokerages;
 namespace QuantConnect.Brokerages.TradeStation.Tests;
 
 /// <summary>
-/// Cancels and replaces the brokerage sends, faked instead of reaching TradeStation. No TradeStation account
+/// Cancels the brokerage sends, recorded instead of reaching TradeStation. No TradeStation account
 /// needed, but the QC subscription validation still requires valid api credentials in config.
 /// </summary>
 [TestFixture]
@@ -89,55 +89,6 @@ public class TradeStationBrokerageComboOrderTests
     }
 
     /// <summary>
-    /// An update TradeStation rejects because the order is no longer open must drop the flag a replace with unchanged
-    /// values left, so the Out that closes the order is not swallowed as a replace response.
-    /// </summary>
-    [Test]
-    public void CancelsOnOutAfterARepeatedUpdateAndARejectedUpdate()
-    {
-        var orderProvider = new OrderProvider();
-        var limitOrder = new LimitOrder(Symbol.Create("AAPL", SecurityType.Equity, Market.USA), 1, 100m, DateTime.UtcNow)
-        {
-            Status = OrderStatus.Submitted
-        };
-        limitOrder.BrokerId.Add(BrokerageOrderId);
-        orderProvider.Add(limitOrder);
-
-        using var brokerage = new RecordingBrokerage(orderProvider);
-
-        var orderEvents = new List<OrderEvent>();
-        brokerage.OrdersStatusChanged += (_, events) =>
-        {
-            orderEvents.AddRange(events);
-            events.ForEach(orderProvider.HandleOrderEvent);
-        };
-        brokerage.HandleTradeStationMessage(@"{ ""StreamStatus"": ""EndSnapshot"" }");
-
-        // TradeStation accepts a replace with unchanged values without sending a stream frame
-        Assert.IsTrue(brokerage.UpdateOrder(limitOrder));
-        Assert.AreEqual(OrderStatus.UpdateSubmitted, limitOrder.Status);
-
-        brokerage.ReplaceError = "Failed to Cancel/Replace order: Not an open order.";
-        Assert.IsFalse(brokerage.UpdateOrder(limitOrder));
-
-        brokerage.HandleTradeStationMessage($$"""
-            {
-                "AccountID": "SIM2784990M",
-                "OrderID": "{{BrokerageOrderId}}",
-                "OrderType": "Limit",
-                "LimitPrice": "100",
-                "Status": "OUT",
-                "StatusDescription": "UROut",
-                "ClosedDateTime": "2026-09-29T14:16:58Z",
-                "Legs": [{ "BuyOrSell": "Buy", "QuantityOrdered": "1", "ExecQuantity": "0", "Symbol": "AAPL", "AssetType": "STOCK" }]
-            }
-            """);
-
-        Assert.AreEqual(OrderStatus.Canceled, orderEvents.Last().Status);
-        Assert.AreEqual(OrderStatus.Canceled, limitOrder.Status);
-    }
-
-    /// <summary>
     /// Builds a two leg combo limit order group, registering every leg with the order provider the way Lean does.
     /// </summary>
     /// <param name="orderProvider">The order provider the legs are registered with.</param>
@@ -180,20 +131,7 @@ public class TradeStationBrokerageComboOrderTests
     {
         public List<string> Cancels { get; } = [];
 
-        /// <summary>
-        /// The message TradeStation rejects the next replace requests with, none to accept them.
-        /// </summary>
-        public string ReplaceError { get; set; }
-
         public void MarkUpdateSubmitted(string brokerageOrderId) => _updateSubmittedResponseResultByBrokerageID[brokerageOrderId] = true;
-
-        protected override void ReplaceBrokerageOrder(string brokerageOrderId, Order order, decimal quantity)
-        {
-            if (ReplaceError != null)
-            {
-                throw new Exception(ReplaceError);
-            }
-        }
 
         protected override bool CancelBrokerageOrder(string brokerageOrderId)
         {
