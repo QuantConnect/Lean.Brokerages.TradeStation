@@ -63,7 +63,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// <summary>
     /// TradeStation api client implementation
     /// </summary>
-    private TradeStationApiClient _tradeStationApiClient;
+    private protected TradeStationApiClient _tradeStationApiClient;
 
     /// <summary>
     /// Provides the mapping between Lean symbols and brokerage specific symbols.
@@ -1042,6 +1042,9 @@ public partial class TradeStationBrokerage : Brokerage
             }
             catch (Exception exception) when (_updateOrderSoftRejects.TryGetValue(exception.Message, out var softReject))
             {
+                // The order can no longer be replaced, so no replace frame is pending: a flag left by a replace with
+                // unchanged values, which gets no stream frame, would swallow the Out that closes the order
+                _updateSubmittedResponseResultByBrokerageID.TryRemove(brokerageOrderId, out _);
                 OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, softReject.Code, $"Failed to update Order: OrderId: {order.Id} (BrokerId: {brokerageOrderId}) for {order.Symbol}, {softReject.Reason}"));
             }
             catch (Exception exception) when (exception.Message.Contains("prior stop already triggered", StringComparison.InvariantCultureIgnoreCase))

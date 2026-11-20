@@ -930,6 +930,52 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
         }
 
         [Test]
+        public void CancelsOnOutAfterARepeatedUpdateAndARejectedUpdate()
+        {
+            var symbol = Symbols.AAPL;
+            var lastPrice = _brokerage.GetPrice(symbol).Last;
+            // Far from the market, so the order stays open until canceled
+            var limitPrice = Math.Round(lastPrice * 0.8m, 2);
+            var limitOrder = new LimitOrder(symbol, 1, limitPrice, DateTime.UtcNow);
+            OrderProvider.Add(limitOrder);
+
+            var submittedResetEvent = new AutoResetEvent(false);
+            var cancelledResetEvent = new AutoResetEvent(false);
+            var messages = new List<BrokerageMessageEvent>();
+
+            Brokerage.Message += (_, brokerageMessage) => messages.Add(brokerageMessage);
+            Brokerage.OrdersStatusChanged += (_, orderEvents) =>
+            {
+                switch (orderEvents[0].Status)
+                {
+                    case OrderStatus.Submitted:
+                        submittedResetEvent.Set();
+                        break;
+                    case OrderStatus.Canceled:
+                        cancelledResetEvent.Set();
+                        break;
+                }
+            };
+
+            Assert.IsTrue(Brokerage.PlaceOrder(limitOrder), "Brokerage failed to place the order: " + limitOrder);
+            Assert.IsTrue(submittedResetEvent.WaitOne(TimeSpan.FromSeconds(5)), $"The brokerage doesn't return {OrderStatus.Submitted}");
+
+            // Let the placement's acknowledgement go by first, as it would consume the replace's flag
+            Assert.IsTrue(SpinWait.SpinUntil(() => _brokerage.IsOrderAcknowledged(limitOrder.BrokerId.Last()), TimeSpan.FromSeconds(5)),
+                "The brokerage doesn't acknowledge the order");
+
+            // A replace with unchanged values gets no stream frame
+            Assert.IsTrue(Brokerage.UpdateOrder(limitOrder), "Brokerage failed to update the order: " + limitOrder);
+
+            // Cancel outside Lean, then update before the Out is processed: TradeStation rejects it as not open
+            _brokerage.CancelOrderAtBrokerage(limitOrder.BrokerId.Last());
+            Assert.IsFalse(Brokerage.UpdateOrder(limitOrder), "Brokerage can not update an already canceled order: " + limitOrder);
+
+            Assert.IsTrue(cancelledResetEvent.WaitOne(TimeSpan.FromSeconds(10)), $"The brokerage doesn't return {OrderStatus.Canceled}");
+            Assert.That(messages.Select(m => m.Code), Does.Contain("UpdateNotOpenOrder"));
+        }
+
+        [Test]
         public void UpdateOrderWithInvalidOrderId()
         {
             var limitOrder = new LimitOrder(Symbols.AAPL, 1, 100m, DateTime.UtcNow);
