@@ -14,6 +14,7 @@
 */
 
 using System;
+using System.Linq;
 using System.Threading;
 using QuantConnect.Orders;
 using System.Threading.Tasks;
@@ -223,6 +224,17 @@ public static class TradeStationExtensions
             default:
                 throw new NotSupportedException($"The TradeStationTradeActionType '{buyOrSell}' is not supported. Please provide a valid trade action type.");
         }
+    }
+
+    /// <summary>
+    /// Gets the id of the latest brokerage order of the specified order: for a cross-zero order, the second half
+    /// once it is placed.
+    /// </summary>
+    /// <param name="order">The order to retrieve the brokerage order id from.</param>
+    /// <returns>The last brokerage order id of the order.</returns>
+    public static string GetLatestBrokerId(this Order order)
+    {
+        return order.BrokerId.Last();
     }
 
     /// <summary>

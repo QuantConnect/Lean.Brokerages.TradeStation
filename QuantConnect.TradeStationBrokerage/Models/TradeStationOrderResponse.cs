@@ -14,6 +14,7 @@
 */
 
 using System;
+using System.Linq;
 using Newtonsoft.Json;
 using System.Globalization;
 using System.Collections.Generic;
@@ -122,6 +123,11 @@ public readonly struct TradeStationOrder
     /// An array of legs associated with this order.
     /// </summary>
     public List<Leg> Legs { get; }
+
+    /// <summary>
+    /// The legs of this order, one per symbol: TradeStation sometimes repeats a leg.
+    /// </summary>
+    public IEnumerable<Leg> DistinctLegs => Legs.DistinctBy(x => x.Symbol);
 
     /// <summary>
     /// Allows you to specify when an order will be placed based on the price action of one or more symbols.
@@ -263,6 +269,11 @@ public readonly struct Leg
     public decimal ExecQuantity { get; }
 
     /// <summary>
+    /// Number of shares that have been executed, negative for a sell.
+    /// </summary>
+    public decimal SignedExecQuantity { get; }
+
+    /// <summary>
     /// In a partially filled order, this is the number of shares or contracts that were unfilled.
     /// </summary>
     public decimal QuantityRemaining { get; }
@@ -317,6 +328,7 @@ public readonly struct Leg
         OpenOrClose = openOrClose;
         QuantityOrdered = quantityOrdered;
         ExecQuantity = execQuantity;
+        SignedExecQuantity = buyOrSell.IsShort() ? decimal.Negate(execQuantity) : execQuantity;
         QuantityRemaining = quantityRemaining;
         BuyOrSell = buyOrSell;
         Symbol = symbol;
