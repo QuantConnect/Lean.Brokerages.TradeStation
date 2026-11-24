@@ -89,6 +89,26 @@ public class TradeStationBrokerageComboOrderTests
     }
 
     /// <summary>
+    /// A cancel TradeStation rejects because the order is gone closes only the legs still open: a filled leg stays filled.
+    /// </summary>
+    [Test]
+    public void CancelSoftRejectKeepsClosedComboLegs()
+    {
+        var orderProvider = new OrderProvider();
+        var comboOrders = CreateComboLimitOrderGroup(orderProvider, limitPrice: 1.5m);
+        comboOrders[0].Status = OrderStatus.Filled;
+        comboOrders[1].Status = OrderStatus.CancelPending;
+
+        using var brokerage = new RecordingBrokerage(orderProvider) { CancelException = new Exception("Invalid order ID.") };
+        brokerage.OrdersStatusChanged += (_, events) => events.ForEach(orderProvider.HandleOrderEvent);
+
+        Assert.IsTrue(brokerage.CancelOrder(comboOrders[1]));
+
+        Assert.AreEqual(OrderStatus.Filled, comboOrders[0].Status);
+        Assert.AreEqual(OrderStatus.Canceled, comboOrders[1].Status);
+    }
+
+    /// <summary>
     /// Builds a two leg combo limit order group, registering every leg with the order provider the way Lean does.
     /// </summary>
     /// <param name="orderProvider">The order provider the legs are registered with.</param>
@@ -131,11 +151,17 @@ public class TradeStationBrokerageComboOrderTests
     {
         public List<string> Cancels { get; } = [];
 
+        public Exception CancelException { get; init; }
+
         public void MarkUpdateSubmitted(string brokerageOrderId) => _updateSubmittedResponseResultByBrokerageID[brokerageOrderId] = true;
 
         protected override bool CancelBrokerageOrder(string brokerageOrderId)
         {
             Cancels.Add(brokerageOrderId);
+            if (CancelException != null)
+            {
+                throw CancelException;
+            }
             return true;
         }
     }
