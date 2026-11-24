@@ -944,12 +944,13 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             }}";
             var handler = new TestHttpMessageHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(ordersJson) }));
             using var httpClient = new HttpClientRetryWrapper("https://api.test/", handler, maxRetries: 1, ctsAttemptTimeout: TimeSpan.FromSeconds(10), backOffDelay: TimeSpan.Zero);
-            // Dummy credentials: construction does not authenticate, and the orders request goes to the fake handler
-            var brokerage = new TradeStationBrokerageTest("clientId", "clientSecret", "https://sim-api.tradestation.com", string.Empty,
-                string.Empty, "refreshToken", "Margin", new OrderProvider(), null);
-            typeof(TradeStationBrokerage)
-                .GetField("_tradeStationApiClient", BindingFlags.NonPublic | BindingFlags.Instance)
-                .SetValue(brokerage, new TradeStationApiClient(httpClient, "123", messageReceived: null));
+            // The parameterless constructor skips the subscription validation; set only what reading the open orders needs
+            var brokerage = new TradeStationBrokerage();
+            void SetField(string name, object value) =>
+                typeof(TradeStationBrokerage).GetField(name, BindingFlags.NonPublic | BindingFlags.Instance).SetValue(brokerage, value);
+            SetField("_tradeStationApiClient", new TradeStationApiClient(httpClient, "123", messageReceived: null));
+            SetField("_symbolMapper", new TradeStationSymbolMapper());
+            SetField("_priceMapper", new PriceMapper());
 
             var order = (TrailingStopOrder)brokerage.GetOpenOrders().Single();
 
