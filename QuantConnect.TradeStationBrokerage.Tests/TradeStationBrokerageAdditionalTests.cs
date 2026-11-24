@@ -16,6 +16,9 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Reflection;
 using Newtonsoft.Json;
 using NUnit.Framework;
 using Newtonsoft.Json.Linq;
@@ -905,6 +908,55 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             // Same conversion applied when an existing brokerage order is turned into a Lean order
             var leanAmount = brokerageAsPercentage.Value ? brokerageAmount.Value : priceMapper.GetLeanPrice(symbol, brokerageAmount.Value);
             Assert.AreEqual(trailingAmount, leanAmount);
+        }
+
+        // ZC has a price magnifier of 100: brokerage prices and absolute amounts are divided by it, percentages are not
+        [TestCase("ZCH27", "FUTURE", "440", @"{""Amount"":""5""}", 4.40, 0.05, false)]
+        [TestCase("ZCH27", "FUTURE", "440", @"{""Percent"":""1.5""}", 4.40, 0.015, true)]
+        // E7 has a price magnifier of 1
+        [TestCase("E7H27", "FUTURE", "1.1550", @"{""Amount"":""0.0010""}", 1.1550, 0.0010, false)]
+        [TestCase("E7H27", "FUTURE", "1.1550", @"{""Percent"":""1.5""}", 1.1550, 0.015, true)]
+        [TestCase("AAPL", "STOCK", "195.50", @"{""Amount"":""1.25""}", 195.50, 1.25, false)]
+        [TestCase("AAPL", "STOCK", "195.50", @"{""Percent"":""1.5""}", 195.50, 0.015, true)]
+        public void GetOpenOrdersKeepsTrailingStopPrice(string brokerageSymbol, string assetType, string stopPrice, string trailingStop,
+            decimal expectedStopPrice, decimal expectedTrailingAmount, bool expectedTrailingAsPercentage)
+        {
+            var ordersJson = $@"{{
+                ""Orders"": [{{
+                    ""AccountID"": ""123"",
+                    ""Duration"": ""GTC"",
+                    ""Legs"": [{{
+                        ""AssetType"": ""{assetType}"",
+                        ""BuyOrSell"": ""Sell"",
+                        ""ExpirationDate"": ""2027-03-12T00:00:00Z"",
+                        ""OpenOrClose"": ""Close"",
+                        ""QuantityOrdered"": ""1"",
+                        ""Symbol"": ""{brokerageSymbol}""
+                    }}],
+                    ""OpenedDateTime"": ""2026-11-24T15:00:00Z"",
+                    ""OrderID"": ""958800001"",
+                    ""OrderType"": ""StopMarket"",
+                    ""Status"": ""ACK"",
+                    ""StopPrice"": ""{stopPrice}"",
+                    ""TrailingStop"": {trailingStop}
+                }}],
+                ""Errors"": []
+            }}";
+            var handler = new TestHttpMessageHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(ordersJson) }));
+            using var httpClient = new HttpClientRetryWrapper("https://api.test/", handler, maxRetries: 1, ctsAttemptTimeout: TimeSpan.FromSeconds(10), backOffDelay: TimeSpan.Zero);
+            // Dummy credentials: construction does not authenticate, and the orders request goes to the fake handler
+            var brokerage = new TradeStationBrokerageTest("clientId", "clientSecret", "https://sim-api.tradestation.com", string.Empty,
+                string.Empty, "refreshToken", "Margin", new OrderProvider(), null);
+            typeof(TradeStationBrokerage)
+                .GetField("_tradeStationApiClient", BindingFlags.NonPublic | BindingFlags.Instance)
+                .SetValue(brokerage, new TradeStationApiClient(httpClient, "123", messageReceived: null));
+
+            var order = (TrailingStopOrder)brokerage.GetOpenOrders().Single();
+
+            Assert.AreEqual(expectedStopPrice, order.StopPrice);
+            Assert.AreEqual(expectedTrailingAmount, order.TrailingAmount);
+            Assert.AreEqual(expectedTrailingAsPercentage, order.TrailingAsPercentage);
+            Assert.AreEqual(-1, order.Quantity);
         }
 
         [Test]

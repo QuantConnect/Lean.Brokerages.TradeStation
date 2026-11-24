@@ -1198,6 +1198,8 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.AreEqual(localOrder.Direction, openOrder.Direction);
             Assert.AreEqual(localOrder.TrailingAmount, openOrder.TrailingAmount);
             Assert.AreEqual(localOrder.TrailingAsPercentage, openOrder.TrailingAsPercentage);
+            // TradeStation trails its own stop from the market price, so it can differ from the one Lean computed
+            Assert.Greater(openOrder.StopPrice, 0m);
 
             // Test update:
             var order = OrderProvider.GetOrderById(1);

@@ -1839,7 +1839,8 @@ public partial class TradeStationBrokerage : Brokerage
                 if (order.TrailingStop.TryGetValue(out var trailingAmount, out var trailingAsPercentage))
                 {
                     var leanTrailingAmount = trailingAsPercentage ? trailingAmount : _priceMapper.GetLeanPrice(leanSymbol, trailingAmount);
-                    leanOrder = new TrailingStopOrder(leanSymbol, orderQuantity, leanTrailingAmount, trailingAsPercentage, order.OpenedDateTime, properties: orderProperties);
+                    leanOrder = new TrailingStopOrder(leanSymbol, orderQuantity, _priceMapper.GetLeanPrice(leanSymbol, order.StopPrice), leanTrailingAmount, trailingAsPercentage,
+                        order.OpenedDateTime, properties: orderProperties);
                 }
                 else
                 {
