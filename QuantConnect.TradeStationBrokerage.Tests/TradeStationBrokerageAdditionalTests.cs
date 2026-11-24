@@ -18,6 +18,7 @@ using System.IO;
 using System.Linq;
 using Newtonsoft.Json;
 using NUnit.Framework;
+using Newtonsoft.Json.Linq;
 using System.Threading;
 using QuantConnect.Data;
 using QuantConnect.Tests;
@@ -955,6 +956,101 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.That(res.ExpiresIn, Is.InRange(expectedExpiryMin, expectedExpiryMax));
 
             Assert.IsFalse(res.IsExpired);
+        }
+
+        [Test, Explicit("Buys 1 AAPL share on the TradeStation sim account, then sells it back")]
+        public async Task CancelOfFilledOrderRecoversFillFromReconnectSnapshot()
+        {
+            var orderProvider = new OrderProvider();
+            var securityProvider = new SecurityProvider();
+            // The brokerage doesn't open the order stream, so it misses the fill, as while the stream is down
+            using var brokerage = TestSetup.CreateBrokerage(orderProvider, securityProvider);
+            var apiClient = CreateTradeStationApiClient();
+
+            var orderEvents = new List<OrderEvent>();
+            brokerage.OrdersStatusChanged += (_, events) =>
+            {
+                orderEvents.AddRange(events);
+                events.ForEach(orderProvider.HandleOrderEvent);
+            };
+            var messages = new List<BrokerageMessageEvent>();
+            brokerage.Message += (_, message) => messages.Add(message);
+
+            // The first snapshot is done and the stream reconnects: the frames fed later are reconnect snapshot frames
+            brokerage.HandleTradeStationMessage(@"{""StreamStatus"": ""EndSnapshot""}");
+            TradeStationBrokerageStreamEventsTests.EnterReconnectSnapshotWindow(brokerage);
+
+            // A buy limit above the ask fills at once, also outside regular trading hours
+            var price = brokerage.GetPrice(Symbols.AAPL);
+            var order = new LimitOrder(Symbols.AAPL, 1, Math.Round(price.Ask * 1.005m, 2), DateTime.UtcNow,
+                properties: new TradeStationOrderProperties { OutsideRegularTradingHours = true });
+            orderProvider.Add(order);
+            Assert.IsTrue(brokerage.PlaceOrder(order));
+            var brokerageOrderId = order.BrokerId.Single();
+
+            if (await ReadFilledOrderFrame(apiClient, brokerageOrderId) == null)
+            {
+                brokerage.CancelOrder(order);
+                Assert.Fail("TradeStation did not fill the order");
+            }
+
+            try
+            {
+                Assert.AreEqual(0m, orderEvents.Sum(e => e.FillQuantity));
+
+                order.Status = OrderStatus.CancelPending;
+                Assert.IsTrue(brokerage.CancelOrder(order));
+                Assert.That(messages.Select(m => m.Code), Does.Contain("CancelNotOpenOrder"));
+                Assert.AreEqual(OrderStatus.Canceled, order.Status);
+
+                // The order stream after the reconnect sends the filled order again
+                var snapshotFrame = await ReadFilledOrderFrame(apiClient, brokerageOrderId);
+                Assert.IsNotNull(snapshotFrame, "The order stream did not send the filled order");
+                Log.Trace($"{nameof(CancelOfFilledOrderRecoversFillFromReconnectSnapshot)}: {snapshotFrame}");
+                brokerage.HandleTradeStationMessage(snapshotFrame);
+
+                Assert.AreEqual(1m, orderEvents.Sum(e => e.FillQuantity));
+                Assert.AreEqual(OrderStatus.Filled, order.Status);
+
+                // A later reconnect doesn't report the fill again
+                TradeStationBrokerageStreamEventsTests.EnterReconnectSnapshotWindow(brokerage);
+                brokerage.HandleTradeStationMessage(snapshotFrame);
+                Assert.AreEqual(1m, orderEvents.Sum(e => e.FillQuantity));
+            }
+            finally
+            {
+                // Sell the share back: with a holding of 1 the sell closes the position instead of opening a short one
+                securityProvider.GetSecurity(Symbols.AAPL).Holdings.SetHoldings(price.Bid, 1);
+                var sellOrder = new LimitOrder(Symbols.AAPL, -1, Math.Round(price.Bid * 0.995m, 2), DateTime.UtcNow,
+                    properties: new TradeStationOrderProperties { OutsideRegularTradingHours = true });
+                orderProvider.Add(sellOrder);
+                Assert.IsTrue(brokerage.PlaceOrder(sellOrder));
+                Assert.IsNotNull(await ReadFilledOrderFrame(apiClient, sellOrder.BrokerId.Single()), "TradeStation did not fill the sell back");
+            }
+        }
+
+        /// <summary>
+        /// Reads the order stream until TradeStation reports the order as filled
+        /// </summary>
+        /// <returns>The frame of the filled order, or null if none came within a minute</returns>
+        private static async Task<string> ReadFilledOrderFrame(TradeStationApiClient apiClient, string brokerageOrderId)
+        {
+            using var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+            try
+            {
+                await foreach (var json in apiClient.StreamOrders(cancellationTokenSource.Token))
+                {
+                    var frame = JObject.Parse(json);
+                    if (frame["OrderID"]?.ToString() == brokerageOrderId && frame["Status"]?.ToString() == "FLL")
+                    {
+                        return json;
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            return null;
         }
 
         public static TradeStationApiClient CreateTradeStationApiClient()
