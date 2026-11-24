@@ -1095,18 +1095,12 @@ public partial class TradeStationBrokerage : Brokerage
                 // The order is no longer active at the brokerage: close the whole group so the transaction
                 // handler stops retrying the cancel (a false return would loop in CancelPending forever)
                 order.TryGetGroupOrders(OrderProvider.GetOrderById, out var groupOrders);
-                foreach (var groupOrder in groupOrders)
+                foreach (var groupOrder in groupOrders.Where(o => o.Status.IsOpen()))
                 {
-                    // A fill the stream delivered before this cancel took the stream lock already closed the order
-                    if ((OrderProvider.GetOrderById(groupOrder.Id) ?? groupOrder).Status.IsClosed())
-                    {
-                        continue;
-                    }
                     var cancelEvent = new OrderEvent(groupOrder, DateTime.UtcNow, OrderFee.Zero, softReject.Reason)
                     {
                         Status = OrderStatus.Canceled
                     };
-                    // Drops the pending second half of a cross-zero order, so a fill recovered later doesn't place it
                     TryHandleRemainingCrossZeroOrder(groupOrder, cancelEvent);
                     OnOrderEvent(cancelEvent);
                 }
@@ -1598,6 +1592,7 @@ public partial class TradeStationBrokerage : Brokerage
             }
 
             var brokerageFilledQuantity = leg.SignedExecQuantity;
+            // CrossZero: the order's latest brokerage id is the second part
             if (leanOrder.BrokerId.Count > 1)
             {
                 if (leanOrder.GetLatestBrokerId() != brokerageOrder.OrderID)
@@ -1605,8 +1600,7 @@ public partial class TradeStationBrokerage : Brokerage
                     // CrossZero the first part: Lean already has its fill
                     return false;
                 }
-                // CrossZero the second part filled: TradeStation filled the whole order. The order has the second
-                // part's id before Lean maps it as a cross-zero order, so the id tells the parts apart.
+                // CrossZero the second part filled: TradeStation filled the whole order
                 brokerageFilledQuantity = leanOrder.Quantity;
             }
             if (ticket.QuantityFilled != brokerageFilledQuantity)
