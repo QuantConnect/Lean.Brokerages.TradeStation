@@ -128,18 +128,6 @@ public partial class TradeStationBrokerage : Brokerage
     private protected ConcurrentDictionary<string, bool> _skipWebSocketUpdatesForLeanOrders = [];
 
     /// <summary>
-    /// Brokerage order IDs whose cancel TradeStation soft-rejected, closing the Lean orders as canceled without
-    /// knowing their executions. A reconnect snapshot still reports the fill of these orders.
-    /// </summary>
-    private readonly ConcurrentDictionary<string, bool> _cancelSoftRejectedBrokerageIds = new();
-
-    /// <summary>
-    /// Brokerage order IDs of cross-zero first halves whose fill Lean already applied while the Lean order stays
-    /// open for the second half. A soft-rejected cancel of these IDs has no executions left to recover.
-    /// </summary>
-    private readonly ConcurrentDictionary<string, bool> _filledCrossZeroFirstHalfBrokerageIds = new();
-
-    /// <summary>
     /// Whether the warning about canceling a member of an order group was already sent
     /// </summary>
     private bool _contingentOrderCancelWarningSent;
@@ -1014,7 +1002,7 @@ public partial class TradeStationBrokerage : Brokerage
 
         // Always use the first order in the group, as combo orders determine direction based on the first order's details.
         order = orders.First();
-        var brokerageOrderId = order.BrokerId.Last();
+        var brokerageOrderId = order.GetLatestBrokerId();
 
         var quantity = default(decimal);
         if (order.GroupOrderManager == null)
@@ -1079,7 +1067,7 @@ public partial class TradeStationBrokerage : Brokerage
     /// <returns>True if the request was made for the order to be canceled, false otherwise</returns>
     public override bool CancelOrder(Order order)
     {
-        var brokerageOrderId = order.BrokerId.Last();
+        var brokerageOrderId = order.GetLatestBrokerId();
 
         var result = default(bool);
         _messageHandler.WithLockedStream(() =>
@@ -1114,18 +1102,6 @@ public partial class TradeStationBrokerage : Brokerage
                     {
                         continue;
                     }
-                    // Closed as canceled without knowing its executions: a reconnect snapshot may still report its fill,
-                    // unless the brokerage order is a cross-zero first half whose fill Lean already applied
-                    var executionsApplied = _filledCrossZeroFirstHalfBrokerageIds.TryRemove(brokerageOrderId, out _);
-                    foreach (var brokerId in groupOrder.BrokerId)
-                    {
-                        _filledCrossZeroFirstHalfBrokerageIds.TryRemove(brokerId, out _);
-                    }
-                    if (!executionsApplied)
-                    {
-                        _cancelSoftRejectedBrokerageIds[brokerageOrderId] = true;
-                    }
-
                     var cancelEvent = new OrderEvent(groupOrder, DateTime.UtcNow, OrderFee.Zero, softReject.Reason)
                     {
                         Status = OrderStatus.Canceled
@@ -1338,12 +1314,9 @@ public partial class TradeStationBrokerage : Brokerage
                     var knownLeanOrders = OrderProvider.GetOrdersByBrokerageId(brokerageOrder.OrderID);
                     if (knownLeanOrders == null || knownLeanOrders.Count == 0)
                     {
-                        _cancelSoftRejectedBrokerageIds.TryRemove(brokerageOrder.OrderID, out _);
                         return;
                     }
-                    if (knownLeanOrders.All(o => o.Status.IsClosed())
-                        && (brokerageOrder.Status is not (TradeStationOrderStatusType.Fll or TradeStationOrderStatusType.Brf)
-                            || !_cancelSoftRejectedBrokerageIds.TryRemove(brokerageOrder.OrderID, out _)))
+                    if (knownLeanOrders.Any(o => o.Status.IsOpen()) == false && !IsCanceledInLeanButFilledAtBrokerage(brokerageOrder, knownLeanOrders))
                     {
                         return;
                     }
@@ -1408,12 +1381,6 @@ public partial class TradeStationBrokerage : Brokerage
                     default:
                         Log.Trace($"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}.TradeStationStreamStatus: {json}");
                         return;
-                }
-
-                // A terminal frame resolves the executions of an order a soft-rejected cancel closed
-                if (globalLeanOrderStatus.IsClosed())
-                {
-                    _cancelSoftRejectedBrokerageIds.TryRemove(brokerageOrder.OrderID, out _);
                 }
 
                 var leanOrders = new List<Order>();
@@ -1481,7 +1448,7 @@ public partial class TradeStationBrokerage : Brokerage
                 }
 
                 var sendFeesOnce = default(bool);
-                foreach (var leg in brokerageOrder.Legs.DistinctBy(x => x.Symbol))
+                foreach (var leg in brokerageOrder.DistinctLegs)
                 {
                     var legOrderStatus = globalLeanOrderStatus;
                     // Manually update the order status to 'Filled' because one of the combo order legs is fully filled.
@@ -1491,33 +1458,10 @@ public partial class TradeStationBrokerage : Brokerage
                         legOrderStatus = OrderStatus.Filled;
                     }
 
-                    Order leanOrder;
-                    if (leanOrders.Count == 1)
+                    var leanOrder = GetLeanOrderByLeg(leg, leanOrders, brokerageOrder.OrderID);
+                    if (leanOrder == null)
                     {
-                        // If there is only one order, use it directly
-                        leanOrder = leanOrders[0];
-                    }
-                    else
-                    {
-                        // If there are multiple orders, find the one that matches the leg's symbol
-                        if (!_symbolMapper.TryGetLeanSymbol(leg.Symbol, leg.AssetType, leg.ExpirationDate, out var leanSymbol))
-                        {
-                            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}: " +
-                                $"Failed to map a Lean Symbol using the following details:: {leg} "));
-                            return;
-                        }
-
-                        // Ensure there is an order with the specific symbol in leanOrders.
-                        leanOrder = leanOrders.FirstOrDefault(order => order.Symbol == leanSymbol);
-
-                        if (leanOrder == null)
-                        {
-                            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"Error in {nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}: " +
-                                $"Could not find order with symbol '{leanSymbol}' in leanOrders. " +
-                                $"Brokerage Order ID: {brokerageOrder.OrderID}. Leg details - {leg}" +
-                                $"Please verify that the order was correctly added to leanOrders."));
-                            return;
-                        }
+                        return;
                     }
 
                     // TradeStation may occasionally send duplicate event messages where the only difference is the order of the legs.
@@ -1534,7 +1478,7 @@ public partial class TradeStationBrokerage : Brokerage
 
                     // TradeStation sends the accumulative filled quantity but we need the partial amount for our event
                     _orderIdToFillQuantity.TryGetValue(leanOrder.Id, out var previousExecutionAmount);
-                    var accumulativeFilledQuantity = _orderIdToFillQuantity[leanOrder.Id] = leg.BuyOrSell.IsShort() ? decimal.Negate(leg.ExecQuantity) : leg.ExecQuantity;
+                    var accumulativeFilledQuantity = _orderIdToFillQuantity[leanOrder.Id] = leg.SignedExecQuantity;
 
                     if (globalLeanOrderStatus.IsClosed())
                     {
@@ -1572,21 +1516,9 @@ public partial class TradeStationBrokerage : Brokerage
                     }
 
                     // if we filled the order and have another contingent order waiting, submit it
-                    if (TryHandleRemainingCrossZeroOrder(leanOrder, orderEvent))
-                    {
-                        // The first half filled, the Lean order stays open for the second half
-                        _filledCrossZeroFirstHalfBrokerageIds[brokerageOrder.OrderID] = true;
-                    }
-                    else
+                    if (!TryHandleRemainingCrossZeroOrder(leanOrder, orderEvent))
                     {
                         OnOrderEvent(orderEvent);
-                        if (orderEvent.Status.IsClosed())
-                        {
-                            foreach (var brokerId in leanOrder.BrokerId)
-                            {
-                                _filledCrossZeroFirstHalfBrokerageIds.TryRemove(brokerId, out _);
-                            }
-                        }
 
                         // contingent orders: the orders sent by the one which filled are no longer held
                         OnContingentOrdersTriggered([orderEvent], OrderProvider);
@@ -1636,6 +1568,88 @@ public partial class TradeStationBrokerage : Brokerage
             Log.Error(ex, $"Raw json: {json}");
             throw;
         }
+    }
+
+    /// <summary>
+    /// Whether a reconnect snapshot frame reports a fill Lean doesn't have: a soft-rejected cancel closed the order
+    /// as canceled, but TradeStation filled it
+    /// </summary>
+    /// <param name="brokerageOrder">The snapshot frame</param>
+    /// <param name="leanOrders">The Lean orders of the frame's brokerage order</param>
+    private bool IsCanceledInLeanButFilledAtBrokerage(TradeStationOrder brokerageOrder, List<Order> leanOrders)
+    {
+        if (brokerageOrder.Status is not (TradeStationOrderStatusType.Fll or TradeStationOrderStatusType.Brf))
+        {
+            return false;
+        }
+
+        var isLeanMissedFilledEvent = false;
+        foreach (var leg in brokerageOrder.DistinctLegs)
+        {
+            var leanOrder = GetLeanOrderByLeg(leg, leanOrders, brokerageOrder.OrderID);
+            if (leanOrder == null)
+            {
+                return false;
+            }
+            var ticket = OrderProvider.GetOrderTicket(leanOrder.Id);
+            if (leanOrder.Status != OrderStatus.Canceled || ticket == null)
+            {
+                return false;
+            }
+
+            var brokerageFilledQuantity = leg.SignedExecQuantity;
+            if (LeanOrderByZeroCrossBrokerageOrderId.ContainsKey(brokerageOrder.OrderID))
+            {
+                // CrossZero the second part filled: TradeStation filled the whole order.
+                brokerageFilledQuantity = leanOrder.Quantity;
+            }
+            else if (leanOrder.BrokerId.Count > 1)
+            {
+                // CrossZero the first part: Lean already has its fill
+                return false;
+            }
+            if (ticket.QuantityFilled != brokerageFilledQuantity)
+            {
+                isLeanMissedFilledEvent = true;
+            }
+        }
+        return isLeanMissedFilledEvent;
+    }
+
+    /// <summary>
+    /// Finds the Lean order of a leg of a TradeStation order: the only order, or the one with the leg's symbol
+    /// </summary>
+    /// <param name="leg">The leg of the TradeStation order</param>
+    /// <param name="leanOrders">The Lean orders of the TradeStation order</param>
+    /// <param name="brokerageOrderId">The TradeStation order id, for the error message</param>
+    /// <returns>The Lean order of the leg, or null after an error message</returns>
+    private Order GetLeanOrderByLeg(Models.Leg leg, List<Order> leanOrders, string brokerageOrderId)
+    {
+        if (leanOrders.Count == 1)
+        {
+            // If there is only one order, use it directly
+            return leanOrders[0];
+        }
+
+        // If there are multiple orders, find the one that matches the leg's symbol
+        if (!_symbolMapper.TryGetLeanSymbol(leg.Symbol, leg.AssetType, leg.ExpirationDate, out var leanSymbol))
+        {
+            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"{nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}: " +
+                $"Failed to map a Lean Symbol using the following details:: {leg} "));
+            return null;
+        }
+
+        // Ensure there is an order with the specific symbol in leanOrders.
+        var leanOrder = leanOrders.FirstOrDefault(order => order.Symbol == leanSymbol);
+
+        if (leanOrder == null)
+        {
+            OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Error, -1, $"Error in {nameof(TradeStationBrokerage)}.{nameof(HandleTradeStationMessage)}: " +
+                $"Could not find order with symbol '{leanSymbol}' in leanOrders. " +
+                $"Brokerage Order ID: {brokerageOrderId}. Leg details - {leg}" +
+                $"Please verify that the order was correctly added to leanOrders."));
+        }
+        return leanOrder;
     }
 
     /// <summary>
