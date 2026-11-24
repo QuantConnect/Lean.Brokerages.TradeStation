@@ -1598,15 +1598,16 @@ public partial class TradeStationBrokerage : Brokerage
             }
 
             var brokerageFilledQuantity = leg.SignedExecQuantity;
-            if (LeanOrderByZeroCrossBrokerageOrderId.ContainsKey(brokerageOrder.OrderID))
+            if (leanOrder.BrokerId.Count > 1)
             {
-                // CrossZero the second part filled: TradeStation filled the whole order.
+                if (leanOrder.GetLatestBrokerId() != brokerageOrder.OrderID)
+                {
+                    // CrossZero the first part: Lean already has its fill
+                    return false;
+                }
+                // CrossZero the second part filled: TradeStation filled the whole order. The order has the second
+                // part's id before Lean maps it as a cross-zero order, so the id tells the parts apart.
                 brokerageFilledQuantity = leanOrder.Quantity;
-            }
-            else if (leanOrder.BrokerId.Count > 1)
-            {
-                // CrossZero the first part: Lean already has its fill
-                return false;
             }
             if (ticket.QuantityFilled != brokerageFilledQuantity)
             {

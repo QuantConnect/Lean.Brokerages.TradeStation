@@ -16,6 +16,7 @@
 using System;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using QuantConnect.Tests;
 using QuantConnect.Orders;
@@ -371,6 +372,56 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
 
             brokerage.HandleTradeStationMessage(FilledSellOf5Json);
             brokerage.HandleTradeStationMessage(FilledSellShortOf5Json);
+
+            Assert.AreEqual(-10m, orderEvents.Sum(e => e.FillQuantity));
+            Assert.AreEqual(OrderStatus.Filled, order.Status);
+        }
+
+        // As above, but the reconnect snapshot arrives after the order has the second half's brokerage order id and
+        // before Lean maps that id to the cross-zero order: the second half's fill is still recovered
+        [Test]
+        public void ReconnectSnapshotRecoversSecondHalfFillOfCrossZeroOrderBeforeItsIdIsMapped()
+        {
+            var orderProvider = new OrderProvider();
+            var brokerage = CreateBrokerage(orderProvider, _ => throw new Exception("Not an open order."));
+
+            var order = new MarketOrder(Symbols.AAPL, -10, DateTime.UtcNow) { Status = OrderStatus.Submitted };
+            orderProvider.Add(order);
+            Assert.IsTrue(brokerage.PlaceCrossZeroOrder(order, 5m));
+
+            var orderEvents = new List<OrderEvent>();
+            brokerage.OrdersStatusChanged += (_, events) =>
+            {
+                orderEvents.AddRange(events);
+                events.ForEach(orderProvider.HandleOrderEvent);
+            };
+            // Hold Lean between giving the order the second half's id and mapping that id to the cross-zero order
+            using var idMappingGate = new ManualResetEventSlim(false);
+            brokerage.OrderIdChanged += (_, e) =>
+            {
+                order.BrokerId.Add(e.BrokerId.Last());
+                idMappingGate.Wait();
+            };
+
+            brokerage.HandleTradeStationMessage(@"{""StreamStatus"": ""EndSnapshot""}");
+            brokerage.HandleTradeStationMessage(FilledSellOf5Json);
+            Assert.IsTrue(SpinWait.SpinUntil(() => order.BrokerId.Count == 2, TimeSpan.FromSeconds(5)));
+            Assert.AreEqual(-5m, orderEvents.Sum(e => e.FillQuantity));
+
+            TradeStationBrokerageStreamEventsTests.EnterReconnectSnapshotWindow(brokerage);
+            order.Status = OrderStatus.CancelPending;
+            Assert.IsTrue(brokerage.CancelOrder(order));
+            Assert.AreEqual(OrderStatus.Canceled, order.Status);
+
+            var snapshot = Task.Run(() =>
+            {
+                brokerage.HandleTradeStationMessage(FilledSellOf5Json);
+                brokerage.HandleTradeStationMessage(FilledSellShortOf5Json);
+            });
+            // The second half's frame waits for Lean to map its id instead of being skipped
+            Assert.IsFalse(snapshot.Wait(TimeSpan.FromMilliseconds(500)));
+            idMappingGate.Set();
+            Assert.IsTrue(snapshot.Wait(TimeSpan.FromSeconds(5)));
 
             Assert.AreEqual(-10m, orderEvents.Sum(e => e.FillQuantity));
             Assert.AreEqual(OrderStatus.Filled, order.Status);
