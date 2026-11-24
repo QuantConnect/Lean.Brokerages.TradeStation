@@ -97,6 +97,45 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.AreEqual(10m, orderEvents.Sum(e => e.FillQuantity));
         }
 
+        // An order that filled 4 live and the rest while the stream was down: the cancel is soft-rejected, and a
+        // reconnect snapshot recovers only the 6 Lean doesn't have
+        [Test]
+        public void ReconnectSnapshotRecoversRemainingFillOfPartiallyFilledOrderClosedByCancelSoftReject()
+        {
+            var orderProvider = new OrderProvider();
+            var brokerage = CreateBrokerage(orderProvider, _ => throw new Exception("Not an open order."));
+            var order = CreateCancelPendingOrder(orderProvider, "957819089");
+
+            var orderEvents = new List<OrderEvent>();
+            brokerage.OrdersStatusChanged += (_, events) =>
+            {
+                orderEvents.AddRange(events);
+                events.ForEach(orderProvider.HandleOrderEvent);
+            };
+
+            brokerage.HandleTradeStationMessage(@"{""StreamStatus"": ""EndSnapshot""}");
+            brokerage.HandleTradeStationMessage(PartiallyFilledBuyOf4Json);
+            Assert.AreEqual(OrderStatus.PartiallyFilled, order.Status);
+            Assert.AreEqual(4m, orderEvents.Sum(e => e.FillQuantity));
+
+            TradeStationBrokerageStreamEventsTests.EnterReconnectSnapshotWindow(brokerage);
+            order.Status = OrderStatus.CancelPending;
+            Assert.IsTrue(brokerage.CancelOrder(order));
+            Assert.AreEqual(OrderStatus.Canceled, order.Status);
+
+            brokerage.HandleTradeStationMessage(FilledBuyOf10Json);
+
+            Assert.AreEqual(6m, orderEvents.Last().FillQuantity);
+            Assert.AreEqual(10m, orderEvents.Sum(e => e.FillQuantity));
+            Assert.AreEqual(OrderStatus.Filled, order.Status);
+
+            // A later reconnect snapshot must not report the same fill again
+            TradeStationBrokerageStreamEventsTests.EnterReconnectSnapshotWindow(brokerage);
+            brokerage.HandleTradeStationMessage(FilledBuyOf10Json);
+
+            Assert.AreEqual(10m, orderEvents.Sum(e => e.FillQuantity));
+        }
+
         // An order a soft-rejected cancel closed, which the brokerage reports as canceled, emits no second cancel
         [Test]
         public void ReconnectSnapshotSkipsCancelOfOrderClosedByCancelSoftReject()
@@ -463,6 +502,33 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             ""Routing"": ""Intelligent"",
             ""Status"": ""FLL"",
             ""StatusDescription"": ""Filled"",
+            ""UnbundledRouteFee"": ""0""
+        }";
+
+        private const string PartiallyFilledBuyOf4Json = @"{
+            ""AccountID"": ""SIM2784990M"",
+            ""CommissionFee"": ""0"",
+            ""Currency"": ""USD"",
+            ""Duration"": ""DAY"",
+            ""FilledPrice"": ""100"",
+            ""Legs"": [
+                {
+                    ""AssetType"": ""STOCK"",
+                    ""BuyOrSell"": ""Buy"",
+                    ""ExecQuantity"": ""4"",
+                    ""ExecutionPrice"": ""100"",
+                    ""OpenOrClose"": ""Open"",
+                    ""QuantityOrdered"": ""10"",
+                    ""QuantityRemaining"": ""6"",
+                    ""Symbol"": ""AAPL""
+                }
+            ],
+            ""OpenedDateTime"": ""2026-06-23T16:06:00Z"",
+            ""OrderID"": ""957819089"",
+            ""OrderType"": ""StopMarket"",
+            ""Routing"": ""Intelligent"",
+            ""Status"": ""FPR"",
+            ""StatusDescription"": ""Partial Fill (alive)"",
             ""UnbundledRouteFee"": ""0""
         }";
 
