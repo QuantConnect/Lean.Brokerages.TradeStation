@@ -1060,9 +1060,10 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             var apiUrl = Config.Get("trade-station-api-url");
             var accountType = Config.Get("trade-station-account-type");
 
-            if (new string[] { clientId, clientSecret, apiUrl, accountType }.Any(string.IsNullOrEmpty))
+            // the secret is optional: an API key using the Auth Code Flow with PKCE has none, see TokenRefreshHandler
+            if (new string[] { clientId, apiUrl, accountType }.Any(string.IsNullOrEmpty))
             {
-                throw new ArgumentException("API key, secret, and URL cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
+                throw new ArgumentException("API key, URL, and account type cannot be empty or null. Please ensure these values are correctly set in the configuration file.");
             }
 
             var refreshToken = Config.Get("trade-station-refresh-token");
