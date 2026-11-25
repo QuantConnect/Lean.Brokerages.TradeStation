@@ -910,38 +910,56 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.AreEqual(trailingAmount, leanAmount);
         }
 
-        // ZC has a price magnifier of 100: brokerage prices and absolute amounts are divided by it, percentages are not
-        [TestCase("ZCH27", "FUTURE", "440", @"{""Amount"":""5""}", 4.40, 0.05, false)]
-        [TestCase("ZCH27", "FUTURE", "440", @"{""Percent"":""1.5""}", 4.40, 0.015, true)]
-        // E7 has a price magnifier of 1
-        [TestCase("E7H27", "FUTURE", "1.1550", @"{""Amount"":""0.0010""}", 1.1550, 0.0010, false)]
-        [TestCase("E7H27", "FUTURE", "1.1550", @"{""Percent"":""1.5""}", 1.1550, 0.015, true)]
-        [TestCase("AAPL", "STOCK", "195.50", @"{""Amount"":""1.25""}", 195.50, 1.25, false)]
-        [TestCase("AAPL", "STOCK", "195.50", @"{""Percent"":""1.5""}", 195.50, 0.015, true)]
-        public void GetOpenOrdersKeepsTrailingStopPrice(string brokerageSymbol, string assetType, string stopPrice, string trailingStop,
-            decimal expectedStopPrice, decimal expectedTrailingAmount, bool expectedTrailingAsPercentage)
+        private static IEnumerable<TestCaseData> GetOpenOrdersKeepsTrailingStopPriceTestCases()
         {
-            var ordersJson = $@"{{
-                ""Orders"": [{{
-                    ""AccountID"": ""123"",
-                    ""Duration"": ""GTC"",
-                    ""Legs"": [{{
-                        ""AssetType"": ""{assetType}"",
-                        ""BuyOrSell"": ""Sell"",
-                        ""ExpirationDate"": ""2027-03-12T00:00:00Z"",
-                        ""OpenOrClose"": ""Close"",
-                        ""QuantityOrdered"": ""1"",
-                        ""Symbol"": ""{brokerageSymbol}""
-                    }}],
-                    ""OpenedDateTime"": ""2026-11-24T15:00:00Z"",
-                    ""OrderID"": ""958800001"",
-                    ""OrderType"": ""StopMarket"",
-                    ""Status"": ""ACK"",
-                    ""StopPrice"": ""{stopPrice}"",
-                    ""TrailingStop"": {trailingStop}
-                }}],
-                ""Errors"": []
-            }}";
+            // Each order is the text the TradeStation sim account answered in GetOpenOrdersTrailingStopRawJson for a sell trailing stop, with line breaks added and the account id masked
+
+            // Live Cattle has a price magnifier of 100: brokerage prices and absolute amounts are divided by it, percentages are not
+            yield return new TestCaseData("""
+                {"AccountID":"SIM*******","CommissionFee":"0","Currency":"USD","Duration":"GTC","FilledPrice":"0","GoodTillDate":"2027-02-23T00:00:00Z",
+                "Legs":[{"ExpirationDate":"2027-02-26T00:00:00Z","QuantityOrdered":"1","ExecQuantity":"0","QuantityRemaining":"1","BuyOrSell":"Sell","Symbol":"LCG27","Underlying":"LC","AssetType":"FUTURE"}],
+                "OrderID":"981086839","OpenedDateTime":"2026-11-25T14:27:56Z","OrderType":"StopMarket","PriceUsedForBuyingPower":"229.925","Status":"ACK","StatusDescription":"Received",
+                "StopPrice":"218.825","AdvancedOptions":"STPTRG=STT;TRL=D11;","ConversionRate":"1","TrailingStop":{"Amount":"11"},"UnbundledRouteFee":"0"}
+                """, 2.18825m, 0.11m, false).SetArgDisplayNames("LCG27", "Amount");
+            yield return new TestCaseData("""
+                {"AccountID":"SIM*******","CommissionFee":"0","Currency":"USD","Duration":"GTC","FilledPrice":"0","GoodTillDate":"2027-02-23T00:00:00Z",
+                "Legs":[{"ExpirationDate":"2027-02-26T00:00:00Z","QuantityOrdered":"1","ExecQuantity":"0","QuantityRemaining":"1","BuyOrSell":"Sell","Symbol":"LCG27","Underlying":"LC","AssetType":"FUTURE"}],
+                "OrderID":"981086868","OpenedDateTime":"2026-11-25T14:28:00Z","OrderType":"StopMarket","PriceUsedForBuyingPower":"229.925","Status":"ACK","StatusDescription":"Received",
+                "StopPrice":"218.325","AdvancedOptions":"STPTRG=STT;TRL=5%;","ConversionRate":"1","TrailingStop":{"Percent":"5"},"UnbundledRouteFee":"0"}
+                """, 2.18325m, 0.05m, true).SetArgDisplayNames("LCG27", "Percent");
+
+            // E-mini Euro FX has a price magnifier of 1
+            yield return new TestCaseData("""
+                {"AccountID":"SIM*******","CommissionFee":"0","Currency":"USD","Duration":"GTC","FilledPrice":"0","GoodTillDate":"2027-02-23T00:00:00Z",
+                "Legs":[{"ExpirationDate":"2027-03-15T00:00:00Z","QuantityOrdered":"1","ExecQuantity":"0","QuantityRemaining":"1","BuyOrSell":"Sell","Symbol":"E7H27","Underlying":"E7","AssetType":"FUTURE"}],
+                "OrderID":"981086495","OpenedDateTime":"2026-11-25T14:25:41Z","OrderType":"StopMarket","PriceUsedForBuyingPower":"1.1001","Status":"ACK","StatusDescription":"Received",
+                "StopPrice":"1.0501","AdvancedOptions":"STPTRG=STT;TRL=D0.05;","ConversionRate":"1","TrailingStop":{"Amount":"0.05"},"UnbundledRouteFee":"0"}
+                """, 1.0501m, 0.05m, false).SetArgDisplayNames("E7H27", "Amount");
+            yield return new TestCaseData("""
+                {"AccountID":"SIM*******","CommissionFee":"0","Currency":"USD","Duration":"GTC","FilledPrice":"0","GoodTillDate":"2027-02-23T00:00:00Z",
+                "Legs":[{"ExpirationDate":"2027-03-15T00:00:00Z","QuantityOrdered":"1","ExecQuantity":"0","QuantityRemaining":"1","BuyOrSell":"Sell","Symbol":"E7H27","Underlying":"E7","AssetType":"FUTURE"}],
+                "OrderID":"981086504","OpenedDateTime":"2026-11-25T14:25:45Z","OrderType":"StopMarket","PriceUsedForBuyingPower":"1.1001","Status":"ACK","StatusDescription":"Received",
+                "StopPrice":"1.0451","AdvancedOptions":"STPTRG=STT;TRL=5%;","ConversionRate":"1","TrailingStop":{"Percent":"5"},"UnbundledRouteFee":"0"}
+                """, 1.0451m, 0.05m, true).SetArgDisplayNames("E7H27", "Percent");
+
+            yield return new TestCaseData("""
+                {"AccountID":"SIM*******","CommissionFee":"0","Currency":"USD","Duration":"GTC","FilledPrice":"0","GoodTillDate":"2027-02-23T00:00:00Z",
+                "Legs":[{"OpenOrClose":"Open","QuantityOrdered":"1","ExecQuantity":"0","QuantityRemaining":"1","BuyOrSell":"SellShort","Symbol":"AAPL","AssetType":"STOCK"}],
+                "OrderID":"981085551","OpenedDateTime":"2026-11-25T14:16:53Z","OrderType":"StopMarket","PriceUsedForBuyingPower":"351.48","Routing":"Intelligent","Status":"ACK","StatusDescription":"Received",
+                "StopPrice":"336.47","AdvancedOptions":"STPTRG=STT;TRL=D17.6;","TrailingStop":{"Amount":"17.6"},"UnbundledRouteFee":"0"}
+                """, 336.47m, 17.6m, false).SetArgDisplayNames("AAPL", "Amount");
+            yield return new TestCaseData("""
+                {"AccountID":"SIM*******","CommissionFee":"0","Currency":"USD","Duration":"GTC","FilledPrice":"0","GoodTillDate":"2027-02-23T00:00:00Z",
+                "Legs":[{"OpenOrClose":"Open","QuantityOrdered":"1","ExecQuantity":"0","QuantityRemaining":"1","BuyOrSell":"SellShort","Symbol":"AAPL","AssetType":"STOCK"}],
+                "OrderID":"981085554","OpenedDateTime":"2026-11-25T14:16:57Z","OrderType":"StopMarket","PriceUsedForBuyingPower":"351.48","Routing":"Intelligent","Status":"ACK","StatusDescription":"Received",
+                "StopPrice":"336.37","AdvancedOptions":"STPTRG=STT;TRL=5%;","TrailingStop":{"Percent":"5"},"UnbundledRouteFee":"0"}
+                """, 336.37m, 0.05m, true).SetArgDisplayNames("AAPL", "Percent");
+        }
+
+        [TestCaseSource(nameof(GetOpenOrdersKeepsTrailingStopPriceTestCases))]
+        public void GetOpenOrdersKeepsTrailingStopPrice(string orderJson, decimal expectedStopPrice, decimal expectedTrailingAmount, bool expectedTrailingAsPercentage)
+        {
+            var ordersJson = $@"{{""Orders"":[{orderJson}]}}";
             var handler = new TestHttpMessageHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(ordersJson) }));
             using var httpClient = new HttpClientRetryWrapper("https://api.test/", handler, maxRetries: 1, ctsAttemptTimeout: TimeSpan.FromSeconds(10), backOffDelay: TimeSpan.Zero);
             // The parameterless constructor skips the subscription validation; set only what reading the open orders needs
@@ -958,6 +976,78 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             Assert.AreEqual(expectedTrailingAmount, order.TrailingAmount);
             Assert.AreEqual(expectedTrailingAsPercentage, order.TrailingAsPercentage);
             Assert.AreEqual(-1, order.Quantity);
+        }
+
+        private static IEnumerable<TestCaseData> GetOpenOrdersTrailingStopRawJsonTestCases()
+        {
+            var le = Symbol.CreateFuture(Futures.Meats.LiveCattle, Market.CME, new DateTime(2027, 02, 26));
+            var e7 = Symbol.CreateFuture(Futures.Currencies.EuroFXEmini, Market.CME, new DateTime(2027, 03, 15));
+
+            yield return new TestCaseData(Symbols.AAPL, OrderDirection.Buy, false);
+            yield return new TestCaseData(Symbols.AAPL, OrderDirection.Buy, true);
+            yield return new TestCaseData(Symbols.AAPL, OrderDirection.Sell, false);
+            yield return new TestCaseData(Symbols.AAPL, OrderDirection.Sell, true);
+            yield return new TestCaseData(le, OrderDirection.Sell, false);
+            yield return new TestCaseData(le, OrderDirection.Sell, true);
+            yield return new TestCaseData(e7, OrderDirection.Sell, false);
+            yield return new TestCaseData(e7, OrderDirection.Sell, true);
+        }
+
+        [Explicit("Places a trailing stop order for 1 share or contract on the TradeStation sim account, then cancels it")]
+        [TestCaseSource(nameof(GetOpenOrdersTrailingStopRawJsonTestCases))]
+        public async Task GetOpenOrdersTrailingStopRawJson(Symbol symbol, OrderDirection orderDirection, bool trailingAsPercentage)
+        {
+            // Futures orders go to the futures account, the others to the configured one
+            var configuredAccountType = Config.Get("trade-station-account-type");
+            var accountType = symbol.SecurityType == SecurityType.Future ? TradeStationAccountType.Futures.ToString() : configuredAccountType;
+            Config.Set("trade-station-account-type", accountType);
+
+            try
+            {
+                var orderProvider = new OrderProvider();
+                using var brokerage = TestSetup.CreateBrokerage(orderProvider, new SecurityProvider());
+                using var httpClient = new HttpClientRetryWrapper(Config.Get("trade-station-api-url"), Config.Get("trade-station-client-id"),
+                    Config.Get("trade-station-client-secret"), Config.Get("trade-station-authorization-code"), Config.Get("trade-station-redirect-url"),
+                    Config.Get("trade-station-refresh-token"));
+
+                // The stop starts 5% away from the last price, so the order stays open. The distance has two decimals to keep the stop on the price grid of the futures
+                var lastPrice = new PriceMapper().GetLeanPrice(symbol, brokerage.GetPrice(symbol).Last);
+                var stopDistance = Math.Round(lastPrice * 0.05m, 2);
+                var trailingAmount = trailingAsPercentage ? 0.05m : stopDistance;
+                var stopPrice = TrailingStopOrder.CalculateStopPrice(lastPrice, stopDistance, trailingAsPercentage: false, orderDirection);
+                var order = new TrailingStopOrder(symbol, orderDirection == OrderDirection.Buy ? 1 : -1, stopPrice, trailingAmount, trailingAsPercentage, DateTime.UtcNow);
+                orderProvider.Add(order);
+                Assert.IsTrue(brokerage.PlaceOrder(order));
+
+                try
+                {
+                    var brokerageOrderId = order.BrokerId.Single();
+
+                    using var accountsResponse = await httpClient.SendAsync("/v3/brokerage/accounts", HttpMethod.Get, jsonBody: null, retryOnTimeout: true);
+                    var accountId = JObject.Parse(await accountsResponse.Content.ReadAsStringAsync())["Accounts"]
+                        .Single(account => account["AccountType"].ToString().Equals(accountType, StringComparison.OrdinalIgnoreCase))["AccountID"].ToString();
+
+                    // The same request GetOpenOrders sends, kept as the text TradeStation answered
+                    using var ordersResponse = await httpClient.SendAsync($"/v3/brokerage/accounts/{accountId}/orders", HttpMethod.Get, jsonBody: null, retryOnTimeout: true);
+                    var ordersJson = await ordersResponse.Content.ReadAsStringAsync();
+                    Log.Trace($"{nameof(GetOpenOrdersTrailingStopRawJson)}: last price = {lastPrice}, placed stop price = {stopPrice}, brokerage order id = {brokerageOrderId}, orders response: {ordersJson}");
+
+                    var openOrder = brokerage.GetOpenOrders().OfType<TrailingStopOrder>().Single(o => o.BrokerId.Contains(brokerageOrderId));
+                    Log.Trace($"{nameof(GetOpenOrdersTrailingStopRawJson)}: Lean open order: StopPrice = {openOrder.StopPrice}, TrailingAmount = {openOrder.TrailingAmount}, TrailingAsPercentage = {openOrder.TrailingAsPercentage}");
+
+                    Assert.Greater(openOrder.StopPrice, 0m);
+                    Assert.AreEqual(trailingAmount, openOrder.TrailingAmount);
+                    Assert.AreEqual(trailingAsPercentage, openOrder.TrailingAsPercentage);
+                }
+                finally
+                {
+                    Assert.IsTrue(brokerage.CancelOrder(order));
+                }
+            }
+            finally
+            {
+                Config.Set("trade-station-account-type", configuredAccountType);
+            }
         }
 
         [Test]
