@@ -1006,9 +1006,10 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
             {
                 var orderProvider = new OrderProvider();
                 using var brokerage = TestSetup.CreateBrokerage(orderProvider, new SecurityProvider());
-                using var httpClient = new HttpClientRetryWrapper(Config.Get("trade-station-api-url"), Config.Get("trade-station-client-id"),
-                    Config.Get("trade-station-client-secret"), Config.Get("trade-station-authorization-code"), Config.Get("trade-station-redirect-url"),
-                    Config.Get("trade-station-refresh-token"));
+                // Reuse the brokerage's authenticated client and account: an authorization code can be redeemed only once
+                var apiClient = typeof(TradeStationBrokerage).GetField("_tradeStationApiClient", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(brokerage);
+                var httpClient = (HttpClientRetryWrapper)typeof(TradeStationApiClient).GetField("_httpClient", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(apiClient);
+                var accountId = ((Lazy<string>)typeof(TradeStationApiClient).GetField("_accountID", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(apiClient)).Value;
 
                 // The stop starts 5% away from the last price, so the order stays open. The distance has two decimals to keep the stop on the price grid of the futures
                 var lastPrice = new PriceMapper().GetLeanPrice(symbol, brokerage.GetPrice(symbol).Last);
@@ -1022,10 +1023,6 @@ namespace QuantConnect.Brokerages.TradeStation.Tests
                 try
                 {
                     var brokerageOrderId = order.BrokerId.Single();
-
-                    using var accountsResponse = await httpClient.SendAsync("/v3/brokerage/accounts", HttpMethod.Get, jsonBody: null, retryOnTimeout: true);
-                    var accountId = JObject.Parse(await accountsResponse.Content.ReadAsStringAsync())["Accounts"]
-                        .Single(account => account["AccountType"].ToString().Equals(accountType, StringComparison.OrdinalIgnoreCase))["AccountID"].ToString();
 
                     // The same request GetOpenOrders sends, kept as the text TradeStation answered
                     using var ordersResponse = await httpClient.SendAsync($"/v3/brokerage/accounts/{accountId}/orders", HttpMethod.Get, jsonBody: null, retryOnTimeout: true);
